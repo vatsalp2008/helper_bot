@@ -1,0 +1,91 @@
+# helper profile template. `helper setup` copies this to data/profile.yaml (git-ignored) when that file is
+# missing. Fill it in by hand or with `helper setup --interactive`.
+#
+# null    = not set: any form field that needs it pauses the run
+# ask     = you chose to be asked every time
+# per_run = decided for each application (graduation date)
+# Never add a GPA field (rule 3).
+
+header:                       # printed at the top of every resume
+  name: null
+  location: null              # e.g. "Seattle, WA 98105"
+  phone: null                 # e.g. "(206) 555-0100"
+  email: null
+  linkedin_url: null
+  linkedin_label: null
+  github_url: null
+  github_label: null
+  portfolio_url: null
+
+tier1:                        # auto-filled without asking
+  full_name: null
+  first_name: null
+  last_name: null
+  preferred_name: null
+  email: null
+  phone: null                 # E.164, e.g. "+12065550100"
+  address:
+    street: null
+    unit: null
+    city: null
+    state: null
+    postal_code: null
+    country: null
+  linkedin_url: null
+  github_url: null
+  portfolio_url: null
+  current_school: null
+  degree: null
+  major: null
+  expected_graduation: per_run
+  how_did_you_hear: null
+  willing_to_relocate: null
+  work_location_preferences: null
+
+# For form fields only; the resume's Education section is fixed in the template. Entry format:
+#   - school: ...
+#     college: ...            # optional
+#     degree: Master of Science
+#     major: Computer Science
+#     location: Seattle, WA
+#     start: September 2025
+#     end: per_run
+education: []
+
+tier2:                        # auto-filled only when auto_answer is true and a value is set
+  work_authorization:
+    auto_answer: false
+    value: null
+  sponsorship:
+    auto_answer: false
+    value: null
+    yes_when_question_includes_cpt_opt: true
+  us_citizen_or_permanent_resident:
+    auto_answer: false
+    value: null
+  earliest_start_date:
+    auto_answer: false
+    summer_internship: null
+    spring_internship: null
+    fall_internship: null
+    co_op: null
+    full_time: null
+  salary_expectation:
+    auto_answer: false
+    value: Negotiable
+  eeo:
+    auto_answer: false
+    gender: null
+    race_ethnicity: null
+    veteran_status: null
+    disability_status: null
+    default_for_other: Decline to self identify
+  background_check_consent:
+    auto_answer: false
+    value: null
+  age_18_or_older:
+    auto_answer: false
+    value: null
+  security_clearance:
+    auto_answer: false
+    value: null

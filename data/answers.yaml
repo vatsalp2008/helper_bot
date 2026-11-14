@@ -1,0 +1,10 @@
+# Approved free-text answers (spec 5.4). Only answers Vatsal approved go here.
+# helper checks this file before drafting anything new. Entry format:
+#
+#   - id: why_this_company
+#     question_patterns:              # case-insensitive regular expressions matched against the question
+#       - "why .*(company|us|join)"
+#     answer: "..."
+#     max_chars: null                 # the limit it was written for, if any
+#     approved_on: "2026-11-13"
+answers: []

@@ -1,0 +1,21 @@
+# Application caps per company (spec 8.3). Before each run helper counts your applications in SQLite,
+# warns when you are near a cap, and stops at the cap.
+# A company matches when its name contains `company` as a whole word, case-insensitive
+# ("Samsung Electronics" counts as Samsung). Add `match: [Other Name]` for names that differ entirely.
+caps:
+  - company: Salesforce
+    max_applications: 3
+    window_months: 12
+  - company: Samsung
+    max_applications: 10
+    window_months: 6
+  - company: Databricks
+    max_applications: 1
+    window_days: 30
+
+# Shown before a run at these companies; no limit enforced.
+notes:
+  - company: Qualcomm
+    note: Eightfold visibility setting
+  - company: Google
+    note: Questionnaire UniqueID matching

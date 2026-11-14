@@ -1,0 +1,34 @@
+# helper
+
+From one job posting URL, helper builds a tailored one-page PDF resume, fills the application form, and logs the application. It logs to SQLite first, then Notion and CSV.
+
+helper never calls an AI API. Judgment steps (tailoring, free-text answers) are done by Claude Code in an interactive session through files in `runs/<run_id>/`. Everything else is plain Python: Playwright, SQLite, the Notion REST API and LaTeX.
+
+> Status: milestone 1 of 11 (skeleton). A full setup guide arrives in milestone 11.
+
+## Setup
+
+Requirements: macOS or Linux, Python 3.11+, [uv](https://docs.astral.sh/uv/), and TeX Live or MacTeX with `fontawesome5`.
+
+```bash
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python -e ".[dev]"
+.venv/bin/helper setup        # creates folders and the database, checks tools, reports what is missing
+.venv/bin/pytest              # run the tests
+```
+
+`data/profile.yaml` holds your form answers and is git-ignored. On a fresh clone, `helper setup` creates it from `data/profile.example.yaml`. Fill it in by hand, or run `helper setup --interactive` in your own terminal.
+
+## Commands
+
+```
+helper setup [--interactive]
+helper convert
+helper apply <url> [--projects N] [--mode review|auto] [--include-experience NAME] [--jd-file PATH] [--dry-run]
+helper resume [url] [--jd-file PATH] [--company NAME --role TITLE]
+helper fill <run_id> [--dry-run]
+helper continue <run_id>
+helper list | show <id> | stats | export --csv | mark <id> <status> | sync-notion
+```
+
+`helper setup` is the only command that works so far. The others print the milestone that builds them.

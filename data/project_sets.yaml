@@ -1,0 +1,79 @@
+# Default project sets by role type (spec 7.2). Claude picks the final set from the posting, starting here.
+#   projects:     the defaults
+#   plus_one_of:  where the spec says "plus one of", pick one of these
+#   kalini:       which Kalini internship goes on the resume (spec 7.1): sde = Software Development Intern,
+#                 ml = Machine Learning Intern, null = the spec does not say, choose per posting
+# Sets with fewer than projects_per_resume entries are filled from the posting.
+role_types:
+  backend_distributed:
+    label: Backend and distributed
+    projects: [pulsetrader, ecommerce_platform, spiceai, experimentiq, chef]
+    kalini: sde
+  fullstack_web:
+    label: Full-stack and web
+    projects: [themanager, pnwer, ecommerce_platform, afterglow, chef]
+    kalini: sde
+  frontend:
+    label: Frontend
+    projects: [pnwer, afterglow, f1_analytics, themanager, chef]
+    kalini: sde
+  ios:
+    label: iOS
+    projects: [wardrobe, transitlens, streamline, pnwer, moodmeals]
+    kalini: sde
+  android:
+    label: Android
+    projects: [transitlens, wardrobe, afterglow, pnwer, chef]
+    kalini: sde
+  data_science_analytics:
+    label: Data science and analytics
+    projects: [experimentiq, traffic_accident, recommendation_engine, f1_analytics]
+    plus_one_of: [housing_price, investment_prediction, echocoach, moodmeals]
+    kalini: ml
+  data_engineering:
+    label: Data engineering
+    projects: [experimentiq, pnwer, pulsetrader, f1_analytics]
+    plus_one_of: [ecommerce_platform, chef]
+    kalini: ml
+  ml_engineering:
+    label: ML engineering
+    projects: [traffic_accident, echocoach, investment_prediction, perceptnet, pulsetrader]
+    kalini: ml
+  applied_ai_agents:
+    label: Applied AI and agents
+    projects: [themanager, swarm, ai_agent_discovery, echocoach]
+    plus_one_of: [afterglow, recommendation_engine]
+    kalini: ml
+  inference_ml_platform:
+    label: Inference and ML platform
+    projects: [echocoach, perceptnet, scenarioforge, swarm, transitlens]
+    kalini: ml
+  systems_quant_low_latency:
+    label: Systems, quant, low latency
+    projects: [pulsetrader, chef, seattle_transit, streamline, spiceai]
+    kalini: sde
+  cloud_devops_it:
+    label: Cloud, DevOps, IT
+    projects: [ecommerce_platform, swarm, chef, pnwer, spiceai]
+    kalini: sde
+  robotics_av:
+    label: Robotics and autonomous vehicles
+    projects: [perceptnet, scenarioforge]
+    plus_one_of: [transitlens, afterglow]
+    kalini: null
+  games_graphics:
+    label: Games and graphics
+    projects: [afterglow, perceptnet, echocoach, scenarioforge, chess_ai]
+    kalini: sde
+  supply_chain_logistics:
+    label: Supply chain and logistics
+    projects: [pnwer, seattle_transit, experimentiq, themanager, traffic_accident]
+    kalini: null
+  consumer_product:
+    label: Consumer product
+    projects: [moodmeals, experimentiq, recommendation_engine, wardrobe, transitlens]
+    kalini: null
+  governance_audit_data_ops:
+    label: Governance, audit, data ops
+    projects: [pnwer, pulsetrader, experimentiq, housing_price, f1_analytics]
+    kalini: ml

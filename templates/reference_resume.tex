@@ -1,0 +1,91 @@
+\documentclass[letterpaper,10.5pt]{article}
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage{fontawesome5}
+\input{glyphtounicode}
+\definecolor{cyan}{RGB}{0,150,200}
+\pagestyle{fancy}\fancyhf{}\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}\renewcommand{\footrulewidth}{0pt}
+\addtolength{\oddsidemargin}{-0.5in}\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}\addtolength{\topmargin}{-.5in}\addtolength{\textheight}{1.0in}
+\urlstyle{same}\raggedbottom\raggedright\setlength{\tabcolsep}{0in}
+\titleformat{\section}{\vspace{-4pt}\scshape\raggedright\large\color{cyan}}{}{0em}{}[\color{cyan}\titlerule \vspace{-5pt}]
+\pdfgentounicode=1
+\newcommand{\resumeItem}[1]{\item\small{{#1 \vspace{-2pt}}}}
+\newcommand{\resumeSubheading}[4]{\vspace{-2pt}\item\begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}\textbf{#1} & #2 \\\textit{\small#3} & \textit{\small #4} \\\end{tabular*}\vspace{-7pt}}
+\newcommand{\resumeProjectHeading}[2]{\vspace{-3pt}\item\begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}\small#1 & \small #2 \\\end{tabular*}\vspace{-5pt}}
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+\begin{document}
+\begin{center}
+    \fontsize{20}{24}\selectfont \textbf{\scshape Vatsal Patel} \\[4pt]
+    \normalsize Seattle, WA 98105 \\[4pt]
+    \small \faPhone*~(206) 280--0258 \quad $|$ \quad \faEnvelope~\href{mailto:vatsalp2008@gmail.com}{vatsalp2008@gmail.com} \quad $|$ \quad \faLinkedin~\href{https://www.linkedin.com/in/vatsalp20/}{vatsalp20} \quad $|$ \quad \faGithub~\href{https://github.com/vatsalp2008}{vatsalp2008} \quad $|$ \quad \faGlobe~\href{https://vatsalp2008.github.io/Portfolio/}{Portfolio}
+\end{center}
+\section{Education}
+\resumeSubHeadingListStart
+\resumeSubheading{Northeastern University}{Seattle, WA}{Master of Science in Computer Science}{Sept. 2025 -- Dec. 2027}
+\resumeSubheading{University of Mumbai}{Mumbai, India}{Bachelor of Engineering in Computer Engineering}{Oct. 2021 -- May 2025}
+\resumeSubHeadingListEnd
+\section{Technical Skills}
+\begin{itemize}[leftmargin=0.15in, label={}]
+\small{\item{\textbf{Languages}{: Python, SQL, R} \\\textbf{Modeling}{: Hypothesis Testing, Time Series, Linear \& Logistic Regression, Random Forests, XGBoost} \\\textbf{Tools}{: Scikit-learn, PyTorch, Pandas, Spark, Power BI, Tableau, dbt, Snowflake}}}
+\end{itemize}
+\section{Experience}
+\resumeSubHeadingListStart
+\resumeSubheading{Software Development Intern}{Jan. 2024 -- Apr. 2024}{Kalini Industries}{Mumbai, India}
+\resumeItemListStart
+\resumeItem{Built predictive maintenance models with \textbf{random forests} and \textbf{logistic regression}, reaching \textbf{85\%} accuracy and cutting equipment downtime by \textbf{20\%}.}
+\resumeItem{Wrote \textbf{scripts} in Python and Bash that \textbf{automated} \textbf{8} reporting workflows, and built a dashboard used on \textbf{5} production lines.}
+\resumeItemListEnd
+\resumeSubheading{Graduate Teaching Assistant, Data Structures and Algorithms in C}{Jan. 2026 -- May 2026}{Khoury College of Computer Sciences, Northeastern University}{Seattle, WA}
+\resumeItemListStart
+\resumeItem{Helped around \textbf{60 students} work through problems, explaining technical ideas clearly to people with varied backgrounds.}
+\resumeItem{Graded \textbf{19+ assignments} with consistent rubrics, and worked with the instructor to refine assignments.}
+\resumeItemListEnd
+\resumeSubHeadingListEnd
+\section{Projects}
+\resumeSubHeadingListStart
+\resumeProjectHeading{\href{https://github.com/vatsalp2008/ExperimentIQ}{\textbf{ExperimentIQ: In-House Analytics Tool} \faIcon{external-link-alt}} $|$ \emph{SQL, Python, Statsmodels}}{Jul. 2026 -- Aug. 2026}
+\resumeItemListStart
+\resumeItem{Built an \textbf{in-house analytical tool} for \textbf{hypothesis testing}, with an experiment builder, results views, and a SQL explorer.}
+\resumeItem{Modeled \textbf{10M+} simulated events in \textbf{12} SQL models, cutting metric computation from \textbf{45s to 0.8s} to speed up analysis.}
+\resumeItemListEnd
+\resumeProjectHeading{\href{https://github.com/vatsalp2008/Investment-Prediction}{\textbf{Investment Prediction: Time Series Forecasting} \faIcon{external-link-alt}} $|$ \emph{Python, PyTorch, SQL}}{Jan. 2025 -- May 2025}
+\resumeItemListStart
+\resumeItem{Built \textbf{time series forecasting} models (LSTM, GRU) on \textbf{1.2M} data points spanning \textbf{10+ years}, reaching \textbf{68\%} directional accuracy.}
+\resumeItem{Backtested across market conditions, and cut training time by \textbf{60\%} through batch processing and caching.}
+\resumeItemListEnd
+\resumeProjectHeading{\href{https://github.com/vatsalp2008/Housing-Price-Prediction}{\textbf{Housing Price Prediction: Regression \& Forests} \faIcon{external-link-alt}} $|$ \emph{Python, R, Scikit-learn}}{Sept. 2024 -- Dec. 2024}
+\resumeItemListStart
+\resumeItem{Built \textbf{regression} models, including \textbf{random forests} and gradient boosting, on \textbf{50,000+} records, reaching \textbf{R\textsuperscript{2} of 0.82}.}
+\resumeItem{Engineered \textbf{30+} features with cross-validation and hyperparameter tuning, and validated results statistically in \textbf{R}.}
+\resumeItemListEnd
+\resumeProjectHeading{\href{https://github.com/vatsalp2008/Accidents-Severity}{\textbf{Traffic Accident Severity: Data Mining} \faIcon{external-link-alt}} $|$ \emph{Python, XGBoost, Tableau}}{Mar. 2026 -- Apr. 2026}
+\resumeItemListStart
+\resumeItem{\textbf{Mined} \textbf{7.7M} records across \textbf{49} states for severity patterns, building a classifier that reached \textbf{ROC-AUC 0.818}.}
+\resumeItem{Built a \textbf{Tableau} dashboard and used SHAP to explain the main drivers of severe accidents.}
+\resumeItemListEnd
+\resumeProjectHeading{\href{https://github.com/vatsalp2008/f1-analytics-dashboard}{\textbf{F1 Analytics: Dashboards \& Reports} \faIcon{external-link-alt}} $|$ \emph{Python, Spark, Power BI}}{Jun. 2025 -- Oct. 2025}
+\resumeItemListStart
+\resumeItem{Built a Power BI \textbf{report} and interactive \textbf{dashboard} over \textbf{500K+} records, with predictions and confidence intervals.}
+\resumeItem{Processed the data with Spark and engineered \textbf{70+} features for a model reaching \textbf{73\%} podium accuracy.}
+\resumeItemListEnd
+\resumeSubHeadingListEnd
+\section{Relevant Coursework}
+\begin{itemize}[leftmargin=0.15in, label={}]
+\small{\item{Statistics $|$ Machine Learning $|$ Database Systems $|$ Algorithms $|$ Data Structures}}
+\end{itemize}\vspace{-10pt}
+\end{document}

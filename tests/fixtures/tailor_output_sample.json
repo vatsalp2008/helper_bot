@@ -1,0 +1,87 @@
+{
+  "role_type": "data_science_analytics",
+  "grad_date": "May 2027",
+  "experience": [
+    {
+      "entry_id": "ta",
+      "title": "Graduate Teaching Assistant, Data Structures and Algorithms in C",
+      "bullets": [
+        "Held weekly office hours and lab sessions for **100+ students**, explaining data structures, algorithms, and **C** programming.",
+        "Graded **19+** homework and lab assignments with consistent rubrics, and worked with the instructor to refine assignments."
+      ]
+    },
+    {
+      "entry_id": "kalini_ml",
+      "title": "Machine Learning Intern",
+      "bullets": [
+        "Built predictive classification models with **TensorFlow** and **Scikit-learn**, comparing **5+** algorithms to reach **85%** accuracy.",
+        "Engineered **20+** features in a **Pandas** and SQL pipeline, improving F1-score by **15%**."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "project_id": "experimentiq",
+      "subtitle": "A/B Testing Platform",
+      "tech_tags": ["Python", "dbt", "Statsmodels"],
+      "bullets": [
+        "Built an end-to-end **A/B testing** and causal inference platform over **10M+** simulated events, with **12** dbt models across 3 tiers.",
+        "Cut metric computation from **45s to 0.8s**, and added **CUPED** variance reduction of **30-45%** alongside Welch's t-test and sequential testing."
+      ],
+      "reason": "Experimentation platform that matches the posting's A/B testing focus."
+    },
+    {
+      "project_id": "traffic_accident",
+      "subtitle": "Severity Classification",
+      "tech_tags": ["Python", "XGBoost", "Tableau"],
+      "bullets": [
+        "Built a binary severity classifier on **7.7M** US accident records across **49** states, reaching **ROC-AUC 0.818** with tuned **XGBoost**.",
+        "Handled an **80.5%/19.5%** class imbalance with **SMOTE**, and explained severity drivers with SHAP and a **Tableau** dashboard."
+      ],
+      "reason": "Large-scale classification with explainability."
+    },
+    {
+      "project_id": "recommendation_engine",
+      "subtitle": "Hybrid Recommender",
+      "tech_tags": ["Python", "Scikit-learn", "NumPy"],
+      "bullets": [
+        "Built a hybrid recommender combining content-based and **collaborative filtering** via matrix factorization, reaching **Precision@10 of 0.64**.",
+        "Reached **Recall@10 of 0.76** and **MAP of 0.59**, with a modular pipeline and benchmarking suite for repeatable evaluation."
+      ],
+      "reason": "Recommender metrics for a consumer data role."
+    },
+    {
+      "project_id": "f1_analytics",
+      "subtitle": "Prediction Dashboards",
+      "tech_tags": ["Python", "Spark", "Power BI"],
+      "bullets": [
+        "Trained **XGBoost** models on **500K+** data points from 10+ seasons, reaching **73%** podium accuracy and a **3.2s** lap-time MAE.",
+        "Engineered **70+** features with **Apache Spark**, and built a **Power BI** report alongside a React and D3.js dashboard."
+      ],
+      "reason": "Dashboards and reporting."
+    },
+    {
+      "project_id": "housing_price",
+      "subtitle": "Ensemble Regression",
+      "tech_tags": ["Python", "R", "Scikit-learn"],
+      "bullets": [
+        "Built ensemble **regression** models (XGBoost, Random Forest, Gradient Boosting) on **50,000+** records, reaching **R squared of 0.82**.",
+        "Engineered **30+** features with cross-validation and hyperparameter tuning, holding RMSE to **$45,000**, and validated results in **R**."
+      ],
+      "reason": "Statistical modeling in Python and R."
+    }
+  ],
+  "skills_lines": [
+    {"label": "Languages", "items": ["Python", "SQL", "R"]},
+    {"label": "Modeling", "items": ["Random Forest", "Gradient Boosting", "XGBoost", "SMOTE", "SHAP"]},
+    {"label": "Tools", "items": ["Scikit-learn", "Pandas", "Apache Spark", "Tableau", "Power BI", "dbt", "Snowflake"]}
+  ],
+  "coursework": ["Statistics", "Machine Learning", "Database Systems", "Algorithms", "Data Structures"],
+  "keyword_audit": {
+    "matched": ["A/B testing", "Python", "SQL", "Tableau"],
+    "gaps": ["Looker"],
+    "skills_only": ["Snowflake"]
+  },
+  "flags": [],
+  "fit_paragraph": "Strong match for experimentation and modeling work; the posting's Looker requirement is the one real gap."
+}

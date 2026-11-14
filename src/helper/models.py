@@ -1,0 +1,402 @@
+"""Pydantic models for config, profile, job, run state, and Claude's tailor output.
+
+These models check types and shapes only. Rules that need readable messages (bullet counts,
+allowed numbers, wording rules, and so on) live in the tailor validator.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+MONTHS = (
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+MONTH_YEAR_RE = re.compile(r"^(%s) (\d{4})$" % "|".join(MONTHS))
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+def find_gpa_keys(data: Any, path: str = "") -> list[str]:
+    """Dotted paths of every key that looks like a GPA field. Rule 3: no GPA anywhere."""
+    hits: list[str] = []
+    if isinstance(data, dict):
+        for key, value in data.items():
+            here = f"{path}.{key}" if path else str(key)
+            if re.search(r"gpa", str(key), re.IGNORECASE):
+                hits.append(here)
+            hits.extend(find_gpa_keys(value, here))
+    elif isinstance(data, list):
+        for i, value in enumerate(data):
+            hits.extend(find_gpa_keys(value, f"{path}[{i}]"))
+    return hits
+
+
+# --------------------------------------------------------------------------- config.yaml
+
+
+class Config(StrictModel):
+    projects_per_resume: int = Field(5, ge=1, le=8)
+    bullets_per_item: int = Field(2, ge=1, le=4)
+    submit_mode: Literal["review", "auto"] = "review"
+    auto_submit_min_clean_runs: int = Field(5, ge=1)
+    default_grad_date: str = "May 2027"
+    alt_grad_date: str = "December 2027"
+    browser_profile_dir: str = "~/.helper/browser-profile"
+    headless: bool = False
+    # added during the build
+    master_list: Optional[str] = None
+    db_path: str = "helper.db"
+    latex_engine: Literal["pdflatex", "xelatex"] = "pdflatex"
+    immediate_start_target: str = "December 2026"
+    match_auto_threshold: float = Field(0.85, gt=0, le=1)
+    match_ask_threshold: float = Field(0.60, gt=0, le=1)
+    fill_wait_timeout_minutes: int = Field(30, ge=1)
+    pause_ms: tuple[int, int] = (150, 600)
+
+    @field_validator("default_grad_date", "alt_grad_date", "immediate_start_target")
+    @classmethod
+    def _month_year(cls, v: str) -> str:
+        if not MONTH_YEAR_RE.match(v):
+            raise ValueError(f"must look like 'May 2027' (full month name and year), got {v!r}")
+        return v
+
+    @model_validator(mode="after")
+    def _ranges(self) -> "Config":
+        if self.match_ask_threshold >= self.match_auto_threshold:
+            raise ValueError("match_ask_threshold must be lower than match_auto_threshold")
+        lo, hi = self.pause_ms
+        if lo < 0 or hi < lo:
+            raise ValueError("pause_ms must be [min, max] with 0 <= min <= max")
+        return self
+
+
+# --------------------------------------------------------------------------- profile.yaml
+
+
+class Header(StrictModel):
+    """Printed at the top of every resume. Values come from the reference resume."""
+
+    name: str
+    location: str
+    phone: str
+    email: str
+    linkedin_url: str
+    linkedin_label: str
+    github_url: str
+    github_label: str
+    portfolio_url: str
+
+
+class Address(StrictModel):
+    street: Optional[str] = None
+    unit: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    postal_code: Optional[str] = None
+    country: Optional[str] = None
+
+
+class EducationEntry(StrictModel):
+    school: str
+    college: Optional[str] = None
+    degree: str
+    major: str
+    location: str
+    start: str
+    end: str  # "per_run" = graduation date chosen for each application
+
+
+class Tier1(StrictModel):
+    """Auto-filled without asking. None means the field pauses the run."""
+
+    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    preferred_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Address = Field(default_factory=Address)
+    linkedin_url: Optional[str] = None
+    github_url: Optional[str] = None
+    portfolio_url: Optional[str] = None
+    current_school: Optional[str] = None
+    degree: Optional[str] = None
+    major: Optional[str] = None
+    expected_graduation: Optional[str] = None  # "per_run" = the grad date chosen for each application
+    how_did_you_hear: Optional[str] = None
+    willing_to_relocate: Optional[str] = None
+    work_location_preferences: Optional[str] = None
+
+
+class Tier2Item(StrictModel):
+    """Auto-filled only when auto_answer is true AND a value is set."""
+
+    auto_answer: bool = False
+    value: Optional[str] = None
+    note: Optional[str] = None
+
+
+class Sponsorship(Tier2Item):
+    # Answer "Yes" instead of `value` when the question explicitly says sponsorship includes CPT/OPT.
+    # If CPT/OPT is mentioned but it is unclear whether it counts, the run pauses.
+    yes_when_question_includes_cpt_opt: bool = True
+
+
+class StartDates(StrictModel):
+    auto_answer: bool = False
+    summer_internship: Optional[str] = None  # "May 1": year comes from the posting's season
+    spring_internship: Optional[str] = None
+    fall_internship: Optional[str] = None
+    co_op: Optional[str] = None
+    full_time: Optional[str] = None
+
+
+class EEO(StrictModel):
+    auto_answer: bool = False
+    gender: Optional[str] = None
+    race_ethnicity: Optional[str] = None
+    veteran_status: Optional[str] = None
+    disability_status: Optional[str] = None
+    default_for_other: str = "Decline to self identify"
+
+
+class Tier2(StrictModel):
+    work_authorization: Tier2Item = Field(default_factory=Tier2Item)
+    sponsorship: Sponsorship = Field(default_factory=Sponsorship)
+    us_citizen_or_permanent_resident: Tier2Item = Field(default_factory=Tier2Item)
+    earliest_start_date: StartDates = Field(default_factory=StartDates)
+    salary_expectation: Tier2Item = Field(default_factory=Tier2Item)
+    eeo: EEO = Field(default_factory=EEO)
+    background_check_consent: Tier2Item = Field(default_factory=Tier2Item)
+    age_18_or_older: Tier2Item = Field(default_factory=Tier2Item)
+    security_clearance: Tier2Item = Field(default_factory=Tier2Item)
+
+
+class Profile(StrictModel):
+    header: Header
+    tier1: Tier1 = Field(default_factory=Tier1)
+    education: list[EducationEntry] = Field(default_factory=list)
+    tier2: Tier2 = Field(default_factory=Tier2)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_gpa(cls, data: Any) -> Any:
+        hits = find_gpa_keys(data)
+        if hits:
+            raise ValueError(f"GPA fields are not allowed (rule 3): {', '.join(hits)}")
+        return data
+
+    def missing_values(self) -> list[str]:
+        """Dotted paths of values that will pause a run because they are not set."""
+        missing: list[str] = []
+        for name, value in self.tier1:
+            if name == "address":
+                missing += [f"tier1.address.{k}" for k, v in value if v is None and k != "unit"]
+            elif value is None:
+                missing.append(f"tier1.{name}")
+        for name, item in self.tier2:
+            if isinstance(item, Tier2Item) and item.auto_answer and item.value is None:
+                missing.append(f"tier2.{name}.value")
+        start = self.tier2.earliest_start_date
+        if start.auto_answer:
+            missing += [f"tier2.earliest_start_date.{k}" for k, v in start if k != "auto_answer" and v is None]
+        eeo = self.tier2.eeo
+        if eeo.auto_answer:
+            missing += [
+                f"tier2.eeo.{k}" for k, v in eeo if k not in ("auto_answer", "default_for_other") and v is None
+            ]
+        return missing
+
+
+# --------------------------------------------------------------------------- job.json
+
+
+class FormQuestion(StrictModel):
+    label: str
+    field_name: Optional[str] = None
+    type: str = "text"  # text | textarea | select | multi_select | radio | checkbox | file | date | ...
+    required: bool = False
+    options: list[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    max_length: Optional[int] = None
+
+
+class Job(StrictModel):
+    url: Optional[str] = None
+    ats: str = "unknown"  # greenhouse | lever | ashby | workday | ... | jd_file
+    company: str
+    role_title: str
+    location: Optional[str] = None
+    job_id: Optional[str] = None
+    description_text: str
+    description_html: Optional[str] = None
+    questions: list[FormQuestion] = Field(default_factory=list)
+    source: str  # greenhouse_api | lever_api | ashby_api | browser | jd_file
+    fetched_at: str
+
+
+# --------------------------------------------------------------------------- runs/<id>/state.json
+
+StepStatus = Literal["pending", "running", "waiting_for_claude", "waiting_for_user", "done", "failed", "skipped"]
+
+
+class StepState(StrictModel):
+    status: StepStatus = "pending"
+    updated_at: Optional[str] = None
+    message: Optional[str] = None
+
+
+class RunState(StrictModel):
+    run_id: str
+    created_at: str
+    command: Literal["apply", "resume"]
+    url: Optional[str] = None
+    options: dict[str, Any] = Field(default_factory=dict)
+    steps: dict[str, StepState] = Field(default_factory=dict)
+    application_id: Optional[int] = None
+
+
+# --------------------------------------------------------------------------- tailor_output.json (spec 7.6)
+
+
+class TailorExperience(StrictModel):
+    entry_id: str
+    title: str
+    bullets: list[str]
+
+
+class TailorProject(StrictModel):
+    project_id: str
+    subtitle: str
+    tech_tags: list[str]
+    bullets: list[str]
+    reason: Optional[str] = None  # one line for the pre-build message (spec 9, step 7)
+
+
+class SkillsLine(StrictModel):
+    label: str
+    items: list[str]
+
+
+class KeywordAudit(StrictModel):
+    matched: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+    skills_only: list[str] = Field(default_factory=list)
+
+
+class TailorOutput(StrictModel):
+    role_type: str
+    grad_date: str
+    experience: list[TailorExperience]
+    projects: list[TailorProject]
+    skills_lines: list[SkillsLine]
+    coursework: list[str]
+    keyword_audit: KeywordAudit
+    flags: list[str] = Field(default_factory=list)
+    fit_paragraph: Optional[str] = None  # pre-build message (spec 9, step 7)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_gpa(cls, data: Any) -> Any:
+        hits = find_gpa_keys(data)
+        if hits:
+            raise ValueError(f"GPA fields are not allowed (rule 3): {', '.join(hits)}")
+        return data
+
+
+# --------------------------------------------------------------------------- hand-edited data files
+
+
+def _unique_nonempty(values: list[str], what: str) -> list[str]:
+    cleaned = [v.strip() for v in values]
+    if any(not v for v in cleaned):
+        raise ValueError(f"{what} must not contain empty entries")
+    dupes = sorted({v for v in cleaned if cleaned.count(v) > 1})
+    if dupes:
+        raise ValueError(f"duplicate {what}: {', '.join(dupes)}")
+    return cleaned
+
+
+class CoursesFile(StrictModel):
+    """data/courses.yaml: courses actually taken (spec 5.3)."""
+
+    courses: list[str]
+
+    @field_validator("courses")
+    @classmethod
+    def _check(cls, v: list[str]) -> list[str]:
+        v = _unique_nonempty(v, "courses")
+        if len(v) < 5:
+            raise ValueError("Relevant Coursework needs at least 5 courses")
+        return v
+
+
+class Cap(StrictModel):
+    company: str
+    match: list[str] = Field(default_factory=list)  # other name forms, matched case-insensitively
+    max_applications: int = Field(ge=1)
+    window_days: Optional[int] = Field(None, ge=1)
+    window_months: Optional[int] = Field(None, ge=1)
+
+    @model_validator(mode="after")
+    def _one_window(self) -> "Cap":
+        if (self.window_days is None) == (self.window_months is None):
+            raise ValueError(f"{self.company}: set exactly one of window_days or window_months")
+        return self
+
+
+class CapNote(StrictModel):
+    company: str
+    note: str
+
+
+class CapsFile(StrictModel):
+    """data/caps.yaml: application caps per company (spec 8.3)."""
+
+    caps: list[Cap]
+    notes: list[CapNote] = Field(default_factory=list)
+
+
+class RoleTypeSet(StrictModel):
+    label: str
+    projects: list[str]
+    plus_one_of: list[str] = Field(default_factory=list)
+    kalini: Optional[Literal["sde", "ml"]] = None  # null = choose per posting
+
+
+class ProjectSetsFile(StrictModel):
+    """data/project_sets.yaml: default project sets by role type (spec 7.2)."""
+
+    role_types: dict[str, RoleTypeSet]
+
+
+class ExperienceMeta(StrictModel):
+    location: Optional[str] = None
+    resume_title: Optional[str] = None
+
+
+class ResumeMetaFile(StrictModel):
+    """data/resume_meta.yaml: presentation details the master list does not contain."""
+
+    experience: dict[str, ExperienceMeta]
+    project_display_names: dict[str, str]
+
+
+class ApprovedAnswer(StrictModel):
+    id: str
+    question_patterns: list[str]
+    answer: str
+    max_chars: Optional[int] = None
+    approved_on: Optional[str] = None
+
+
+class AnswersFile(StrictModel):
+    """data/answers.yaml: free-text answers you approved (spec 5.4)."""
+
+    answers: list[ApprovedAnswer] = Field(default_factory=list)

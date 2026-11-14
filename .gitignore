@@ -1,0 +1,27 @@
+# Secrets and personal data (profile.yaml holds address, work authorization, EEO answers)
+.env
+data/profile.yaml
+
+# Generated per application
+runs/
+resumes/
+exports/
+*.db
+*.db-journal
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# LaTeX build leftovers
+*.aux
+*.log
+*.out
+
+# OS
+.DS_Store

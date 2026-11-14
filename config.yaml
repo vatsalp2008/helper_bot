@@ -1,0 +1,21 @@
+# helper configuration.
+# The first block is exactly the spec (section 5). The second block holds keys added during the build.
+
+projects_per_resume: 5
+bullets_per_item: 2             # per project and per experience entry
+submit_mode: review             # review | auto
+auto_submit_min_clean_runs: 5
+default_grad_date: "May 2027"
+alt_grad_date: "December 2027"
+browser_profile_dir: ~/.helper/browser-profile
+headless: false
+
+# Added during the build
+master_list: null               # null = newest data/master_list_v*.md
+db_path: helper.db              # SQLite system of record (git-ignored)
+latex_engine: pdflatex          # pdflatex | xelatex
+immediate_start_target: "December 2026"   # spec section 8: immediate-start full-time roles are checked against this
+match_auto_threshold: 0.85      # field matcher: fill automatically at or above this confidence
+match_ask_threshold: 0.60       # between the two thresholds: ask you. Below: unknown (pauses if required)
+fill_wait_timeout_minutes: 30   # how long a fill run keeps the browser open waiting for answers or your submit
+pause_ms: [150, 600]            # small human-like pauses between form actions (min, max)

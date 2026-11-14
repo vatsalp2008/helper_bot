@@ -1,0 +1,11 @@
+# Courses Vatsal has actually taken (spec 5.3). Only these may appear in Relevant Coursework.
+# The tailor picks 5 relevant ones per posting. Names print exactly as written here.
+courses:
+  - Statistics
+  - Machine Learning
+  - Database Systems
+  - Algorithms
+  - Data Structures
+  - Computer Vision
+  - Distributed Systems
+  - Artificial Intelligence

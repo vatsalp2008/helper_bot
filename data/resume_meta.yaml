@@ -1,0 +1,46 @@
+# Presentation details the master list does not contain. Hand-edited.
+# Facts (titles, organizations, dates, numbers, technologies) always come from master.yaml.
+
+experience:
+  ta:
+    resume_title: Graduate Teaching Assistant, Data Structures and Algorithms in C   # spec 7.1
+    location: Seattle, WA          # from reference_resume.tex
+  kalini_sde:
+    location: Mumbai, India        # from reference_resume.tex
+  kalini_ml:
+    location: Mumbai, India        # confirmed by Vatsal (same employer)
+  event_assistant:
+    location: null                 # set before using --include-experience
+  student_proctor:
+    location: null                 # set before using --include-experience
+  baps:
+    location: null                 # null = use the master list's Location field
+
+# The name before the colon in each project heading ("Name: Subtitle"). Subtitles are chosen per posting.
+project_display_names:
+  streamline: StreamLine
+  ecommerce_platform: E-commerce Platform
+  chess_ai: Intelligent Chess AI
+  ai_agent_discovery: AI Agent Discovery
+  f1_analytics: F1 Analytics       # as on reference_resume.tex
+  investment_prediction: Investment Prediction
+  recommendation_engine: Recommendation Engine
+  nutritrack: NutriTrack
+  seattle_transit: Seattle Transit
+  housing_price: Housing Price Prediction
+  moodmeals: MoodMeals
+  traffic_accident: Traffic Accident Severity
+  themanager: theManager
+  forum: FORUM
+  swarm: SWARM
+  wardrobe: Wardrobe
+  pulsetrader: PulseTrader
+  scenarioforge: ScenarioForge
+  perceptnet: PerceptNet
+  transitlens: TransitLens
+  experimentiq: ExperimentIQ
+  spiceai: Spice.ai
+  chef: Chef Infra Client
+  echocoach: EchoCoach
+  afterglow: Afterglow
+  pnwer: PNWER Trade & Tariffs
