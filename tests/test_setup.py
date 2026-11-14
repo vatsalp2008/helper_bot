@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from helper.config import Paths
+from helper.config import Paths, load_config
+from helper.convert import run_convert
 from helper.latex import find_binary
 from helper.setup_env import Check, format_report, run_setup, unset_paths
 
@@ -93,6 +94,17 @@ def test_setup_flags_unknown_project_ids(repo: Path) -> None:
     check = _last(_setup(repo), "project ids")
     assert check.status == "error"
     assert "made_up" in check.detail
+
+
+def test_setup_reports_a_stale_master_yaml(repo: Path) -> None:
+    paths = Paths(repo)
+    run_convert(paths, load_config(paths))
+    assert _last(_setup(repo), "master.yaml").status == "ok"
+    master_md = repo / "data" / "master_list_v23.md"
+    master_md.write_text(master_md.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    check = _last(_setup(repo), "master.yaml")
+    assert check.status == "warn"
+    assert "changed since the last `helper convert`" in check.detail
 
 
 @pytest.mark.skipif(find_binary("pdflatex") is None, reason="pdflatex not installed")

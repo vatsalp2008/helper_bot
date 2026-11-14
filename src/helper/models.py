@@ -310,6 +310,124 @@ class TailorOutput(StrictModel):
         return data
 
 
+# --------------------------------------------------------------------------- data/master.yaml (generated)
+
+
+class DateInfo(StrictModel):
+    start: Optional[str] = None  # "2025-12"
+    end: Optional[str] = None  # "2026-01", "present", or "ongoing"
+    display: str  # resume format, e.g. "Dec. 2025 -- Jan. 2026"
+
+
+class RequireRule(StrictModel):
+    when: str  # regex: if a bullet matches this...
+    must: str  # ...it must also match this
+
+
+class WordingRule(StrictModel):
+    id: str
+    source: str  # where the rule comes from: verbatim master-list text, or "spec 5.1"
+    description: str
+    forbid: list[str] = Field(default_factory=list)  # regexes a bullet for this item must not match
+    require: list[RequireRule] = Field(default_factory=list)
+    title_prefix: Optional[str] = None
+
+
+class MasterItem(StrictModel):
+    """One project or experience entry. Text fields are verbatim from the master list."""
+
+    id: str
+    kind: Literal["project", "experience"]
+    number: Optional[int] = None
+    name: str
+    heading: str
+    subtitle: Optional[str] = None
+    category: Optional[str] = None
+    status: Optional[str] = None
+    status_kind: Optional[Literal["complete", "merged", "in_progress", "ongoing", "other"]] = None
+    timeline: Optional[str] = None
+    timeline_note: Optional[str] = None
+    dates: Optional[DateInfo] = None
+    github_url: Optional[str] = None
+    organization: Optional[str] = None
+    location: Optional[str] = None
+    technologies: list[str] = Field(default_factory=list)
+    fields: dict[str, str] = Field(default_factory=dict)
+    sections: dict[str, list[str]] = Field(default_factory=dict)
+    metrics: dict[str, list[str]] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
+    variants: list[str] = Field(default_factory=list)
+    wording_notes: list[str] = Field(default_factory=list)
+    wording_rules: list[WordingRule] = Field(default_factory=list)
+    framing_additions: list[str] = Field(default_factory=list)
+    allowed_tech: list[str] = Field(default_factory=list)
+    allowed_numbers: list[str] = Field(default_factory=list)
+    allowed_tokens: list[str] = Field(default_factory=list)
+
+    def bullets(self) -> list[str]:
+        return [b for section in self.sections.values() for b in section]
+
+
+class SkillItem(StrictModel):
+    name: str
+    note: Optional[str] = None
+    aliases: list[str] = Field(default_factory=list)
+
+
+class SkillGroup(StrictModel):
+    name: str
+    items: list[SkillItem] = Field(default_factory=list)
+    subgroups: list["SkillGroup"] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+    def all_items(self) -> list[SkillItem]:
+        return self.items + [i for g in self.subgroups for i in g.all_items()]
+
+
+class FramingRule(StrictModel):
+    built_with: str
+    also: str
+    examples: str
+    applies_to: list[str]
+
+
+class DatabaseFraming(StrictModel):
+    text: str
+    rules: list[FramingRule]
+
+
+class SourceInfo(StrictModel):
+    file: str
+    sha256: str
+    version: Optional[str] = None
+    last_updated: Optional[str] = None
+    declared_projects: Optional[int] = None
+    declared_experience: Optional[int] = None
+
+
+class MasterData(StrictModel):
+    source: SourceInfo
+    projects: list[MasterItem]
+    experience: list[MasterItem]
+    skills: list[SkillGroup]
+    languages: list[str]
+    database_framing: Optional[DatabaseFraming] = None
+    other_sections: dict[str, str] = Field(default_factory=dict)
+    problems: list[str] = Field(default_factory=list)
+
+    def items(self) -> list[MasterItem]:
+        return self.projects + self.experience
+
+    def item(self, item_id: str) -> MasterItem:
+        for item in self.items():
+            if item.id == item_id:
+                return item
+        raise KeyError(item_id)
+
+    def skill_names(self) -> list[str]:
+        return [i.name for g in self.skills for i in g.all_items()]
+
+
 # --------------------------------------------------------------------------- hand-edited data files
 
 

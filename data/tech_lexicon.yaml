@@ -1,0 +1,179 @@
+# Technology vocabulary for finding tech names in text. `helper convert` uses it to collect each item's
+# technologies from its master-list text; the resume validator uses it to spot technologies in bullets.
+#
+# Every name in the master list's Technologies lines, and every name-like entry in its Skills section,
+# is added automatically. This file adds:
+#   aliases         other spellings of one technology, keyed by the name helper reports
+#   common          well-known technologies, most NOT in the master list, so a bullet that names one for
+#                   an item that never used it gets caught
+#   case_sensitive  names that are also ordinary words; matched only with this exact capitalization
+#                   (names of 1-2 characters, like C, R, Go, are always case-sensitive)
+#   exclude         spellings never matched on their own (too ambiguous)
+#   ignore          phrases that look like a technology but are not (masked before matching)
+
+aliases:
+  # languages
+  JavaScript: [JS, ECMAScript]
+  TypeScript: [TS]
+  Go: [Golang]
+  Shell/Bash: [Bash, Shell, shell scripting, Bash scripting]
+  "C++": [CPP]
+  # frontend and mobile
+  React: [React.js, ReactJS]
+  Next.js: [NextJS]
+  Vue.js: [Vue, VueJS]
+  Node.js: [Node, NodeJS]
+  D3.js: [D3]
+  Three.js: [ThreeJS]
+  Tailwind CSS: [Tailwind, TailwindCSS]
+  Material-UI: [MUI, Material UI]
+  shadcn/ui: [shadcn]
+  Express: [Express.js, ExpressJS]
+  TanStack Query: [React Query]
+  WebGL: [WebGL2]
+  Vision Framework: [Apple Vision, VisionKit, Vision framework, Vision]
+  Core ML: [CoreML]
+  Core Data: [CoreData]
+  TensorFlow Lite: [TFLite, TF Lite, LiteRT]
+  ML Kit: [ML Kit Text Recognition, Google ML Kit]
+  GTFS-RT: [GTFS Realtime, GTFS]
+  OpenStreetMap: [OSM, OpenStreetMap Overpass API]
+  # backend and APIs
+  REST APIs: [REST API, RESTful API, RESTful APIs, REST, RESTful]
+  WebSocket: [WebSockets, Web Socket, Web Sockets]
+  OAuth: [OAuth 2.0, OAuth2]
+  OIDC: [OpenID Connect]
+  SSE: [Server-Sent Events]
+  Stripe API: [Stripe]
+  QuickBooks API: [QuickBooks]
+  Slack API: [Slack]
+  Spoonacular API: [Spoonacular]
+  Kaggle API: [Kaggle]
+  MCP: [Model Context Protocol]
+  JWT: [JSON Web Token, JSON Web Tokens]
+  # data
+  PostgreSQL: [Postgres]
+  MongoDB: [Mongo]
+  DynamoDB: [Amazon DynamoDB, AWS DynamoDB]
+  Cosmos DB: [Azure Cosmos DB, CosmosDB]
+  Kafka: [Apache Kafka]
+  Apache Spark: [Spark, PySpark]
+  Apache Flink: [Flink]
+  Apache Arrow: []
+  Avro: [Apache Avro]
+  DataFusion: [Apache DataFusion]
+  Confluent Schema Registry: [Schema Registry]
+  TimescaleDB: [Timescale]
+  BigQuery: [Google BigQuery]
+  dbt: [dbt Core, data build tool]
+  H2 Database: [H2]
+  Drizzle ORM: [Drizzle]
+  ChromaDB: [Chroma]
+  Scikit-learn: [scikit learn, sklearn]
+  SciPy: []
+  Power BI: [PowerBI, Microsoft Power BI]
+  Tableau: [Tableau Public]
+  # ML and AI
+  onnxruntime-web: [ONNX Runtime Web, onnxruntime]
+  YOLO: [YOLOv8]
+  ROS 2: [ROS2, ROS, ROS 2 Humble]
+  OpenAI Whisper: [Whisper]
+  Claude API: [Anthropic Claude API, Anthropic API]
+  Gemini API: [Gemini]
+  Llama: [llama3.2, Llama 3.2, Llama 3]
+  Mistral: []
+  Hugging Face: [HuggingFace, Hugging Face Spaces]
+  LoRA: [LoRA fine-tuning, LoRA fine-tuned]
+  RAG: [retrieval-augmented generation]
+  Prompt Engineering: [prompt-engineered, prompt engineered]
+  Random Forest: [Random Forests]
+  CLIP: [CLIP Embeddings]
+  MediaPipe Tasks Vision: [MediaPipe]
+  CRDT: [CRDTs]
+  Dijkstra: ["Dijkstra's algorithm"]
+  # cloud and DevOps
+  AWS: [Amazon Web Services]
+  Google Cloud: [GCP, Google Cloud Platform]
+  Azure: [Microsoft Azure]
+  Amazon ECS: [ECS]
+  Amazon RDS: [RDS]
+  CloudWatch: [Amazon CloudWatch, AWS CloudWatch]
+  Docker Compose: [docker-compose]
+  GitLab CI: [GitLab CI/CD]
+  Cloudflare Workers: [Cloudflare]
+  Kubernetes: [K8s]
+  CI: [continuous integration]
+  # tools
+  VS Code: [Visual Studio Code, VSCode]
+  Jupyter: [Jupyter Notebook, Jupyter Notebooks]
+  Rocky Linux: [Rocky]
+
+common:
+  languages: [Scala, Perl, PHP, Haskell, Elixir, Erlang, Clojure, Julia, MATLAB, Lua, Dart, Objective-C, Fortran,
+              COBOL, Groovy, "F#", VB.NET, OCaml, Solidity, Zig, Visual Basic, T-SQL, PL/SQL, HTML, CSS, Sass, SCSS,
+              LaTeX, Kotlin, Swift]
+  frontend: [Angular, AngularJS, Svelte, SvelteKit, Nuxt, Remix, Gatsby, Ember.js, Backbone.js, jQuery, Redux, MobX,
+             Recoil, Bootstrap, Webpack, Rollup, esbuild, Parcel, Storybook, Chakra UI, Ant Design, Styled Components,
+             Framer Motion, Chart.js, Highcharts, ECharts, Leaflet, Mapbox, Alpine.js, htmx, SolidJS, Preact, Astro,
+             Electron]
+  mobile: [React Native, Flutter, Xamarin, Ionic, Cordova, Capacitor, SwiftData, RxJava, RxSwift, Retrofit, Dagger,
+           Firebase, Realm, Expo, Android, iOS, Android SDK, Android Studio, Xcode, TestFlight, Fastlane, ARKit,
+           RealityKit, SceneKit, SpriteKit, MapKit, HealthKit, StoreKit, CloudKit, watchOS, visionOS]
+  backend: [Django REST Framework, Ruby on Rails, Rails, Laravel, Symfony, ASP.NET, .NET, Spring Cloud, Micronaut,
+            Quarkus, Gin, Echo, Fiber, NestJS, Koa, Hapi, Sinatra, Phoenix, Celery, RabbitMQ, ActiveMQ, NATS, ZeroMQ,
+            Apache Thrift, Kong, Nginx, Envoy, Istio, Linkerd, Consul, HashiCorp Vault, Nomad, Socket.IO, tRPC,
+            Prisma, Sequelize, TypeORM, SQLAlchemy, Hibernate, Mongoose, Pydantic, Uvicorn, Gunicorn, OpenAPI,
+            Swagger, Protobuf, Protocol Buffers, Apache Camel, Temporal, Dapr, Amazon API Gateway]
+  data: [Apache Airflow, Airflow, Dagster, Prefect, Luigi, Hadoop, Apache Hive, Hive, Presto, Trino, Impala, HBase,
+         Cassandra, ScyllaDB, CockroachDB, Couchbase, CouchDB, Neo4j, ArangoDB, InfluxDB, ClickHouse, Apache Druid,
+         Apache Pinot, Amazon Kinesis, Kinesis, Google Pub/Sub, Google Cloud Dataflow, Dataproc, Databricks, Delta Lake,
+         Apache Iceberg, Apache Hudi, Amazon Redshift, Redshift, Azure Synapse, Fivetran, Airbyte, Looker,
+         Looker Studio, Metabase, Apache Superset, Sisense, Qlik, Alteryx, SAS, SPSS, Stata, Excel, Google Sheets,
+         OpenSearch, Solr, Pinecone, Weaviate, Milvus, Qdrant, FAISS, pgvector, Polars, Dask, Apache Beam,
+         Apache Storm, Apache NiFi, Talend, Informatica, SSIS, Oracle Database, Microsoft SQL Server, SQL Server,
+         MariaDB, Memcached, Firestore, Bigtable, Spanner, Amazon Aurora, Amazon Athena, AWS Glue, Kafka Streams,
+         ksqlDB, Debezium, Great Expectations, Parquet, ORC, NoSQL, Elasticsearch]
+  ml: [Keras, JAX, Flax, MXNet, Caffe, Theano, CatBoost, Hugging Face Transformers, spaCy, NLTK, Gensim,
+       OpenAI API, GPT-4, GPT-4o, ChatGPT, LlamaIndex, DSPy, vLLM, Text Generation Inference,
+       Triton Inference Server, BentoML, Kubeflow, Amazon SageMaker, SageMaker, Vertex AI, Azure Machine Learning,
+       "Weights & Biases", wandb, Comet ML, DVC, Optuna, Hyperopt, Prophet, Detectron2, MMDetection,
+       Stable Diffusion, DeepSpeed, PEFT, QLoRA, bitsandbytes, llama.cpp, LangSmith, CrewAI, AutoGen,
+       Semantic Kernel, scikit-image, Pillow, TorchVision, torchaudio, PyTorch Lightning, fastai, H2O.ai, MLlib,
+       cuDNN, OpenCL, TPU, Isaac Sim, Gazebo, OpenAI Gym, Gymnasium, Stable Baselines3, RLlib, GridSearchCV]
+  cloud_devops: [AWS Lambda, Lambda, Amazon S3, S3, Amazon EC2, EC2, Amazon EKS, EKS, GKE, AKS, CloudFormation,
+                 AWS CDK, Pulumi, Ansible, Puppet, Chef, SaltStack, Jenkins, CircleCI, Travis CI, GitLab, Bitbucket,
+                 Argo CD, Argo Workflows, Helm, Kustomize, Spinnaker, Datadog, New Relic, Splunk, PagerDuty,
+                 ELK Stack, Logstash, Kibana, Jaeger, OpenTelemetry, Zipkin, Heroku, Netlify, DigitalOcean, Linode,
+                 Cloud Run, App Engine, Cloud Functions, Azure DevOps, Azure Functions, AWS Step Functions,
+                 Amazon SQS, SQS, Amazon SNS, SNS, Route 53, CloudFront, Elastic Beanstalk, AWS Fargate, Fargate,
+                 OpenShift, Rancher, Docker Swarm, Podman, Vagrant, Packer, Terragrunt, Serverless Framework, Bazel,
+                 Gradle, CMake, Buildkite, SonarQube, Snyk, Dependabot, Lighthouse, Linux, Ubuntu, Debian, CentOS,
+                 RHEL, Red Hat Enterprise Linux, Fedora, Alpine Linux, macOS, Windows, Windows Server]
+  tools: [Jira, Confluence, Notion, Trello, Asana, Selenium, Cypress, Puppeteer, Jest, Mocha, Chai, Jasmine, JUnit,
+          TestNG, Mockito, pytest, unittest, RSpec, Minitest, Cucumber, Insomnia, k6, JMeter, Locust, Gatling,
+          React Testing Library, XCTest, Espresso, Appium, Rake, Bundler, Cookstyle, RuboCop, ESLint, Prettier, Ruff,
+          mypy, Flake8, Pylint, Poetry, Conda, Anaconda, npm, Yarn, Bun, Deno, IntelliJ IDEA, PyCharm, Eclipse,
+          Visual Studio, Cursor, Windsurf, Claude Code, GitHub Copilot, Microsoft Teams, Miro, Lucidchart, Zapier,
+          Retool, Airtable, ServiceNow, SAP, Unity, Unreal Engine, Godot, Blender, OpenGL, Vulkan, DirectX, WebGPU,
+          Babylon.js, PixiJS, p5.js, Qt, PyQt, Kivy, SAML, Okta, Auth0, Keycloak, LDAP, Active Directory, OpenSSL,
+          Burp Suite, Wireshark, Metasploit, Nmap]
+
+case_sensitive: [Go, R, C, Ray, Swift, Rust, Ruby, Express, Flask, Combine, Room, Hilt, Arcade, Zod, Hono, Sentry,
+                 Node, Replicate, Snowflake, Stripe, Spark, Cursor, Chef, Puppet, Helm, Consul, Nomad, Echo, Fiber,
+                 Gin, Phoenix, Prefect, Luigi, Presto, Hive, Excel, Unity, Blender, Notion, Slack, Celery, Swagger,
+                 Postman, Maven, Envoy, Kong, Lambda, Prophet, Rocky, Windows, Poetry, Elixir, Groovy, Julia, Dart,
+                 Flutter, Ionic, Realm, Expo, Spanner, Temporal, Astro, Remix, Jest, Mocha, Chai, Jasmine, Cucumber,
+                 Insomnia, Locust, Bun, Qt, Miro, Retool, Electron, Looker, Rake, Bundler, Oracle, Lighthouse,
+                 Mistral, Tableau, Kivy,
+                 # master-list names that are also everyday words or abbreviations
+                 Async Processing, DataStore, CLIP, RAG, DiD, SMOTE, Angular, Bash, Shell,
+                 # common names that are also everyday words
+                 Rails, Impala, Dagger, Retrofit, Capacitor, Bootstrap, Parcel, Rollup, Leaflet, Packer, Vagrant,
+                 Rancher, Cypress, Puppeteer, Espresso, Prettier, Yarn, Windsurf, SAP, Pillow, Flax, Gazebo,
+                 Gymnasium, Polars, Pinecone, SAS, Airflow, Cassandra, Redshift, Parquet, ORC, Solidity, Sass, LaTeX,
+                 Svelte, Gatsby, Recoil, Cloud Run, Cloud Functions, Jenkins, Confluence, Asana, Hibernate, Mongoose,
+                 Sinatra]
+
+exclude: [Vision]
+
+ignore: ["R&D", "Q&A", "C-suite", "C-level", "go-to-market", "A/B", "R squared", "R-squared", "R²", "R^2"]

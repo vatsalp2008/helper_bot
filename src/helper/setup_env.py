@@ -18,6 +18,7 @@ from pydantic import BaseModel, ValidationError
 from .config import Paths, env_value, load_config, load_yaml
 from .errors import HelperError
 from .latex import compile_tex, find_binary, kpsewhich
+from .master import load_master
 from .models import (
     AnswersFile,
     CapsFile,
@@ -142,9 +143,16 @@ def _data_checks(paths: Paths, cfg: Config) -> list[Check]:
     except HelperError as exc:
         checks.append(Check("master list", "error", str(exc)))
     if paths.master_yaml.is_file():
-        checks.append(Check("master.yaml", "ok", "present (re-run `helper convert` after editing the master list)"))
+        try:
+            master = load_master(paths, cfg)
+            checks.append(Check(
+                "master.yaml", "ok",
+                f"up to date: {len(master.projects)} projects, {len(master.experience)} experience entries",
+            ))
+        except HelperError as exc:
+            checks.append(Check("master.yaml", "warn", str(exc).splitlines()[0]))
     else:
-        checks.append(Check("master.yaml", "warn", "not built yet: `helper convert` arrives in milestone 2"))
+        checks.append(Check("master.yaml", "warn", "not built yet: run `helper convert`"))
 
     loaded: dict[str, Any] = {}
     for name, model in DATA_MODELS.items():

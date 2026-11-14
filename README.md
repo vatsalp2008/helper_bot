@@ -4,7 +4,7 @@ From one job posting URL, helper builds a tailored one-page PDF resume, fills th
 
 helper never calls an AI API. Judgment steps (tailoring, free-text answers) are done by Claude Code in an interactive session through files in `runs/<run_id>/`. Everything else is plain Python: Playwright, SQLite, the Notion REST API and LaTeX.
 
-> Status: milestone 1 of 11 (skeleton). A full setup guide arrives in milestone 11.
+> Status: milestone 2 of 11 (master list converter). A full setup guide arrives in milestone 11.
 
 ## Setup
 
@@ -31,4 +31,4 @@ helper continue <run_id>
 helper list | show <id> | stats | export --csv | mark <id> <status> | sync-notion
 ```
 
-`helper setup` is the only command that works so far. The others print the milestone that builds them.
+`helper setup` and `helper convert` work so far. The others print the milestone that builds them. Run `helper convert` after every edit to the master list; `helper convert --show <id>` prints one parsed item.

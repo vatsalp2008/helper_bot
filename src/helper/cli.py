@@ -89,9 +89,18 @@ def setup(
 
 @app.command()
 @guarded
-def convert() -> None:
+def convert(
+    show: Annotated[
+        Optional[str], typer.Option("--show", help="After converting, print one item's parsed record by id.")
+    ] = None,
+) -> None:
     """Parse the master list markdown into data/master.yaml and show a parse summary."""
-    _not_built("convert", 2, "Convert")
+    from .config import load_config
+    from .convert import format_summary, run_convert, show_item
+
+    paths = _paths()
+    result = run_convert(paths, load_config(paths))
+    typer.echo(show_item(result.master, show) if show else format_summary(result))
 
 
 @app.command()

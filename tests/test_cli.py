@@ -31,7 +31,6 @@ def test_version() -> None:
 @pytest.mark.parametrize(
     "args,milestone",
     [
-        (["convert"], 2),
         (["continue", "run-1"], 4),
         (["list"], 6),
         (["show", "1"], 6),
@@ -60,6 +59,24 @@ def test_resume_accepts_a_jd_file(repo: Path, tmp_path: Path) -> None:
 def test_apply_rejects_an_unknown_mode(repo: Path) -> None:
     result = runner.invoke(app, ["apply", "https://example.com/job", "--mode", "yolo"])
     assert result.exit_code == 2
+
+
+def test_convert_writes_master_yaml_and_prints_a_summary(repo: Path) -> None:
+    result = runner.invoke(app, ["convert"])
+    assert result.exit_code == 0, result.output
+    assert (repo / "data" / "master.yaml").is_file()
+    assert "Projects: 26 parsed, the file says 26" in result.output
+    assert "Experience: 6 parsed, the file says 6" in result.output
+    assert "Could not parse: nothing" in result.output
+
+
+def test_convert_show_prints_one_item(repo: Path) -> None:
+    result = runner.invoke(app, ["convert", "--show", "chef"])
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith("id: chef\n")
+    missing = runner.invoke(app, ["convert", "--show", "nope"])
+    assert missing.exit_code == EXIT_ERROR
+    assert "No item 'nope'" in missing.output
 
 
 def test_setup_command_fails_until_the_profile_header_is_filled(repo: Path) -> None:
