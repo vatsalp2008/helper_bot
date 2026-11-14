@@ -103,6 +103,28 @@ def convert(
     typer.echo(show_item(result.master, show) if show else format_summary(result))
 
 
+# --------------------------------------------------------------------------- milestone 3
+
+
+@app.command("template-check")
+@guarded
+def template_check(
+    sample: Annotated[
+        Optional[list[Path]],
+        typer.Option("--sample", help="Also render this tailor_output.json with real master data (repeatable)."),
+    ] = None,
+) -> None:
+    """Check that templates/resume.tex.j2 reproduces reference_resume.tex and its PDF (spec 6)."""
+    from .config import load_config
+    from .templatecheck import format_report, run_template_check
+
+    paths = _paths()
+    result = run_template_check(paths, load_config(paths), sample)
+    typer.echo(format_report(result, paths))
+    if not result.passed:
+        raise typer.Exit(EXIT_ERROR)
+
+
 @app.command()
 @guarded
 def apply(

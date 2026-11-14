@@ -112,7 +112,7 @@ projects:
     require: []
     conflicts:
     - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
-      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|(?i:\bLISTEN/NOTIFY\b)
     title_prefix: null
   implied_tech: []
   framing_additions: [MySQL]
@@ -271,7 +271,7 @@ projects:
     require: []
     conflicts:
     - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
-      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|(?i:\bLISTEN/NOTIFY\b)
     title_prefix: null
   - id: db_framing_mongodb
     source: 'master list, Skills section: Database framing'
@@ -404,7 +404,7 @@ projects:
     require: []
     conflicts:
     - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
-      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|(?i:\bLISTEN/NOTIFY\b)
     title_prefix: null
   implied_tech: []
   framing_additions: [MySQL]
@@ -451,7 +451,7 @@ projects:
     require: []
     conflicts:
     - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
-      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|(?i:\bLISTEN/NOTIFY\b)
     title_prefix: null
   implied_tech: []
   framing_additions: [MySQL]
@@ -499,7 +499,7 @@ projects:
     require: []
     conflicts:
     - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
-      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|(?i:\bLISTEN/NOTIFY\b)
     title_prefix: null
   implied_tech: [PostgreSQL]
   framing_additions: [MySQL]
@@ -588,7 +588,7 @@ projects:
     require: []
     conflicts:
     - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
-      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|(?i:\bLISTEN/NOTIFY\b)
     title_prefix: null
   implied_tech: []
   framing_additions: [MySQL]
@@ -676,7 +676,7 @@ projects:
     require: []
     conflicts:
     - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
-      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|(?i:\bLISTEN/NOTIFY\b)
     title_prefix: null
   implied_tech: []
   framing_additions: [MySQL]
@@ -727,7 +727,7 @@ projects:
     require: []
     conflicts:
     - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
-      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|(?i:\bLISTEN/NOTIFY\b)
     title_prefix: null
   implied_tech: [PostgreSQL]
   framing_additions: [MySQL]
@@ -814,7 +814,7 @@ projects:
     require: []
     conflicts:
     - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
-      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|(?i:\bLISTEN/NOTIFY\b)
     title_prefix: null
   implied_tech: []
   framing_additions: [MySQL]
@@ -950,7 +950,7 @@ projects:
     require: []
     conflicts:
     - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
-      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|(?i:\bLISTEN/NOTIFY\b)
     title_prefix: null
   implied_tech: []
   framing_additions: [MySQL]

@@ -1,0 +1,81 @@
+# The content of reference_resume.tex, in the form resume.tex.j2 takes. `helper template-check` renders it and
+# checks that the output matches reference_resume.tex (apart from whitespace) and reference_resume.pdf (pixels).
+#
+# Only for checking the template. It is NOT a source of facts: the master list is. For example the reference's
+# "around 60 students" is not claimable (the master list says 100+).
+
+header:
+  name: Vatsal Patel
+  location: Seattle, WA 98105
+  phone: (206) 280--0258
+  email: vatsalp2008@gmail.com
+  linkedin_url: https://www.linkedin.com/in/vatsalp20/
+  linkedin_label: vatsalp20
+  github_url: https://github.com/vatsalp2008
+  github_label: vatsalp2008
+  portfolio_url: https://vatsalp2008.github.io/Portfolio/
+
+grad_date_display: Dec. 2027
+
+skills_lines:
+  - label: Languages
+    items: [Python, SQL, R]
+  - label: Modeling
+    items: [Hypothesis Testing, Time Series, Linear & Logistic Regression, Random Forests, XGBoost]
+  - label: Tools
+    items: [Scikit-learn, PyTorch, Pandas, Spark, Power BI, Tableau, dbt, Snowflake]
+
+experience:
+  - title: Software Development Intern
+    dates: Jan. 2024 -- Apr. 2024
+    org: Kalini Industries
+    location: Mumbai, India
+    bullets:
+      - Built predictive maintenance models with **random forests** and **logistic regression**, reaching **85%** accuracy and cutting equipment downtime by **20%**.
+      - Wrote **scripts** in Python and Bash that **automated** **8** reporting workflows, and built a dashboard used on **5** production lines.
+  - title: Graduate Teaching Assistant, Data Structures and Algorithms in C
+    dates: Jan. 2026 -- May 2026
+    org: Khoury College of Computer Sciences, Northeastern University
+    location: Seattle, WA
+    bullets:
+      - Helped around **60 students** work through problems, explaining technical ideas clearly to people with varied backgrounds.
+      - Graded **19+ assignments** with consistent rubrics, and worked with the instructor to refine assignments.
+
+projects:
+  - title: "ExperimentIQ: In-House Analytics Tool"
+    url: https://github.com/vatsalp2008/ExperimentIQ
+    tech_tags: [SQL, Python, Statsmodels]
+    dates: Jul. 2026 -- Aug. 2026
+    bullets:
+      - Built an **in-house analytical tool** for **hypothesis testing**, with an experiment builder, results views, and a SQL explorer.
+      - Modeled **10M+** simulated events in **12** SQL models, cutting metric computation from **45s to 0.8s** to speed up analysis.
+  - title: "Investment Prediction: Time Series Forecasting"
+    url: https://github.com/vatsalp2008/Investment-Prediction
+    tech_tags: [Python, PyTorch, SQL]
+    dates: Jan. 2025 -- May 2025
+    bullets:
+      - Built **time series forecasting** models (LSTM, GRU) on **1.2M** data points spanning **10+ years**, reaching **68%** directional accuracy.
+      - Backtested across market conditions, and cut training time by **60%** through batch processing and caching.
+  - title: "Housing Price Prediction: Regression & Forests"
+    url: https://github.com/vatsalp2008/Housing-Price-Prediction
+    tech_tags: [Python, R, Scikit-learn]
+    dates: Sept. 2024 -- Dec. 2024
+    bullets:
+      - Built **regression** models, including **random forests** and gradient boosting, on **50,000+** records, reaching **R squared of 0.82**.
+      - Engineered **30+** features with cross-validation and hyperparameter tuning, and validated results statistically in **R**.
+  - title: "Traffic Accident Severity: Data Mining"
+    url: https://github.com/vatsalp2008/Accidents-Severity
+    tech_tags: [Python, XGBoost, Tableau]
+    dates: Mar. 2026 -- Apr. 2026
+    bullets:
+      - "**Mined** **7.7M** records across **49** states for severity patterns, building a classifier that reached **ROC-AUC 0.818**."
+      - Built a **Tableau** dashboard and used SHAP to explain the main drivers of severe accidents.
+  - title: "F1 Analytics: Dashboards & Reports"
+    url: https://github.com/vatsalp2008/f1-analytics-dashboard
+    tech_tags: [Python, Spark, Power BI]
+    dates: Jun. 2025 -- Oct. 2025
+    bullets:
+      - Built a Power BI **report** and interactive **dashboard** over **500K+** records, with predictions and confidence intervals.
+      - Processed the data with Spark and engineered **70+** features for a model reaching **73%** podium accuracy.
+
+coursework: [Statistics, Machine Learning, Database Systems, Algorithms, Data Structures]
