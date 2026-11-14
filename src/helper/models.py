@@ -324,12 +324,20 @@ class RequireRule(StrictModel):
     must: str  # ...it must also match this
 
 
+class Conflict(StrictModel):
+    a: str  # regex
+    b: str  # regex; text that matches both breaks the rule
+
+
 class WordingRule(StrictModel):
     id: str
-    source: str  # where the rule comes from: verbatim master-list text, or "spec 5.1"
+    source: str  # where the rule comes from: verbatim master-list text, "spec 5.1", or the rule's name
     description: str
-    forbid: list[str] = Field(default_factory=list)  # regexes a bullet for this item must not match
+    # bullet: checked against each bullet. entry: checked against the whole entry (tech line and all bullets).
+    scope: Literal["bullet", "entry"] = "bullet"
+    forbid: list[str] = Field(default_factory=list)  # regexes the checked text must not match
     require: list[RequireRule] = Field(default_factory=list)
+    conflicts: list[Conflict] = Field(default_factory=list)
     title_prefix: Optional[str] = None
 
 
@@ -359,6 +367,7 @@ class MasterItem(StrictModel):
     variants: list[str] = Field(default_factory=list)
     wording_notes: list[str] = Field(default_factory=list)
     wording_rules: list[WordingRule] = Field(default_factory=list)
+    implied_tech: list[str] = Field(default_factory=list)  # e.g. PostgreSQL for a Supabase project (lexicon `implies`)
     framing_additions: list[str] = Field(default_factory=list)
     allowed_tech: list[str] = Field(default_factory=list)
     allowed_numbers: list[str] = Field(default_factory=list)

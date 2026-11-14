@@ -127,7 +127,41 @@ def test_database_framing(master: MasterData) -> None:
     for pid in ("ecommerce_platform", "experimentiq", "seattle_transit", "housing_price"):
         assert "MySQL" in master.item(pid).allowed_tech, pid
     assert {"DynamoDB", "MongoDB"} <= set(master.item("investment_prediction").allowed_tech)
-    assert "MySQL" not in master.item("swarm").allowed_tech
+    # "Built with PostgreSQL" covers text and platforms, not only the Technologies line (Vatsal, 2026-11-14):
+    # SWARM's text says Postgres, and Supabase's database is PostgreSQL.
+    for pid in ("swarm", "moodmeals", "wardrobe"):
+        assert "MySQL" in master.item(pid).allowed_tech, pid
+    assert master.item("swarm").implied_tech == []  # its text already names Postgres
+    assert master.item("moodmeals").implied_tech == ["PostgreSQL"]
+    assert "MySQL" not in master.item("pulsetrader").allowed_tech  # TimescaleDB + BigQuery, not in the rule
+
+
+@pytest.mark.parametrize(
+    "item_id,text,ok",
+    [
+        ("swarm", "TypeScript, Next.js, MySQL\nLangGraph.js orchestrator over a MySQL-backed task queue", True),
+        ("swarm", "TypeScript, Next.js, Supabase\nLangGraph.js orchestrator with Postgres LISTEN/NOTIFY", True),
+        ("swarm", "TypeScript, MySQL\nLangGraph.js orchestrator with Postgres LISTEN/NOTIFY", False),
+        ("swarm", "MySQL persistence\nOIDC SSO on Supabase Auth", False),
+        ("swarm", "MySQL with listen/notify events", False),
+        ("experimentiq", "MySQL, Redis\nCut the PostgreSQL-backed query from ~800ms to ~40ms", False),
+        ("investment_prediction", "Flask, MySQL, DynamoDB\nDynamoDB for unstructured sentiment data", True),
+        ("investment_prediction", "Flask, PostgreSQL, MongoDB\nDynamoDB for sentiment data", False),
+    ],
+)
+def test_framed_entries_name_one_database(master: MasterData, item_id: str, text: str, ok: bool) -> None:
+    rules = [r for r in master.item(item_id).wording_rules if r.scope == "entry"]
+    assert rules
+    found = [v for rule in rules for v in violations(rule, text)]
+    assert (not found) is ok, found
+
+
+def test_master_list_entries_pass_their_own_entry_rules(master: MasterData) -> None:
+    for item in master.items():
+        text = "\n".join([", ".join(item.technologies), *item.bullets()])
+        for rule in item.wording_rules:
+            if rule.scope == "entry":
+                assert violations(rule, text) == [], item.id
 
 
 def test_variants_are_claimable(master: MasterData) -> None:

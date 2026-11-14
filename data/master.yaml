@@ -40,6 +40,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Async Processing, Event-Driven Architecture, H2 Database, Java, JPA, Maven, Spring Boot, WebSocket]
   allowed_numbers: ['2025', '2026', '21', '50']
@@ -94,13 +95,26 @@ projects:
   - id: ecommerce_not_9_java
     source: spec 5.1
     description: Java Spring Boot plus one service in Go, never "9 Java services".
+    scope: bullet
     forbid:
     - (?i)\b(?:9|nine)\s+(?:independent\s+)?(?:Java|Spring)\b
     - (?i)\ball\b[^.;]{0,20}\bJava\b[^.;]{0,20}\bservices\b
     require:
     - when: (?i)\b(?:9|nine)\b[^.;]{0,40}\b(?:Java|Spring Boot)\b
       must: \bGo\b
+    conflicts: []
     title_prefix: null
+  - id: db_framing_mysql
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+    title_prefix: null
+  implied_tech: []
   framing_additions: [MySQL]
   allowed_tech: [Amazon ECS, Amazon RDS, AWS, Azure, CloudWatch, Cosmos DB, Docker, Docker Compose, Event-Driven Architecture, Go, Grafana, IAM, Java, JWT, Kafka, Kubernetes, Microservices, MySQL, NoSQL, PostgreSQL, Prometheus, React, Saga Pattern, Sentry, Spring Boot, Terraform, TypeScript, VPC]
   allowed_numbers: ['2024', '17', '3.2', '9', '1']
@@ -136,6 +150,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Alpha-Beta Pruning, Flask, Llama, Minimax, Mistral, Ollama, Prompt Engineering, Python]
   allowed_numbers: ['2025', 100%, 70%, '1400', '1600', '8', '3.2', 85.7%]
@@ -173,6 +188,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [ChromaDB, Flask, GitHub, Hugging Face, LangChain, n8n, Ollama, Python, RAG, REST APIs]
   allowed_numbers: ['2025', 100+]
@@ -210,6 +226,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Apache Spark, Arcade, D3.js, FastF1, Flask, NumPy, Pandas, Power BI, Python, React, Scikit-learn, TensorFlow, Tkinter, XGBoost]
   allowed_numbers: ['2025', 73%, 3.2s, 500K+, 10+, 0.5x, 4x, '2018', 70+]
@@ -245,7 +262,28 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
+  wording_rules:
+  - id: db_framing_mysql
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+    title_prefix: null
+  - id: db_framing_mongodb
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MongoDB, it can''t also name DynamoDB.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MongoDB(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Mongo(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])Amazon[\s-]+DynamoDB(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])AWS[\s-]+DynamoDB(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])DynamoDB(?:s|es)?(?![\w#+²³])))
+    title_prefix: null
+  implied_tech: []
   framing_additions: [MySQL, DynamoDB]
   allowed_tech: [DynamoDB, Flask, GRU, LSTM, MongoDB, MySQL, Pandas, PostgreSQL, Python, PyTorch, REST APIs, SQL, TensorFlow]
   allowed_numbers: ['2025', 1.2M, 10+, 68%, 60%]
@@ -281,6 +319,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Collaborative Filtering, Joblib, Matrix Factorization, NumPy, Pandas, Python, Scikit-learn, SciPy]
   allowed_numbers: ['2024', '10', '0.64', '0.76', '0.59']
@@ -318,6 +357,7 @@ projects:
   - 'This project''s frontend/backend framing has been described differently across applications to match each job''s stated stack, all built on the same real project. Confirmed variants: React (original), Angular/TypeScript (for Garmin), and Vue.js + Django + GitLab CI (for PathAI). Confirm current live implementation with Vatsal before reusing any specific framing.'
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Angular, CSS, Django, GitLab CI, JavaScript, localStorage, Lucide React, React, TypeScript, Vite, Vue.js]
   allowed_numbers: ['2025', '2026', '19']
@@ -355,7 +395,18 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
+  wording_rules:
+  - id: db_framing_mysql
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+    title_prefix: null
+  implied_tech: []
   framing_additions: [MySQL]
   allowed_tech: [A*, BFS, C++, Dijkstra, Docker, Flask, MySQL, NetworkX, PostgreSQL, Python, REST APIs, Rust, TypeScript]
   allowed_numbers: ['2025', '15,000+', 35%, 1000+]
@@ -391,7 +442,18 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
+  wording_rules:
+  - id: db_framing_mysql
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+    title_prefix: null
+  implied_tech: []
   framing_additions: [MySQL]
   allowed_tech: [Flask, Gradient Boosting, MySQL, Pandas, PostgreSQL, Python, R, Random Forest, Scikit-learn, XGBoost]
   allowed_numbers: ['2024', '0.82', '$45,000', '$32,000', '50,000+', 30+, 50K+, $45K]
@@ -428,9 +490,20 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
-  framing_additions: []
-  allowed_tech: [Claude API, FastAPI, Next.js, PWA, React, Spoonacular API, Supabase, TypeScript]
+  wording_rules:
+  - id: db_framing_mysql
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+    title_prefix: null
+  implied_tech: [PostgreSQL]
+  framing_additions: [MySQL]
+  allowed_tech: [Claude API, FastAPI, MySQL, Next.js, PostgreSQL, PWA, React, Spoonacular API, Supabase, TypeScript]
   allowed_numbers: ['2026']
   allowed_tokens: []
 - id: traffic_accident
@@ -467,6 +540,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Folium, GridSearchCV, Kaggle API, Pandas, Python, Scikit-learn, Seaborn, SHAP, SMOTE, Tableau, XGBoost]
   allowed_numbers: ['2026', 7.7M, '49', '2016', '2023', 10%, '772,840', 80.5%, 19.5%, '3', '>0.70', '>0.65', 772K, '0.818']
@@ -505,7 +579,18 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
+  wording_rules:
+  - id: db_framing_mysql
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+    title_prefix: null
+  implied_tech: []
   framing_additions: [MySQL]
   allowed_tech: [Claude Code, Cursor, Drizzle ORM, Express, Gemma, GraphQL, MCP, MySQL, PostgreSQL, QuickBooks API, React, REST APIs, Rust, SSE, Tailwind CSS, Tauri, TypeScript, Vite, Windsurf, Zustand]
   allowed_numbers: ['2026', '4', '7', zero, '11', '3', '2', '5', 10MB, 150MB+]
@@ -543,6 +628,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [ACS PUMS, ANES, DuckDB, Gemini API, Gemma, LangGraph, Ollama, Poetry, Python, SQLite, uv]
   allowed_numbers: ['2026', '4', ≥5, '2020', '1631', '1639']
@@ -581,9 +667,20 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
-  framing_additions: []
-  allowed_tech: [Browserbase, Drizzle ORM, Fly.io, Gemini API, LangGraph.js, Next.js, OAuth, OIDC, Playwright, pnpm, PostgreSQL, React, Stagehand, Stripe API, Supabase, Tailwind CSS, TanStack Query, Turborepo, TypeScript, Vercel, Zod]
+  wording_rules:
+  - id: db_framing_mysql
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+    title_prefix: null
+  implied_tech: []
+  framing_additions: [MySQL]
+  allowed_tech: [Browserbase, Drizzle ORM, Fly.io, Gemini API, LangGraph.js, MySQL, Next.js, OAuth, OIDC, Playwright, pnpm, PostgreSQL, React, Stagehand, Stripe API, Supabase, Tailwind CSS, TanStack Query, Turborepo, TypeScript, Vercel, Zod]
   allowed_numbers: ['2026', '15', '19', '9', '2', '3', '7', '5', '256', '18', <$5, '12', '2.0']
   allowed_tokens: []
 - id: wardrobe
@@ -621,9 +718,20 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
-  framing_additions: []
-  allowed_tech: [AVFoundation, Claude API, CLIP, Combine, Core Data, Core ML, CryptoKit, gRPC, IDM-VTON, iOS, PhotosUI, Remove.bg API, Replicate, SerpAPI, Supabase, Swift, SwiftUI, UIKit, UserNotifications, Vision Framework, WeatherKit, WebSocket]
+  wording_rules:
+  - id: db_framing_mysql
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+    title_prefix: null
+  implied_tech: [PostgreSQL]
+  framing_additions: [MySQL]
+  allowed_tech: [AVFoundation, Claude API, CLIP, Combine, Core Data, Core ML, CryptoKit, gRPC, IDM-VTON, iOS, MySQL, PhotosUI, PostgreSQL, Remove.bg API, Replicate, SerpAPI, Supabase, Swift, SwiftUI, UIKit, UserNotifications, Vision Framework, WeatherKit, WebSocket]
   allowed_numbers: ['2026', '5.9', '6', 85%, 100%]
   allowed_tokens: []
 - id: pulsetrader
@@ -660,6 +768,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Apache Flink, Avro, BigQuery, Confluent Schema Registry, D3.js, Docker, FastAPI, Grafana, Kafka, Prometheus, Python, React, Recharts, Redis, Tailwind CSS, TimescaleDB, TypeScript, WebSocket, Zustand]
   allowed_numbers: ['2026', '19', '10,000', '8', '3', 10s, 100ms, <50ms]
@@ -696,7 +805,18 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
+  wording_rules:
+  - id: db_framing_mysql
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+    title_prefix: null
+  implied_tech: []
   framing_additions: [MySQL]
   allowed_tech: [CARLA, Docker, GitHub Actions, Matplotlib, MLflow, MySQL, NumPy, OpenSCENARIO, Plotly, PostgreSQL, Python, PyTorch, Ray, ROS 2, Seaborn]
   allowed_numbers: ['2026', '2.0', '2', 50+, '8', 23%, '3']
@@ -739,6 +859,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [CUDA, Docker, KITTI, MLflow, nuScenes, ONNX, Open3D, OpenCV, PointPillars, Python, PyTorch, ROS 2, TensorRT, YOLO]
   allowed_numbers: ['2026', '2.2', '8.6', '2', '7,481', ~77%, '0.7', '>75%', ~22ms, '>40', <8%]
@@ -776,6 +897,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Android, Android Accessibility Services, ARCore, CameraX, DataStore, Dijkstra, GTFS-RT, Hilt, Jetpack Compose, Kotlin, ML Kit, OpenStreetMap, Room, TalkBack, TensorFlow Lite]
   allowed_numbers: ['2026', '1.9', 10+, <50ms, '10', 30s, '2.1', '4.5', '1']
@@ -819,7 +941,18 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
+  wording_rules:
+  - id: db_framing_mysql
+    source: 'master list, Skills section: Database framing'
+    description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
+    scope: entry
+    forbid: []
+    require: []
+    conflicts:
+    - a: (?:(?i:(?<![\w.#+-])MySQL(?:s|es)?(?![\w#+²³])))
+      b: (?:(?i:(?<![\w.#+-])PostgreSQL(?:s|es)?(?![\w#+²³]))|(?i:(?<![\w.#+-])Postgres(?:s|es)?(?![\w#+²³])))|(?:(?i:(?<![\w.#+-])Supabase(?:s|es)?(?![\w#+²³])))|\bLISTEN/NOTIFY\b
+    title_prefix: null
+  implied_tech: []
   framing_additions: [MySQL]
   allowed_tech: [CUPED, D3.js, dbt, DiD, Docker, DoWhy, DuckDB, EconML, FastAPI, GitHub Actions, Kafka, MLflow, MySQL, PostgreSQL, PSM, Python, React, Recharts, Redis, SciPy, Sequential Testing, Snowflake, SQL, Statsmodels, Tailwind CSS, TypeScript, WebSocket, Zustand]
   allowed_numbers: ['2026', '19', ~800ms, ~40ms, 20x, 10M+, '12', '3', 45s, 0.8s, '30', 45%, 56x, 800ms, 40ms]
@@ -875,23 +1008,28 @@ projects:
   - id: spiceai_pr_merged
     source: 'Status: MERGED. PR #13507 merged to trunk (commit d8a32b6eb288), on trunk since Aug 26. Two additional PRs open (#13508, #13510), both blocked only on a maintainer click, not anything technical. Always describe as "merged," never "no PRs merged yet."'
     description: 'PR #13507 is always described as merged.'
+    scope: bullet
     forbid:
     - (?i)#?13507\)?\s+(?:is\s+|was\s+|remains\s+|still\s+)*(?:pending|open|unmerged|awaiting|under review|not\s+(?:yet\s+)?merged)\b
     - (?i)\b(?:pending|open|unmerged|awaiting)\s+(?:PR\s+)?#?13507
     - (?i)\bno PRs? (?:merged|have been merged)
     - (?i)\bnot yet merged\b
     require: []
+    conflicts: []
     title_prefix: null
   - id: spiceai_12747_bug_report
     source: '**Reported (not implemented) a bug that triggered a major fix by the project''s CEO:** filed issue #12747 on a Decimal128 overflow issue; the CEO''s own PR #13224 resolved it with a +2,244/−100 line correctness overhaul across 10 files. Must always be described precisely as a bug report that led to the CEO''s overhaul, never implied as the user''s own implementation'
     description: 'Issue #12747 is a bug report that led to the CEO''s overhaul, never Vatsal''s own implementation.'
+    scope: bullet
     forbid:
     - (?i)\b(?:implemented|built|wrote|authored|shipped|developed|patched|coded)\b[^.;]{0,80}(?:12747|overhaul|Decimal128|overflow|2,244|2,200|13224)
     - (?i)\b(?:my|own) (?:fix|implementation|overhaul)\b[^.;]{0,40}(?:overflow|Decimal128|12747)
     require:
     - when: (?i)12747|Decimal128|overflow|overhaul|2,244|2,200|13224
       must: (?i)\b(?:report|reported|filed|issue)\b
+    conflicts: []
     title_prefix: null
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Apache Arrow, DataFusion, Elasticsearch, Hugging Face, Rust]
   allowed_numbers: ['2026', 3k, '136', ~1M, '13507', '26', Two, '13508', '13510', '2,200', '10', '3', zero, '2', '12747', '13224', '+2,244', −100, two, 401s, '12430', '12442', three, '4', '12745', '12746', '13509', '2,299']
@@ -956,10 +1094,13 @@ projects:
   - id: chef_pr_merged
     source: 'Status: MERGED. Merged into chef/chef main on 2026-08-31 as squash commit 4a6992838e, by maintainer jaymzh. Approved by two maintainers (tpowell-progress, jaymzh). Always describe as "merged," never "pending re-approval."'
     description: 'PR #16260 is always described as merged.'
+    scope: bullet
     forbid:
     - (?i)\b(?:pending|awaiting|unmerged|not\s+(?:yet\s+)?merged|under review|re-approval)\b
     require: []
+    conflicts: []
     title_prefix: null
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Buildkite, Chef, CI, Cookstyle, Debian, GitHub, macOS, Rocky Linux, RSpec, Ruby, Ubuntu, Windows]
   allowed_numbers: ['2026', '2.0', ~9k, '13473', '16', '2023', '3', '7', '16260', 08, '31', two, ~200, '20', '2', '3.5', '4', '0777', '5', '1', '13', '14', '15', '2022', '2025', '22.04', '24.04', '8', '9', '11', '10,939', Five]
@@ -1018,6 +1159,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Claude API, Cognee, ElevenLabs, FastAPI, LoRA, Next.js, OpenAI Whisper, Prompt Engineering, Python]
   allowed_numbers: ['2026', '6', '29', '5', zero, two, '25', '30', '4', '1', '+1.3', '3.0', '4.3', < 0.01, '+0.1', '3.8', '3.9', '0.41', −0.4, '4.1', '3.7', '0.06', '3.6', '0.52', +16%, '145', '168', +15%, '62', '71', +9%, 780ms, 850ms, '9', 16%, '4.0', '28', '24', '41', 46%, ~0.3, '0.5', <0.01]
@@ -1067,6 +1209,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [CI, Claude API, Cloudflare Workers, CRDT, HandLandmarker, Hono, Lighthouse, MediaPipe Tasks Vision, Node.js, ONNX, onnxruntime-web, perfect-freehand, Playwright, pnpm, Python, PyTorch, React, SQLite, Three.js, Turborepo, TypeScript, Vite, Vitest, WebGL, y-websocket, Yjs, Zustand]
   allowed_numbers: ['2026', '19', $1, '3', '5', 8+, '4']
@@ -1118,6 +1261,7 @@ projects:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [BEA, BLS, D3.js, Expo, Federal Register, GitHub, GitHub Actions, Pandas, Python, React, Recharts, Statistics Canada, TypeScript, U.S. Census Bureau, Vercel, Vite]
   allowed_numbers: ['2026', '5', ~27.8M, $2.2T, ~$3.6B, '6', '10', 50%, '360', two, '36', '28', '7', '11', '14', '3', '4', '29', '2']
@@ -1154,6 +1298,7 @@ experience:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: []
   allowed_numbers: [20+, 50+, 30%, '2', 40%]
@@ -1190,6 +1335,7 @@ experience:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: []
   allowed_numbers: ['2026', 10+]
@@ -1223,6 +1369,7 @@ experience:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: []
   allowed_numbers: ['2026', '3', '10', '1']
@@ -1264,9 +1411,12 @@ experience:
   - id: ta_title
     source: Always title this role "Graduate Teaching Assistant" in resumes, not just "Teaching Assistant."
     description: The title always starts with "Graduate Teaching Assistant".
+    scope: bullet
     forbid: []
     require: []
+    conflicts: []
     title_prefix: Graduate Teaching Assistant
+  implied_tech: []
   framing_additions: []
   allowed_tech: [C]
   allowed_numbers: ['5008', '2026', 100+, 10+, 9+, 19+]
@@ -1301,6 +1451,7 @@ experience:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Flask, Pandas, Scikit-learn, SQL, TensorFlow]
   allowed_numbers: ['2024', '2025', 85%, 5+, 20+, 15%, 40%]
@@ -1335,6 +1486,7 @@ experience:
   variants: []
   wording_notes: []
   wording_rules: []
+  implied_tech: []
   framing_additions: []
   allowed_tech: [Flask, Python, Random Forest, React, REST APIs, Shell/Bash, Slack API]
   allowed_numbers: ['2024', '5', '8', '3.2', 85%, 20%, $50K]
@@ -1905,7 +2057,7 @@ database_framing:
   - built_with: PostgreSQL
     also: MySQL
     examples: E-Commerce Platform, ExperimentIQ, Seattle Transit, Housing Price Prediction
-    applies_to: [ecommerce_platform, experimentiq, housing_price, investment_prediction, scenarioforge, seattle_transit, themanager]
+    applies_to: [ecommerce_platform, experimentiq, housing_price, investment_prediction, moodmeals, scenarioforge, seattle_transit, swarm, themanager, wardrobe]
   - built_with: DynamoDB
     also: MongoDB
     examples: Investment Prediction Platform's NoSQL layer

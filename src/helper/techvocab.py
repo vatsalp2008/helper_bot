@@ -156,6 +156,15 @@ class TechVocabulary:
     def canonical_names(self) -> set[str]:
         return set(self._canonical_by_spelling.values())
 
+    def regex_for(self, canonical: str) -> str:
+        """A regex (source text) that finds any spelling of `canonical`, with this vocabulary's case rules."""
+        alts = []
+        for entry in self._entries:  # longest spelling first; excluded spellings are not in _entries
+            if entry.canonical == canonical:
+                body = entry.pattern.pattern
+                alts.append(body if entry.spelling in self._case_sensitive else f"(?i:{body})")
+        return "(?:" + "|".join(alts) + ")" if alts else _pattern(canonical, True).pattern
+
     def canonical(self, name: str) -> Optional[str]:
         name = name.strip()
         if name in self._canonical_by_spelling:

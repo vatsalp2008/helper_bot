@@ -65,6 +65,18 @@ def test_canonical_lookup(vocab) -> None:  # type: ignore[no-untyped-def]
     assert vocab.canonical("go") is None  # case-sensitive names only resolve with their own casing
 
 
+def test_regex_for_finds_every_spelling_with_the_vocabulary_case_rules(vocab) -> None:  # type: ignore[no-untyped-def]
+    import re
+
+    postgres = re.compile(vocab.regex_for("PostgreSQL"))
+    assert postgres.search("a postgres-backed store") and postgres.search("PostgreSQL 16")
+    assert not postgres.search("PostgreSQLite")
+    go = re.compile(vocab.regex_for("Go"))
+    assert go.search("a Go service") and not go.search("go further")
+    vision = re.compile(vocab.regex_for("Vision Framework"))
+    assert vision.search("Apple Vision") and not vision.search("Computer Vision")  # excluded spelling
+
+
 def test_comparisons_are_masked(vocab) -> None:  # type: ignore[no-untyped-def]
     assert vocab.find_canonical(mask_comparisons("an Airbnb/Uber/Stripe-style platform")) == set()
     assert vocab.find_canonical(mask_comparisons("(5-10MB vs 150MB+ Electron)")) == set()
