@@ -70,6 +70,7 @@ tier2:
     race_ethnicity: null
     veteran_status: null
     disability_status: null
+    hispanic_latino: null
     default_for_other: Decline to self identify
   background_check_consent:
     auto_answer: true
@@ -80,3 +81,14 @@ tier2:
   security_clearance:
     auto_answer: false
     value: null
+  salary_from_posting: false
+  ai_screening_consent:
+    auto_answer: false
+    value: null
+  keep_for_other_roles:
+    auto_answer: false
+    value: null
+
+documents:
+  transcript: null
+  undergrad_transcript: null

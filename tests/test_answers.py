@@ -162,3 +162,72 @@ def test_a_question_in_the_eeo_survey_is_trusted() -> None:
     assert key_for(q("Race"))[1] == 0.85
     survey = FormQuestion(label="Race", field_name="race", type="radio", options=["Asian", "White"], section="eeoc")
     assert key_for(FormQuestion(**{**survey.model_dump(), "field_name": "ashby:race"})) == ("eeo_race", 0.95)
+
+
+def test_transcripts_are_uploaded_only_when_a_form_requires_one() -> None:
+    from helper.answers import format_plan
+
+    docs = {"transcript": "/docs/Transcript NEU.pdf", "undergrad_transcript": "/docs/Transcript.pdf"}
+    required = one(q("Unofficial Transcript", "file", name="transcript_upload"), documents=docs)
+    assert (required.kind, required.key, required.value) == ("file", "transcript", "/docs/Transcript NEU.pdf")
+    assert "(Transcript NEU.pdf)" in format_plan(plan_answers([q("Unofficial Transcript", "file", name="t")],
+                                                               ctx(documents=docs)))
+    undergrad = one(q("Undergraduate transcript", "file", name="t2"), documents=docs)
+    assert undergrad.value == "/docs/Transcript.pdf"
+    assert one(q("Transcript (optional)", "file", required=False), documents=docs).kind == "skip"
+    missing = one(q("Transcript", "file"))
+    assert missing.kind == "unknown" and "documents.transcript" in (missing.note or "")
+    resume = one(q("Resume/CV", "file", name="resume"), documents=docs)
+    assert (resume.kind, resume.key, resume.value) == ("file", "resume", None)  # the resume is unchanged
+
+
+def test_a_numbers_only_salary_box_goes_to_vatsal() -> None:
+    salary = one(q("What are your annual salary expectations?", "number"))
+    assert salary.kind == "unknown" and "number only" in (salary.note or "")
+    assert one(q("What are your annual salary expectations?")).value == "Negotiable"  # a text box takes the word
+
+
+def test_salary_comes_from_the_posting_when_vatsal_says_so() -> None:
+    from helper.answers import posted_pay
+    from helper.models import Job
+
+    assert posted_pay("anticipates the hourly range for this position to be between $32-$36.") .yearly == 70720
+    assert posted_pay("The base salary range is $120,000 - $150,000 per year.").period == "year"
+    assert posted_pay("Interns earn $8,000/month.").yearly == 96000
+    assert posted_pay("We cover a $50 application fee.") is None and posted_pay("No pay listed.") is None
+    job = Job(company="PTC", role_title="Intern", description_text="the hourly range is between $32-$36.",
+              source="test", fetched_at="now")
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.salary_from_posting = True
+    assert one(q("What are your annual salary expectations?", "number"), job=job, profile=profile).value == "71000"
+    assert one(q("What are your annual salary expectations?"), job=job, profile=profile).value == "$71,000"
+    assert one(q("Expected hourly pay?", "number"), job=job, profile=profile).value == "34"
+    unposted = one(q("What are your annual salary expectations?", "number"), profile=profile)
+    assert unposted.kind == "unknown"  # no pay in the posting and the box takes numbers: Vatsal decides
+
+
+def test_ai_screening_and_talent_pool_consents_follow_the_profile() -> None:
+    profile = PROFILE.model_copy(deep=True)
+    for item in (profile.tier2.ai_screening_consent, profile.tier2.keep_for_other_roles):
+        item.auto_answer, item.value = True, "Yes"
+    ai = q("PTC uses HiredScore, a Workday AI-assisted recruiting tool, to help ... If you opt-in, HiredScore will help",
+           "select", ["I understand and I’m ready for to continue with my application involving AI.",
+                      "I understand and I’m ready for to continue without my application involving AI."])
+    assert one(ai, profile=profile).value == ai.options[0] and one(ai, profile=profile).kind == "auto"
+    pool = q("You may opt in to have your candidate information retained for future or alternative opportunities.",
+             "select", ["I understand and I’m ready for my application to be retained for other opportunities.",
+                        "I understand and I’m not ready for my application to be retained."])
+    assert one(pool, profile=profile).value == pool.options[0]
+    assert one(ai).kind == "unknown"  # without the profile setting, Vatsal answers
+    assert key_for(q("Do you have experience with AI tools?"))[0] != "ai_consent"
+
+
+def test_hispanic_or_latino_follows_the_profile() -> None:
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.eeo.auto_answer = True
+    profile.tier2.eeo.hispanic_latino = "No"
+    yes_no = q("Are you Hispanic or Latino?", "select", ["Yes", "No", "Decline To Self Identify"])
+    assert one(yes_no, profile=profile).value == "No"
+    worded = q("Hispanic or Latino", "select", ["Hispanic or Latino", "Not Hispanic or Latino", "I don't wish to answer"])
+    assert one(worded, profile=profile).value == "Not Hispanic or Latino"
+    assert one(yes_no).value == "Decline To Self Identify"  # not set in the profile: the decline default

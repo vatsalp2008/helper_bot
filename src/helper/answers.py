@@ -109,6 +109,12 @@ def match_option(value: str, options: list[str], aliases: tuple[str, ...] | list
 # (key, pattern, confidence that the label means this). First match wins, so order matters.
 LABEL_RULES: list[tuple[str, str, float]] = [
     ("gpa", r"\bgpa\b|grade point", 1.0),
+    ("ai_consent", r"\bhiredscore\b|\bAI[- ]assisted (recruit|tool|screen)|\binvolving AI\b|"
+                   r"\b(consent|opt[- ]?in|agree)\b.{0,80}\b(AI|artificial intelligence)\b|"
+                   r"\b(AI|artificial intelligence)\b.{0,80}\b(consent|opt[- ]?in)\b", 0.9),
+    ("keep_for_other_roles", r"\bretain\w*\b.{0,80}\b(future|other|alternative)\b.{0,40}\b(roles?|opportunit\w*|"
+                             r"positions?|openings?)\b|\btalent (pool|community)\b", 0.9),
+    ("transcript", r"\btranscripts?\b|\bacademic record\b", 0.95),
     ("cover_letter", r"\bcover letter\b", 0.95),
     ("resume", r"\bresume\b|\bcv\b", 0.95),
     ("preferred_first_name", r"\bpreferred (first )?name\b|\bnickname\b", 0.95),
@@ -138,7 +144,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("relocate", r"\breloca", 0.9),
     ("start_date", r"\bstart date\b|\bwhen can you (start|begin)\b|\bavailab\w* to (start|begin)\b"
                    r"|\bearliest\b.*\b(start|begin)\b", 0.9),
-    ("salary", r"\bsalary\b|\bcompensation\b|\bpay (expectation|range)s?\b|\bdesired pay\b", 0.9),
+    ("salary", r"\bsalary\b|\bcompensation\b|\bpay (expectation|range)s?\b|\bwages?\b|"
+               r"\b(desired|expected|hourly|annual)\b.{0,20}\b(pay|rate|wage)\b", 0.9),
     ("how_did_you_hear", r"\bhow did you (hear|learn|find|connect|come across)\b|\bwhere did you (hear|find|learn)\b", 0.95),
     ("how_did_you_hear", r"\bsource\b", 0.85),
     ("referral", r"\b(referred|referral)\b", 0.9),
@@ -208,6 +215,7 @@ class AnswerContext:
     season_year: Optional[int] = None
     approved: AnswersFile = field(default_factory=AnswersFile)
     past_employers: list[str] = field(default_factory=list)
+    documents: dict[str, str] = field(default_factory=dict)  # "transcript" / "undergrad_transcript" -> a file that exists
 
 
 @dataclass
@@ -219,6 +227,71 @@ class Value:
     note: Optional[str] = None
     confidence: float = 1.0
     fallback_other: bool = False  # no good option: suggest "Other" for Vatsal to confirm
+
+
+@dataclass(frozen=True)
+class Pay:
+    low: float
+    high: float
+    period: str  # hour | week | month | year
+
+    @property
+    def yearly(self) -> float:
+        return (self.low + self.high) / 2 * {"hour": 2080, "week": 52, "month": 12, "year": 1}[self.period]
+
+
+_MONEY = r"\$\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*([kK])?"
+_PAY_RE = re.compile(_MONEY + r"(?:\s*(?:-|\u2013|\u2014|to|and)\s*" + _MONEY + r")?")
+
+
+def posted_pay(text: str) -> Optional[Pay]:
+    """The first pay range a posting states ("$32-$36" hourly, "$120,000 - $150,000" a year), or None."""
+    for m in _PAY_RE.finditer(text or ""):
+        def amount(number: Optional[str], k: Optional[str]) -> Optional[float]:
+            return float(number.replace(",", "")) * (1000 if k else 1) if number else None
+
+        low, high = amount(m.group(1), m.group(2)), amount(m.group(3), m.group(4))
+        high = high or low
+        if not low or high < low:
+            continue
+        around = text[max(0, m.start() - 80):m.end() + 40].lower()
+        if re.search(r"hour|/\s*hr\b|\bhr\b", around):
+            period = "hour"
+        elif re.search(r"\bweek", around):
+            period = "week"
+        elif re.search(r"\bmonth", around):
+            period = "month"
+        elif re.search(r"year|annual|/\s*yr\b|salary", around) or low >= 20000:
+            period = "year"
+        else:
+            continue  # a fee or a bonus, not a pay range
+        if period == "hour" and low >= 500 or period == "year" and low < 1000:
+            continue
+        return Pay(low, high, period)
+    return None
+
+
+def salary_answer(q: FormQuestion, pay: Pay) -> str:
+    """The posting's pay for this question: hourly or monthly when it asks that way, otherwise a year; rounded."""
+    asked = "hour" if re.search(r"(?i)hour", q.label) else "month" if re.search(r"(?i)month", q.label) else "year"
+    if asked == "hour":
+        value = round(pay.yearly / 2080)
+    elif asked == "month":
+        value = round(pay.yearly / 12 / 100) * 100
+    else:
+        value = round(pay.yearly / 1000) * 1000
+    if q.type == "number":
+        return str(value)
+    return f"${value:,}" + {"hour": " per hour", "month": " per month", "year": ""}[asked]
+
+
+_NEGATIVE_CHOICE = re.compile(r"(?i)\bwithout\b|\bnot\b|n['\u2019]t\b|\bdecline\b|\bopt(?:[- ])?out\b|^\s*no\b|\brefuse\b")
+
+
+def affirmative_option(options: list[str]) -> Optional[str]:
+    """The one choice that agrees ("...with my application involving AI" over "...without..."), if exactly one does."""
+    agree = [o for o in options if not _NEGATIVE_CHOICE.search(o)]
+    return agree[0] if len(agree) == 1 else None
 
 
 def _grad_candidates(grad: str) -> tuple[str, ...]:
@@ -316,7 +389,19 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     if key == "start_date":
         return _start_date(ctx)
     if key == "salary":
+        pay = posted_pay(ctx.job.description_text) if t2.salary_from_posting else None
+        if pay is not None:
+            return Value(salary_answer(q, pay), "the posting's pay, midpoint rounded (Vatsal, 2026-11-14)")
         return tier2(t2.salary_expectation, "salary_expectation")
+    if key in ("ai_consent", "keep_for_other_roles"):
+        item = t2.ai_screening_consent if key == "ai_consent" else t2.keep_for_other_roles
+        name = "ai_screening_consent" if key == "ai_consent" else "keep_for_other_roles"
+        given = tier2(item, name)
+        if given.text and given.text.strip().lower() in ("yes", "true") and q.options:
+            agree = affirmative_option(q.options)
+            return Value(agree, given.source, confidence=given.confidence) if agree else \
+                Value(None, given.source, note="can't tell which choice opts in")
+        return given
     if key == "how_did_you_hear":
         return Value(t1.how_did_you_hear, "profile how_did_you_hear", fallback_other=True,
                      aliases=("career site", "careers site", "company website", "careers page", "career page",
@@ -346,6 +431,10 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
                      if negative else ())
     if key == "eeo_disability":
         return Value(eeo.disability_status, "profile eeo.disability_status", confidence=eeo_conf)
+    if key == "eeo_hispanic" and eeo.hispanic_latino:
+        no = eeo.hispanic_latino.strip().lower() in ("no", "not hispanic or latino")
+        return Value(eeo.hispanic_latino, "profile eeo.hispanic_latino", confidence=eeo_conf,
+                     aliases=("not hispanic or latino", "no, not hispanic", "non-hispanic", "i am not") if no else ())
     if key in ("eeo_hispanic", "eeo_other"):
         return Value(eeo.default_for_other, "profile eeo.default_for_other", aliases=tuple(DECLINE), confidence=eeo_conf)
     if key == "previous_employee":
@@ -416,6 +505,9 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
             answers.append(PlannedAnswer(**base, kind="unknown" if q.required else "skip",
                                          note="a cover letter needs text Vatsal approved"))
             continue
+        if key == "transcript" and q.type == "file":
+            answers.append(_transcript(q, base, ctx))
+            continue
         approved = _approved_answer(q, ctx.approved) if q.type in ("text", "textarea") else None
         if approved:
             answers.append(PlannedAnswer(**base, kind="auto", value=approved, confidence=1.0, source="data/answers.yaml",
@@ -434,6 +526,20 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
         answers.append(PlannedAnswer(**base, **planned))
     _split_street(answers, ctx)
     return AnswerPlan(answers=answers)
+
+
+def _transcript(q: FormQuestion, base: dict[str, object], ctx: AnswerContext) -> PlannedAnswer:
+    """A required transcript upload gets the current program's transcript, or the undergraduate one when the question
+    asks for that. Optional transcript uploads stay empty (Vatsal: "if needed")."""
+    undergrad = re.search(r"(?i)under ?grad|bachelor", f"{q.label} {q.description or ''}")
+    which = "undergrad_transcript" if undergrad else "transcript"
+    if not q.required:
+        return PlannedAnswer(**base, kind="skip", note="optional transcript upload: left empty")
+    path = ctx.documents.get(which)
+    if not path:
+        return PlannedAnswer(**base, kind="unknown", note=f"asks for a transcript: set documents.{which} in data/profile.yaml")
+    return PlannedAnswer(**base, kind="file", value=path, confidence=1.0,
+                         source="your undergraduate transcript" if undergrad else "your transcript")
 
 
 def _eeo_key_from_options(options: list[str]) -> str:
@@ -460,6 +566,9 @@ def _decide(q: FormQuestion, value: Value, label_conf: float, cfg: Config) -> di
         return {"kind": "unknown" if q.required else "skip", "note": value.note or "no value in your profile",
                 "source": value.source}
     text, match_conf = value.text, 1.0
+    if q.type == "number" and not re.fullmatch(r"\s*\$?\s*\d[\d,]*(\.\d+)?\s*[kK]?\s*", value.text):
+        return {"kind": "unknown" if q.required else "skip", "source": value.source,
+                "note": f"the field takes a number only; your profile says '{value.text}'"}
     if q.type == "boolean":  # one checkbox: the value says whether to tick it, its label is not a choice
         return _finish(q, value, label_conf, text, 1.0, cfg)
     if q.options and q.type == "multi_select":
@@ -512,7 +621,8 @@ def format_plan(plan: AnswerPlan) -> str:
     lines = []
     for a in sorted(plan.answers, key=lambda a: (order[a.kind], a.label.lower())):
         star = "*" if a.required else " "
-        value = (a.value or "") if a.kind != "file" else "(the tailored resume PDF)"
+        value = (a.value or "") if a.kind != "file" else (f"({a.value.rsplit('/', 1)[-1]})" if a.key == "transcript"
+                                                          and a.value else "(the tailored resume PDF)")
         if a.kind == "free_text" and a.value:
             value = f"{a.value[:70]}..." if len(a.value) > 70 else a.value
         conf = f" [{a.confidence:.2f}]" if a.kind in ("auto", "confirm") and a.confidence < 1 else ""

@@ -1,6 +1,8 @@
 # Secrets and personal data (profile.yaml holds address, work authorization, EEO answers)
 .env
 data/profile.yaml
+# Personal documents kept next to the repo (transcripts and any other PDF in the top folder)
+/*.pdf
 
 # Generated per application
 runs/

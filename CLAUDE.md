@@ -59,6 +59,11 @@ Enforce these in code, not only in instructions.
 - **Workday** (Vatsal, 2026-11-14): helper fills Workday applications.
   - **Account:** it signs in, or creates the account, with `WORKDAY_EMAIL` / `WORKDAY_PASSWORD` from `.env`. Never print, log, commit or repeat them; helper types them only on Workday's own sites and never retries a failed sign-in.
   - **No approval step:** company questions are drafted and filled as the pages open. Vatsal reviews everything on Workday's Review page before he submits.
+- **Form answers Vatsal set on 2026-11-14** (all in `data/profile.yaml`):
+  - **Salary:** with `tier2.salary_from_posting`, a salary question gets the posting's own pay: the midpoint of its range, annual unless the question asks hourly or monthly, rounded (nearest $1,000 a year). With no pay in the posting, a text box gets `salary_expectation` ("Negotiable") and a numbers-only box goes to Vatsal.
+  - **AI screening and keeping the application for other roles** (for example HiredScore): yes, the choice that opts in (`tier2.ai_screening_consent`, `tier2.keep_for_other_roles`).
+  - **Hispanic or Latino:** No (`tier2.eeo.hispanic_latino`). Other extra EEO questions, such as pronouns, keep the decline default.
+  - **Transcripts:** `documents.transcript` (master's) and `documents.undergrad_transcript` are uploaded only when a form requires a transcript; the undergraduate one when the question asks for it. They're PDFs in the repo's top folder, which git ignores.
 - **Company limits never block** (Vatsal, 2026-11-14). `data/caps.yaml` limits are flagged first, then helper still builds the resume and applies. `enforced: true` (Google, TikTok) means the company's site may refuse it; `enforced: false` (Salesforce) is a recommendation.
 - **`~` prints centered on the line** as `$\sim$` (bold inside bold phrases). Vatsal chose this on 2026-11-14; spec 6's `\textasciitilde{}` prints a raised tilde in this font encoding.
 - **Graduation date** (spec 8 item 4): May 2027 by default. Use December 2027 when the posting's graduation window or a "returning to school" requirement needs it. Use May 2027 when a full-time start date needs it. The run's chosen date also fills the form's expected-graduation field.

@@ -232,8 +232,9 @@ def fill_form(page: Any, answers: list[Any], resume_pdf: Path, *, country: Optio
             continue
         try:
             if a.type == "file":
-                target.set_input_files(str(resume_pdf))
-                results.append(FieldResult(a.field, a.label, True, resume_pdf.name))
+                upload = Path(a.value) if a.key == "transcript" and a.value else resume_pdf
+                target.set_input_files(str(upload))
+                results.append(FieldResult(a.field, a.label, True, upload.name))
             elif (target.get_attribute("role") or "") == "combobox":
                 if a.field == "location":
                     ok, chosen = choose_option(page, dom, a.value, search=city or a.value.split(",")[0])

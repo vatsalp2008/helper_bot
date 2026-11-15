@@ -242,6 +242,9 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
         if _wait_for_new_step(page, ctx, step, quiet=True, seconds=20):
             continue
         errors = wp.errors_shown(page)
+        if filled_steps[step] < 2:  # fields Workday redrew or loaded late: fill the page once more
+            ctx.say(f"Workday flagged {len(errors) or 'some'} field(s) on '{step}'; helper fills the page again.")
+            continue
         ctx.say(f"Workday didn't accept '{step}'" + (":\n" + "\n".join(f"  - {e}" for e in errors) if errors else ".")
                 + "\nFix it in the window and click Next; helper continues on the next page.")
         if not _wait_for_new_step(page, ctx, step):
@@ -302,8 +305,27 @@ def _wait_for_new_step(page: Any, ctx: FlowContext, step: Optional[str], *, quie
 # --------------------------------------------------------------------------- one page
 
 
+def _wait_for_fields(page: Any, seconds: float = 20) -> int:
+    """Workday shows a page's heading before its fields arrive (right after sign-in especially). Wait until the
+    fields are there and their number stops changing."""
+    end = time.monotonic() + seconds
+    last, steady = -1, 0
+    while time.monotonic() < end:
+        try:
+            count = page.locator("[data-automation-id^='formField-']:visible").count()
+        except Exception:
+            count = 0
+        steady = steady + 1 if count and count == last else 0
+        if steady >= 2:
+            return count
+        last = count
+        page.wait_for_timeout(700)
+    return max(last, 0)
+
+
 def _fill_step(page: Any, kind: str, step: str, ctx: FlowContext, out: FlowResult) -> list[str]:
     """Fill the page. Returns the required questions only Vatsal can answer."""
+    _wait_for_fields(page)
     if kind == "experience":
         out.results += wp.fill_work(page, ctx.work, ctx.pause)
         out.results += wp.fill_education(page, ctx.schools, ctx.pause)
@@ -312,17 +334,30 @@ def _fill_step(page: Any, kind: str, step: str, ctx: FlowContext, out: FlowResul
     questions, found = wp.discover(page, skip_special=kind == "experience", section=section)
     if not questions:
         return []
+    ctx.say(f"{step}: filling {len(questions)} question(s).")
     answers = ctx.plan(questions)
     out.answers += answers
     open_items = [a for a in answers if a.kind == "free_text" or (a.kind == "unknown" and a.required)]
     if open_items:
         ctx.ask_claude(answers, lambda: wp.current_step(page) != step)
+    missing = []
     for a in answers:
-        if a.kind in ("skip", "unknown", "file") or a.value is None:
+        if a.kind == "file":
+            if a.key in ("resume", "transcript"):
+                out.results.append(fill_answer(page, a, found.get(a.field, wp.Found()), ctx))
+            elif a.required:
+                missing.append(a.label)  # a transcript or another document: Vatsal's
             continue
-        out.results.append(fill_answer(page, a, found.get(a.field, wp.Found()), ctx))
+        if a.kind in ("skip", "unknown") or a.value is None:
+            if a.required and a.kind != "skip":
+                missing.append(a.label)
+            continue
+        result = fill_answer(page, a, found.get(a.field, wp.Found()), ctx)
+        out.results.append(result)
+        if not result.ok and a.required:
+            missing.append(f"{a.label} ({result.detail})")
         ctx.pause()
-    return [a.label for a in answers if a.required and a.value is None and a.kind != "file"]
+    return missing
 
 
 def _upload_resume(page: Any, ctx: FlowContext) -> list[FieldResult]:
@@ -383,7 +418,7 @@ def fill_answer(page: Any, a: PlannedAnswer, found: wp.Found, ctx: FlowContext) 
             digits = wp.date_digits(value, found.dates or ["Month", "Day", "Year"])
             ok, shown, detail = bool(digits), wp.type_date(page, where, digits), "" if digits else f"can't read '{value}'"
         elif a.type == "file":
-            ok, shown, detail = wp.upload(page, where, ctx.resume_pdf)
+            ok, shown, detail = wp.upload(page, where, Path(a.value) if a.key == "transcript" and a.value else ctx.resume_pdf)
         else:
             box = where.locator("textarea, input:not([type=hidden]):not([type=checkbox]):not([type=radio])").first
             if box.input_value() != value:

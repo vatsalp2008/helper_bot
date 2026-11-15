@@ -69,7 +69,21 @@ def _context(paths: Paths, cfg: Config, run_id: str, job: Job) -> AnswerContext:
         employment=eligibility.get("employment", "unknown"), season=eligibility.get("season"),
         season_year=eligibility.get("season_year"), approved=AnswersFile.model_validate(load_yaml(paths.answers) or {}),
         past_employers=[e.organization for e in master.experience if e.organization],
+        documents=documents(paths, profile),
     )
+
+
+def documents(paths: Paths, profile: Profile) -> dict[str, str]:
+    """The profile's documents that exist on disk, as absolute paths."""
+    found = {}
+    for name in ("transcript", "undergrad_transcript"):
+        value = getattr(profile.documents, name)
+        if value:
+            path = Path(value).expanduser()
+            path = path if path.is_absolute() else paths.root / path
+            if path.is_file():
+                found[name] = str(path)
+    return found
 
 
 def _needed(plan: AnswerPlan, job: Job, state_options: dict[str, Any], paths: Paths, run_id: str) -> dict[str, Any]:
@@ -584,6 +598,7 @@ def preview(paths: Paths, cfg: Config, job: Job) -> str:
         season=eligibility.season, season_year=eligibility.season_year,
         approved=AnswersFile.model_validate(load_yaml(paths.answers) or {}),
         past_employers=[e.organization for e in ctx.master.experience if e.organization],
+        documents=documents(paths, profile),
     )
     gaps = [t.canonical for t in keywords.tech if t.status == "not_in_master"]
     return "\n".join([

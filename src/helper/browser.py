@@ -3,9 +3,11 @@ default and separate from your everyday Chrome. Small human-like pauses; no stea
 
 from __future__ import annotations
 
+import json
 import random
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Callable, Iterator, Optional
 
 from .config import Paths
@@ -27,6 +29,7 @@ def browser_session(paths: Paths, cfg: Config, *, headless: Optional[bool] = Non
 
     profile = paths.browser_profile(cfg)
     profile.mkdir(parents=True, exist_ok=True)
+    no_password_saving(profile)
     with sync_playwright() as pw:
         context = pw.chromium.launch_persistent_context(
             str(profile), headless=cfg.headless if headless is None else headless, viewport={"width": 1280, "height": 900},
@@ -38,6 +41,22 @@ def browser_session(paths: Paths, cfg: Config, *, headless: Optional[bool] = Non
                 context.close()
             except Exception:
                 pass
+
+
+def no_password_saving(profile: Path) -> None:
+    """helper's browser never offers to save a password: the Workday login lives in .env only, and a "Save
+    password?" bubble would sit over the form. Chrome reads these settings when it starts."""
+    prefs_path = profile / "Default" / "Preferences"
+    try:
+        prefs = json.loads(prefs_path.read_text(encoding="utf-8")) if prefs_path.is_file() else {}
+    except (OSError, ValueError):
+        return
+    if prefs.get("credentials_enable_service") is False and prefs.get("profile", {}).get("password_manager_enabled") is False:
+        return
+    prefs["credentials_enable_service"] = False
+    prefs.setdefault("profile", {})["password_manager_enabled"] = False
+    prefs_path.parent.mkdir(parents=True, exist_ok=True)
+    prefs_path.write_text(json.dumps(prefs), encoding="utf-8")
 
 
 def make_pause(cfg: Config, sleep: Callable[[float], None] = time.sleep) -> Callable[[], None]:

@@ -60,6 +60,8 @@ DISCOVER_JS = r"""
     else if (boxes.length === 1) { type = 'boolean'; options = [optionLabel(boxes[0]) || label]; }
     else if (f.querySelector('textarea')) type = 'textarea';
     else if (f.querySelector('[data-automation-id=dateInputWrapper]')) type = 'date';
+    else if (f.querySelector('input[type=number], input[inputmode=numeric], input[inputmode=decimal], ' +
+                             '[data-automation-id*=umeric]')) type = 'number';
     else if (f.querySelector('input:not([type=hidden])')) type = 'text';
     if (!type || !label) continue;
     const key = 'workday:' + id;
@@ -342,6 +344,27 @@ def _labels(where: Any, kind: str) -> list[tuple[Any, str]]:
     return out
 
 
+def _tick(el: Any) -> bool:
+    """Tick a radio button or checkbox. Workday updates the box a moment after the click, so wait for it, and
+    click the option's label when the box itself doesn't take the click."""
+    if el.is_checked():
+        return True
+    page = el.page
+    for target in ("input", "label"):
+        try:
+            if target == "input":
+                el.click(force=True)
+            else:
+                el.evaluate("i => { const l = i.labels && i.labels[0]; if (l) l.click(); }")
+        except Exception:
+            continue
+        for _ in range(10):
+            if el.is_checked():
+                return True
+            page.wait_for_timeout(200)
+    return el.is_checked()
+
+
 def check_choices(where: Any, kind: str, wanted: list[str]) -> tuple[bool, str, str]:
     boxes = _labels(where, kind)
     labels = [label for _, label in boxes]
@@ -350,10 +373,12 @@ def check_choices(where: Any, kind: str, wanted: list[str]) -> tuple[bool, str, 
         best, score = match_option(want, labels)
         if best is None or score < 0.8:
             return False, "; ".join(wanted), f"no choice matches '{want}'"
-        el = boxes[labels.index(best)][0]
-        if not el.is_checked():
-            el.check(force=True)
+        if not _tick(boxes[labels.index(best)][0]):
+            return False, "; ".join(wanted), f"Workday didn't keep the tick on '{best}'"
         chosen.append(best)
+    unticked = [label for (el, label) in boxes if label in chosen and not el.is_checked()]
+    if unticked:  # ticking one cleared another: the group takes a single answer
+        return False, "; ".join(chosen), f"only one answer stays ticked here; check {', '.join(unticked)}"
     return True, "; ".join(chosen), ""
 
 

@@ -380,3 +380,17 @@ def test_apply_on_workday_goes_from_the_resume_to_the_fill(repo: Path, sample_pr
     assert "Workday shows its questions page by page" in built.output and f"helper fill {run_id}" in built.output
     dry = runner.invoke(app, ["fill", run_id, "--dry-run"])
     assert dry.exit_code == 0 and "page by page" in dry.output and "/apply/applyManually" in dry.output
+
+
+def test_helpers_browser_never_offers_to_save_passwords(tmp_path: Path) -> None:
+    from helper.browser import no_password_saving
+
+    (tmp_path / "Default").mkdir()
+    (tmp_path / "Default" / "Preferences").write_text(json.dumps({"profile": {"name": "x"}, "other": 1}))
+    no_password_saving(tmp_path)
+    prefs = json.loads((tmp_path / "Default" / "Preferences").read_text())
+    assert prefs["credentials_enable_service"] is False and prefs["profile"] == {"name": "x", "password_manager_enabled": False}
+    assert prefs["other"] == 1
+    fresh = tmp_path / "fresh"
+    no_password_saving(fresh)
+    assert json.loads((fresh / "Default" / "Preferences").read_text())["credentials_enable_service"] is False

@@ -163,6 +163,7 @@ class EEO(StrictModel):
     race_ethnicity: Optional[str] = None
     veteran_status: Optional[str] = None
     disability_status: Optional[str] = None
+    hispanic_latino: Optional[str] = None  # unset: default_for_other
     default_for_other: str = "Decline to self identify"
 
 
@@ -172,10 +173,20 @@ class Tier2(StrictModel):
     us_citizen_or_permanent_resident: Tier2Item = Field(default_factory=Tier2Item)
     earliest_start_date: StartDates = Field(default_factory=StartDates)
     salary_expectation: Tier2Item = Field(default_factory=Tier2Item)
+    salary_from_posting: bool = False  # answer with the posting's own pay (midpoint, rounded) when it states one
+    ai_screening_consent: Tier2Item = Field(default_factory=Tier2Item)  # e.g. HiredScore: let AI review the application
+    keep_for_other_roles: Tier2Item = Field(default_factory=Tier2Item)  # keep the application for other openings
     eeo: EEO = Field(default_factory=EEO)
     background_check_consent: Tier2Item = Field(default_factory=Tier2Item)
     age_18_or_older: Tier2Item = Field(default_factory=Tier2Item)
     security_clearance: Tier2Item = Field(default_factory=Tier2Item)
+
+
+class Documents(StrictModel):
+    """Files helper uploads when a form requires them. Paths are from the repo folder (git ignores top-level PDFs)."""
+
+    transcript: Optional[str] = None  # the current program's transcript
+    undergrad_transcript: Optional[str] = None
 
 
 class Profile(StrictModel):
@@ -183,6 +194,7 @@ class Profile(StrictModel):
     tier1: Tier1 = Field(default_factory=Tier1)
     education: list[EducationEntry] = Field(default_factory=list)
     tier2: Tier2 = Field(default_factory=Tier2)
+    documents: Documents = Field(default_factory=Documents)
 
     @model_validator(mode="before")
     @classmethod
