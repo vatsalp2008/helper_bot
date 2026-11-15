@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Statuses a run sets (spec 11).
 PIPELINE_STATUSES = ("drafted", "filled", "applied", "submitted_unverified", "skipped", "failed")
@@ -16,11 +16,17 @@ OUTCOME_STATUSES = (
 )
 ALL_STATUSES = PIPELINE_STATUSES + OUTCOME_STATUSES
 
-# Spec 11 columns in order, then build additions (run_id, timestamps).
+# Statuses that mean the application was sent; they count toward caps and appear in Notion.
+SUBMITTED_STATUSES = ("applied", "submitted_unverified") + OUTCOME_STATUSES
+# Never written to Notion: nothing was sent yet (or ever).
+LOCAL_ONLY_STATUSES = ("drafted", "filled", "skipped", "failed")
+
+# Spec 11 columns in order, then build additions (run_id, timestamps; v2: source and Notion sync details).
 APPLICATION_COLUMNS = (
     "id", "company", "role_title", "location", "job_url", "job_id", "ats", "date_applied", "status",
     "resume_path", "resume_hash", "projects_used", "keyword_match_pct", "confirmation_screenshot",
     "notes", "flags", "notion_page_id", "notion_synced", "run_id", "created_at", "updated_at",
+    "source", "notion_last_edited", "notion_error", "notion_resume_hash",
 )
 
 _SCHEMA = """
@@ -45,12 +51,23 @@ CREATE TABLE IF NOT EXISTS applications (
     notion_synced           INTEGER NOT NULL DEFAULT 0, -- 0 = notion_pending
     run_id                  TEXT UNIQUE,
     created_at              TEXT NOT NULL,
-    updated_at              TEXT NOT NULL
+    updated_at              TEXT NOT NULL,
+    source                  TEXT NOT NULL DEFAULT 'helper', -- helper | notion (imported from the tracker)
+    notion_last_edited      TEXT,                       -- the Notion page's last_edited_time at the last sync
+    notion_error            TEXT,                       -- why the last Notion sync of this row failed
+    notion_resume_hash      TEXT                        -- sha256 of the PDF attached in Notion
 );
 CREATE INDEX IF NOT EXISTS idx_applications_url ON applications (job_url);
 CREATE INDEX IF NOT EXISTS idx_applications_job ON applications (ats, job_id);
 CREATE INDEX IF NOT EXISTS idx_applications_company_role
     ON applications (company COLLATE NOCASE, role_title COLLATE NOCASE);
+
+CREATE INDEX IF NOT EXISTS idx_applications_notion ON applications (notion_page_id);
+
+CREATE TABLE IF NOT EXISTS sync_state (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS status_history (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,13 +90,33 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+# Statements that bring a database from version N-1 to N. A new database gets _SCHEMA directly.
+_MIGRATIONS: dict[int, list[str]] = {
+    2: [
+        "ALTER TABLE applications ADD COLUMN source TEXT NOT NULL DEFAULT 'helper'",
+        "ALTER TABLE applications ADD COLUMN notion_last_edited TEXT",
+        "ALTER TABLE applications ADD COLUMN notion_error TEXT",
+        "ALTER TABLE applications ADD COLUMN notion_resume_hash TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_applications_notion ON applications (notion_page_id)",
+        "CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    ],
+}
+
+
 def init_db(db_path: Path) -> bool:
-    """Create the schema if needed. Returns True when the database file was created."""
+    """Create the schema, or migrate an older database to SCHEMA_VERSION. True when the file was created."""
     created = not db_path.exists()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = connect(db_path)
     try:
-        conn.executescript(_SCHEMA)
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        has_table = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'applications'").fetchone() is not None
+        if not has_table:
+            conn.executescript(_SCHEMA)
+        else:
+            for target in range(max(version, 1) + 1, SCHEMA_VERSION + 1):
+                for statement in _MIGRATIONS[target]:
+                    conn.execute(statement)
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         conn.commit()
     finally:

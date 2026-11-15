@@ -19,6 +19,8 @@ from typing import Literal, Optional
 
 from pydantic import Field
 
+from .ats import detect_ats, job_id_from_url, normalize_url
+from .companies import contains_word, norm_title, same_company
 from .dates import parse_month_year
 from .keywords import Keywords
 from .models import Cap, CapsFile, Config, Job, Profile, StrictModel
@@ -37,12 +39,44 @@ class Flag(StrictModel):
 
 
 class CompanyApplication(StrictModel):
+    """An application row as the eligibility and duplicate checks see it."""
+
     id: int
     company: str
     role_title: str
     status: str
     date_applied: Optional[str] = None
     keyword_match_pct: Optional[float] = None
+    job_url: Optional[str] = None
+    job_id: Optional[str] = None
+    ats: Optional[str] = None
+    run_id: Optional[str] = None
+    notion_page_id: Optional[str] = None
+
+
+class Duplicate(StrictModel):
+    application: CompanyApplication
+    kind: Literal["exact", "similar"]  # exact: same job id or link; similar: same company and title
+    reason: str
+
+
+def find_duplicates(url: Optional[str], company: str, role_title: str,
+                    applications: list[CompanyApplication]) -> list[Duplicate]:
+    """Spec 9 step 1: duplicates by job id, link, and company plus title."""
+    ats, job_id, norm, title = detect_ats(url), job_id_from_url(url), normalize_url(url), norm_title(role_title)
+    found: list[Duplicate] = []
+    for a in applications:
+        a_ats, a_id = a.ats or detect_ats(a.job_url), a.job_id or job_id_from_url(a.job_url)
+        if job_id and a_id and ats == a_ats and ats != "unknown":
+            if job_id == a_id:
+                found.append(Duplicate(application=a, kind="exact", reason="same job id"))
+                continue
+        elif norm and a.job_url and normalize_url(a.job_url) == norm:
+            found.append(Duplicate(application=a, kind="exact", reason="same link"))
+            continue
+        if title and same_company(a.company, company) and norm_title(a.role_title) == title:
+            found.append(Duplicate(application=a, kind="similar", reason="same company and title"))
+    return found
 
 
 class Eligibility(StrictModel):
@@ -56,6 +90,7 @@ class Eligibility(StrictModel):
     location: Optional[str] = None
     keyword_coverage_pct: Optional[float] = None  # share of the posting's technologies the master list has
     company_applications: list[CompanyApplication] = Field(default_factory=list)
+    duplicates: list[Duplicate] = Field(default_factory=list)
 
     @property
     def blocked(self) -> bool:
@@ -278,22 +313,6 @@ def _parse_deadline(text: str) -> Optional[date]:
 # --------------------------------------------------------------------------- companies and caps
 
 
-_SUFFIX_RE = re.compile(r"(?i)\b(?:inc|llc|ltd|corp|corporation|co|company|plc|gmbh|technologies)\b\.?")
-
-
-def _norm_company(name: str) -> str:
-    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", _SUFFIX_RE.sub(" ", name).lower()).split())
-
-
-def contains_word(haystack: str, needle: str) -> bool:
-    return bool(re.search(rf"(?<![A-Za-z0-9]){re.escape(needle)}(?![A-Za-z0-9])", haystack, re.IGNORECASE))
-
-
-def same_company(a: str, b: str) -> bool:
-    na, nb = _norm_company(a), _norm_company(b)
-    return bool(na and nb) and (na == nb or contains_word(na, nb) or contains_word(nb, na))
-
-
 def cap_for(company: str, caps: CapsFile) -> Optional[Cap]:
     return next((c for c in caps.caps if any(contains_word(company, f) for f in [c.company, *c.match])), None)
 
@@ -322,7 +341,7 @@ def load_applications(db_path: Path) -> list[CompanyApplication]:
     try:
         rows = conn.execute(
             "SELECT id, company, role_title, status, COALESCE(date_applied, substr(created_at, 1, 10)) AS date_applied, "
-            "keyword_match_pct FROM applications"
+            "keyword_match_pct, job_url, job_id, ats, run_id, notion_page_id FROM applications"
         ).fetchall()
     except sqlite3.OperationalError:
         return []
@@ -351,6 +370,24 @@ def check_eligibility(
 
     def flag(fid: str, level: FlagLevel, message: str, evidence: Optional[list[str]] = None) -> None:
         flags.append(Flag(id=fid, level=level, message=message, evidence=evidence or []))
+
+    # 0. Duplicates (spec 9 step 1).
+    duplicates = find_duplicates(job.url, job.company, job.role_title, applications)
+    for kind, level, fid, lead in (
+        ("exact", "blocker", "duplicate", "You already applied to this posting"),
+        ("exact", "note", "already_tracked", "This posting is already in your tracker"),
+        ("similar", "warning", "similar_application", "You applied to the same title at this company"),
+    ):
+        sent = fid != "already_tracked"
+        hits = [d for d in duplicates if d.kind == kind and (d.application.status not in IN_PROGRESS + ("skipped", "failed"))
+                == sent]
+        if hits:
+            shown = "; ".join(f"#{d.application.id} {d.application.company}, {d.application.role_title} "
+                              f"({d.application.status}{', ' + d.application.date_applied if d.application.date_applied else ''}"
+                              f", {d.reason})" for d in hits[:3])
+            more = f" and {len(hits) - 3} more" if len(hits) > 3 else ""
+            tail = ". Make sure this is a different posting." if kind == "similar" else "."
+            flag(fid, level, f"{lead}: {shown}{more}{tail}")
 
     # 1. Work authorization.
     excluded = _matching(sentences, *_EXCLUSION_RES)
@@ -472,6 +509,7 @@ def check_eligibility(
         location=location,
         keyword_coverage_pct=coverage,
         company_applications=company_rows,
+        duplicates=duplicates,
     )
 
 

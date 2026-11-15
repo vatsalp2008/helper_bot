@@ -73,3 +73,36 @@ def test_run_id_is_unique(tmp_path: Path) -> None:
 
 def test_pipeline_statuses_match_the_spec() -> None:
     assert PIPELINE_STATUSES == ("drafted", "filled", "applied", "submitted_unverified", "skipped", "failed")
+
+
+V1_SCHEMA = """
+CREATE TABLE applications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, company TEXT NOT NULL, role_title TEXT NOT NULL, location TEXT,
+    job_url TEXT, job_id TEXT, ats TEXT, date_applied TEXT, status TEXT NOT NULL DEFAULT 'drafted', resume_path TEXT,
+    resume_hash TEXT, projects_used TEXT, keyword_match_pct REAL, confirmation_screenshot TEXT, notes TEXT, flags TEXT,
+    notion_page_id TEXT, notion_synced INTEGER NOT NULL DEFAULT 0, run_id TEXT UNIQUE, created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE status_history (id INTEGER PRIMARY KEY AUTOINCREMENT, application_id INTEGER NOT NULL, status TEXT NOT NULL,
+    changed_at TEXT NOT NULL, note TEXT);
+PRAGMA user_version = 1;
+"""
+
+
+def test_a_version_1_database_is_migrated_and_keeps_its_rows(tmp_path: Path) -> None:
+    db = tmp_path / "helper.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(V1_SCHEMA)
+    conn.execute("INSERT INTO applications (company, role_title, created_at, updated_at) VALUES ('Acme', 'Intern', 'x', 'x')")
+    conn.commit()
+    conn.close()
+    assert init_db(db) is False
+    conn = connect(db)
+    try:
+        assert table_columns(conn, "applications") == list(APPLICATION_COLUMNS)
+        assert conn.execute("SELECT source FROM applications").fetchone()["source"] == "helper"
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 2
+        assert conn.execute("SELECT name FROM sqlite_master WHERE name = 'sync_state'").fetchone() is not None
+    finally:
+        conn.close()
+    assert init_db(db) is False  # running it again changes nothing

@@ -1,0 +1,44 @@
+# How helper's applications map onto your Notion tracker (spec 11; Vatsal, 2026-11-14).
+#
+# helper fills only the seven columns below, and only for applications you sent ("Applied" and later). It never touches
+# the never_touch columns or your views, and it never creates a column. Everything else it tracks (keyword match,
+# projects used, flags, resume hash) stays in its local SQLite database.
+# `helper sync-notion --check` compares this file with your live tracker without writing anything.
+
+notion_version: "2025-09-03"   # your tracker has two data sources, which older API versions refuse
+data_source_name: Internship Applications Tracker
+data_source_id: 66bc0952-4bfb-820d-a990-072f32f4575d
+
+columns:                       # helper field: your column
+  role_title: Title
+  company: Company
+  job_url: Application link
+  location: Location
+  resume_pdf: Resume version   # the tailored PDF is uploaded and attached
+  status: Status
+  date_applied: Applied on
+
+# Statuses helper sends. null: Notion has no matching option, so Notion keeps its current value.
+status_to_notion:
+  applied: Applied
+  submitted_unverified: Applied
+  oa: Online assessment
+  phone_screen: Interviewing
+  interview: Interviewing
+  offer: Offer
+  accepted: Offer
+  rejected: Rejected
+  declined: null
+  withdrawn: null
+  ghosted: null
+
+# Statuses you set by hand in Notion, as helper records them.
+status_from_notion:
+  To apply: drafted
+  Applied: applied
+  Online assessment: oa
+  Interviewing: interview
+  Offer: offer
+  Rejected: rejected
+
+never_touch: [Deadline, Referral, Referral name]

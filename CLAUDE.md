@@ -61,6 +61,11 @@ Enforce these in code, not only in instructions.
 - **Profile values:** "ask" means ask Vatsal every time. "per_run" means decided per application. `data/profile.yaml` is git-ignored.
 - **Location data:** experience locations and project display names live in `data/resume_meta.yaml`, because the master list doesn't have them.
 
+## Tracker and Notion (milestone 6)
+- `helper.db` (SQLite) is the system of record, and it holds Vatsal's imported Notion history.
+- Notion receives only sent applications (status applied or later), in the seven columns of `data/notion_mapping.yaml`. Never create Notion columns, never touch Deadline/Referral/Referral name, and never write test rows without asking.
+- Until milestone 7 automates submitting, run `helper mark <id> applied` after Vatsal applies by hand.
+
 ## Working conventions
 - Python 3.12 venv at `.venv`. Run `.venv/bin/helper ...` and `.venv/bin/pytest`.
 - The build follows spec section 13. After each milestone, run the tests, commit, push to `origin/main` (Vatsal approved this on 2026-11-13), show Vatsal the result, and wait for "continue". Outside milestone ends, commit only when he asks.

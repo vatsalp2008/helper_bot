@@ -15,7 +15,7 @@ from typing import Optional
 
 from pydantic import ValidationError
 
-from .ats import detect_ats
+from .ats import detect_ats, job_id_from_url
 from .config import Paths, load_yaml
 from .eligibility import Eligibility, Flag, check_eligibility, format_eligibility, load_applications
 from .errors import HelperError, NeedsUser, WaitingForClaude
@@ -66,6 +66,7 @@ class Finished:
     pages: int
     role_label: str
     display_names: dict[str, str]
+    application_id: int
 
 
 def start_resume(
@@ -234,6 +235,8 @@ def continue_run(paths: Paths, cfg: Config, run_id: str, build_anyway: bool = Fa
     shutil.copyfile(tex_path, final_tex)
     digest = hashlib.sha256(final_pdf.read_bytes()).hexdigest()
     write_json(folder / VALIDATION, report.to_json())
+    application_id = _record_application(paths, cfg, state, job, out, report, final_pdf, digest)
+    state.application_id = application_id
     state.options["result"] = {
         "pdf": rel(paths, final_pdf),
         "tex": rel(paths, final_tex),
@@ -249,7 +252,49 @@ def continue_run(paths: Paths, cfg: Config, run_id: str, build_anyway: bool = Fa
     save_state(paths, state)
     role = ctx.project_sets.role_types.get(out.role_type)
     return Finished(state, job, out, report, final_pdf, final_tex, digest, compiled.pages or 0,
-                    role.label if role else out.role_type, dict(ctx.meta.project_display_names))
+                    role.label if role else out.role_type, dict(ctx.meta.project_display_names), application_id)
+
+
+def _record_application(paths: Paths, cfg: Config, state: RunState, job: Job, out: TailorOutput, report: Report,
+                        pdf: Path, digest: str) -> int:
+    """The built resume becomes a drafted application in SQLite (local only until it is sent)."""
+    from .tracker import repo
+    from .tracker.commands import open_db
+
+    flags = [f"{f['level']}: {f['message']}" for f in state.options.get("eligibility", {}).get("flags", [])
+             if f["level"] != "note"]
+    fields = {
+        "company": job.company, "role_title": job.role_title, "location": job.location, "job_url": job.url,
+        "ats": detect_ats(job.url) if job.url else None, "job_id": job_id_from_url(job.url),
+        "resume_path": rel(paths, pdf), "resume_hash": digest, "projects_used": [p.project_id for p in out.projects],
+        "keyword_match_pct": report.keyword_match_pct, "flags": flags, "run_id": state.run_id,
+    }
+    conn = open_db(paths, cfg)
+    try:
+        existing = repo.find_by_run(conn, state.run_id)
+        target = existing["id"] if existing else _unsent_duplicate(paths, conn, state.run_id)
+        if target is not None:
+            repo.update(conn, target, **{k: v for k, v in fields.items() if v is not None})
+        else:
+            target = repo.insert(conn, status="drafted", source="helper", **fields)
+        conn.commit()
+        return int(target)
+    finally:
+        conn.close()
+
+
+def _unsent_duplicate(paths: Paths, conn: object, run_id: str) -> Optional[int]:
+    """An unsent row for the same posting (say a "To apply" row from Notion) is reused, not duplicated."""
+    path = run_dir(paths, run_id) / "eligibility.json"
+    if not path.is_file():
+        return None
+    for d in read_json(path).get("duplicates", []):
+        a = d["application"]
+        if d["kind"] == "exact" and a["status"] in ("drafted", "filled") and not a.get("run_id"):
+            row = conn.execute("SELECT id FROM applications WHERE id = ? AND run_id IS NULL", (a["id"],)).fetchone()  # type: ignore[attr-defined]
+            if row:
+                return int(row["id"])
+    return None
 
 
 def _reject(paths: Paths, state: RunState, report: Report, headline: str) -> None:
@@ -299,7 +344,9 @@ def format_started(paths: Paths, started: Started) -> str:
 def format_finished(paths: Paths, done: Finished) -> str:
     """The pre-build message (spec 9 step 7): eligibility flags, fit, keyword audit, track and projects."""
     out, report = done.out, done.report
-    lines = [f"Resume: {rel(paths, done.pdf)} ({done.pages} page, sha256 {done.sha256[:12]})", ""]
+    lines = [f"Resume: {rel(paths, done.pdf)} ({done.pages} page, sha256 {done.sha256[:12]})",
+             f"Tracked as application #{done.application_id} (drafted). After you apply, run "
+             f"`helper mark {done.application_id} applied` to add it to Notion.", ""]
     elig = done.state.options.get("eligibility", {})
     shown = [f for f in elig.get("flags", []) if f["level"] != "note" or f["id"] == "grad_date"]
     lines.append("Eligibility flags:" if shown else "Eligibility flags: none.")

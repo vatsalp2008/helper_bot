@@ -15,6 +15,8 @@ from helper.config import Paths, load_config
 from helper.convert import run_convert
 from helper.errors import EXIT_NEEDS_USER, EXIT_WAITING_FOR_CLAUDE
 from helper.latex import find_binary
+from helper.tracker import repo
+from helper.tracker.commands import open_db
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 runner = CliRunner()
@@ -96,6 +98,57 @@ def test_a_valid_output_becomes_a_one_page_pdf(ready: Path) -> None:
     assert state["options"]["result"]["sha256"] == hashlib.sha256(pdf.read_bytes()).hexdigest()
     assert state["options"]["result"]["pages"] == 1
     assert "—" not in result.output  # rule 4 covers helper's own messages too
+    assert "Tracked as application #1 (drafted)" in result.output and "helper mark 1 applied" in result.output
+    conn = open_db(Paths(ready), load_config(Paths(ready)))
+    try:
+        row = repo.get(conn, 1)
+        assert (row["status"], row["run_id"], row["source"]) == ("drafted", run_id, "helper")
+        assert row["resume_hash"] == hashlib.sha256(pdf.read_bytes()).hexdigest()
+        assert row["resume_path"] == "resumes/AlexExample_Resume_NorthwindLabs_BackendSWEIntern.pdf"
+    finally:
+        conn.close()
+
+
+GH = "https://boards.greenhouse.io/northwind/jobs/4567890"
+
+
+def _seed_row(root: Path, **fields: object) -> int:
+    conn = open_db(Paths(root), load_config(Paths(root)))
+    try:
+        app_id = repo.insert(conn, company="Northwind Labs", role_title="Backend SWE Intern", job_url=GH, **fields)
+        conn.commit()
+        return app_id
+    finally:
+        conn.close()
+
+
+def test_a_posting_already_applied_to_stops_the_run(ready: Path) -> None:
+    _seed_row(ready, status="applied", date_applied="2026-10-01")
+    result = runner.invoke(app, ["resume", GH, "--jd-file", str(FIXTURES / "jd_backend_intern.txt"),
+                                 "--company", "Northwind Labs", "--role", "Backend SWE Intern"])
+    assert result.exit_code == EXIT_NEEDS_USER, result.output
+    assert "You already applied to this posting: #1 Northwind Labs" in result.output
+
+
+@needs_tex
+def test_a_to_apply_row_from_notion_is_reused(ready: Path) -> None:
+    app_id = _seed_row(ready, status="drafted", source="notion", notion_page_id="page-1", notion_synced=1)
+    result = runner.invoke(app, ["resume", GH, "--jd-file", str(FIXTURES / "jd_backend_intern.txt"),
+                                 "--company", "Northwind Labs", "--role", "Backend SWE Intern"])
+    assert result.exit_code == EXIT_WAITING_FOR_CLAUDE, result.output
+    assert "already in your tracker" in result.output
+    (run_id,) = [p.name for p in (ready / "runs").iterdir()]
+    shutil.copy(FIXTURES / "tailor_output_northwind.json", ready / "runs" / run_id / "tailor_output.json")
+    done = runner.invoke(app, ["continue", run_id])
+    assert done.exit_code == 0, done.output
+    assert f"Tracked as application #{app_id} (drafted)" in done.output
+    conn = open_db(Paths(ready), load_config(Paths(ready)))
+    try:
+        row = repo.get(conn, app_id)
+        assert (row["run_id"], row["notion_page_id"], row["source"]) == (run_id, "page-1", "notion")
+        assert conn.execute("SELECT COUNT(*) FROM applications").fetchone()[0] == 1
+    finally:
+        conn.close()
 
 
 def test_an_eligibility_blocker_pauses_for_vatsal_until_he_says_build(ready: Path, tmp_path: Path) -> None:

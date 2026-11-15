@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 _HOSTS: list[tuple[str, str]] = [
     ("greenhouse", r"(^|\.)greenhouse\.io$"),
@@ -28,3 +28,42 @@ def detect_ats(url: Optional[str]) -> str:
         if re.search(pattern, host):
             return name
     return "unknown"
+
+
+# Job ids by ATS, read from the posting URL (spec 9 step 1: the duplicate check uses them).
+_JOB_ID_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("greenhouse", re.compile(r"/jobs/(\d+)")),
+    ("greenhouse", re.compile(r"[?&](?:token|gh_jid)=(\d+)")),
+    ("lever", re.compile(r"lever\.co/[^/]+/([0-9a-f-]{36})", re.I)),
+    ("ashby", re.compile(r"ashbyhq\.com/[^/]+/([0-9a-f-]{36})", re.I)),
+    ("workday", re.compile(r"/job/(?:[^/]+/)*[^/]*?_([A-Za-z]*-?\d[\w-]*?)(?:-\d+)?(?:/|$|\?)")),
+    ("smartrecruiters", re.compile(r"smartrecruiters\.com/[^/]+/(\d{6,})")),
+    ("icims", re.compile(r"/jobs/(\d+)/")),
+]
+
+
+def job_id_from_url(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    ats = detect_ats(url)
+    for name, pattern in _JOB_ID_PATTERNS:
+        if name == ats or (name == "greenhouse" and "gh_jid=" in url):
+            m = pattern.search(url)
+            if m:
+                return m.group(1).lower()
+    return None
+
+
+_ID_QUERY_KEYS = {"token", "gh_jid", "jobid", "job_id", "jid", "id", "req", "reqid", "requisitionid"}
+
+
+def normalize_url(url: Optional[str]) -> Optional[str]:
+    """Host, path and job-id query keys only: no scheme, www, tracking query, fragment, trailing slash, or
+    apply/application suffix."""
+    if not url:
+        return None
+    parsed = urlparse(url.strip())
+    host = (parsed.hostname or "").lower().removeprefix("www.")
+    path = re.sub(r"/(?:apply|application)/?$", "", parsed.path.rstrip("/"), flags=re.I)
+    keep = sorted(f"{k.lower()}={v}" for k, v in parse_qsl(parsed.query) if k.lower() in _ID_QUERY_KEYS)
+    return (f"{host}{path}".lower() + (f"?{'&'.join(keep)}" if keep else "")) or None

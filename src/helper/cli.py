@@ -209,53 +209,139 @@ def continue_(
     typer.echo(format_finished(paths, continue_run(paths, load_config(paths), run_id, build_anyway=build_anyway)))
 
 
+# --------------------------------------------------------------------------- milestone 6
+
+
 @app.command("list")
 @guarded
-def list_() -> None:
-    """List tracked applications."""
-    _not_built("list", 6, "Tracker")
+def list_(
+    status: Annotated[Optional[str], typer.Option("--status", help="Only this status.")] = None,
+    company: Annotated[Optional[str], typer.Option("--company", help="Company name contains this.")] = None,
+    limit: Annotated[int, typer.Option("--limit", min=1, help="How many rows.")] = 30,
+    all_rows: Annotated[bool, typer.Option("--all", help="Every row.")] = False,
+) -> None:
+    """List tracked applications, newest first."""
+    from .config import load_config
+    from .tracker import repo
+    from .tracker.commands import format_list, open_db
+
+    paths = _paths()
+    conn = open_db(paths, load_config(paths))
+    try:
+        everything = repo.list_applications(conn, status=status, company=company)
+        typer.echo(format_list(everything if all_rows else everything[:limit], len(everything)))
+    finally:
+        conn.close()
 
 
 @app.command()
 @guarded
 def show(application_id: Annotated[int, typer.Argument(help="Application id from `helper list`.")]) -> None:
-    """Show one application in full."""
-    _not_built("show", 6, "Tracker")
+    """Show one application in full, with its status history."""
+    from .config import load_config
+    from .tracker import repo
+    from .tracker.commands import format_show, open_db
+
+    paths = _paths()
+    conn = open_db(paths, load_config(paths))
+    try:
+        typer.echo(format_show(repo.get(conn, application_id), repo.history(conn, application_id), paths))
+    finally:
+        conn.close()
 
 
 @app.command()
 @guarded
-def stats() -> None:
+def stats(weeks: Annotated[int, typer.Option("--weeks", min=1, max=104, help="Weeks to show.")] = 8) -> None:
     """Applications per week, by ATS, and by status."""
-    _not_built("stats", 6, "Tracker")
+    from .config import load_config
+    from .tracker import repo
+    from .tracker.commands import format_stats, open_db
+
+    paths = _paths()
+    conn = open_db(paths, load_config(paths))
+    try:
+        typer.echo(format_stats(repo.stats(conn, weeks=weeks)))
+    finally:
+        conn.close()
 
 
 @app.command()
 @guarded
 def export(
-    csv: Annotated[bool, typer.Option("--csv", help="Write a CSV file.")] = True,
+    csv: Annotated[bool, typer.Option("--csv", help="Write a CSV file (the only format).")] = True,
     out: Annotated[Optional[Path], typer.Option("--out", help="Output path (default exports/).")] = None,
 ) -> None:
-    """Export applications to CSV."""
-    _not_built("export", 6, "Tracker")
+    """Export every application to CSV."""
+    from .config import load_config
+    from .tracker.commands import default_export_path, export_csv, open_db
+
+    paths = _paths()
+    conn = open_db(paths, load_config(paths))
+    try:
+        path, n = export_csv(conn, out or default_export_path(paths))
+    finally:
+        conn.close()
+    typer.echo(f"Wrote {n} application(s) to {path}")
 
 
 @app.command()
 @guarded
 def mark(
     application_id: Annotated[int, typer.Argument(help="Application id from `helper list`.")],
-    status: Annotated[str, typer.Argument(help="interview, rejected, offer, and so on.")],
-    note: Annotated[Optional[str], typer.Option("--note", help="Optional note for the status history.")] = None,
+    status: Annotated[str, typer.Argument(help="applied, oa, interview, offer, rejected, and so on.")],
+    note: Annotated[Optional[str], typer.Option("--note", help="Note for the status history.")] = None,
+    on: Annotated[Optional[str], typer.Option("--date", help="Date applied (YYYY-MM-DD), default today.")] = None,
 ) -> None:
-    """Set an application's status."""
-    _not_built("mark", 6, "Tracker")
+    """Set an application's status. Sent applications are added to or updated in Notion right away."""
+    from .config import load_config
+    from .tracker import repo
+    from .tracker.commands import open_db, push_one
+
+    paths = _paths()
+    conn = open_db(paths, load_config(paths))
+    try:
+        before = repo.get(conn, application_id)["status"]
+        try:
+            row = repo.set_status(conn, application_id, status, note=note, applied_on=on)
+        except ValueError:
+            raise HelperError(f"--date must look like 2026-11-14, not {on!r}") from None
+        conn.commit()
+        typer.echo(f"#{row['id']} {row['company']}, {row['role_title']}: {before} -> {row['status']}"
+                   + (f" (applied {row['date_applied']})" if row["date_applied"] else ""))
+        typer.echo(push_one(paths, conn, application_id))
+    finally:
+        conn.close()
 
 
 @app.command("sync-notion")
 @guarded
-def sync_notion() -> None:
-    """Retry Notion sync for rows marked notion_pending."""
-    _not_built("sync-notion", 6, "Tracker")
+def sync_notion(
+    check: Annotated[bool, typer.Option("--check", help="Only compare data/notion_mapping.yaml with the tracker.")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would change; write nothing.")] = False,
+) -> None:
+    """Send pending applications to Notion and bring back your edits (the first run imports your tracker)."""
+    from .config import load_config
+    from .tracker.commands import notion_configured, open_db
+    from .tracker.notion import check_mapping, client_from_env, format_report, load_mapping, sync
+
+    paths = _paths()
+    if not notion_configured(paths):
+        raise HelperError("Notion isn't set up: put NOTION_TOKEN and NOTION_DATABASE_ID in .env (see .env.example)")
+    mapping = load_mapping(paths)
+    api = client_from_env(paths, mapping)
+    if check:
+        problems = check_mapping(api.data_source(mapping.data_source_id), mapping)
+        if problems:
+            raise HelperError("data/notion_mapping.yaml doesn't match your tracker:\n  " + "\n  ".join(problems))
+        typer.echo(f"data/notion_mapping.yaml matches your tracker: {', '.join(mapping.columns.model_dump().values())}; "
+                   f"untouched: {', '.join(mapping.never_touch)}.")
+        return
+    conn = open_db(paths, load_config(paths))
+    try:
+        typer.echo(format_report(sync(conn, api, mapping, paths.root, dry_run=dry_run), mapping))
+    finally:
+        conn.close()
 
 
 def main() -> None:

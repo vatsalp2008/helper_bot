@@ -32,6 +32,7 @@ from .models import (
     find_gpa_keys,
 )
 from .tracker.db import init_db
+from .tracker.notion import NotionMapping
 from .yamledit import set_scalar_in_file
 
 Status = Literal["ok", "warn", "error"]
@@ -60,6 +61,7 @@ DATA_MODELS: dict[str, type[BaseModel]] = {
     "resume_meta.yaml": ResumeMetaFile,
     "skill_synonyms.yaml": SkillSynonymsFile,
     "tech_families.yaml": TechFamiliesFile,
+    "notion_mapping.yaml": NotionMapping,
 }
 
 
@@ -202,6 +204,8 @@ def _summary(name: str, model: BaseModel) -> str:
         return f"{len(model.approved_terms())} of {len(model.synonyms)} synonyms approved"
     if isinstance(model, TechFamiliesFile):
         return f"{len(model.approved())} of {len(model.families)} tech families approved"
+    if isinstance(model, NotionMapping):
+        return f"{len(model.columns.model_dump())} columns mapped; untouched: {', '.join(model.never_touch) or 'none'}"
     return "valid"
 
 
@@ -276,7 +280,7 @@ def _terminal_prompt(question: str) -> str:
 
 def _notion_check(paths: Paths) -> Check:
     if env_value(paths, "NOTION_TOKEN") and env_value(paths, "NOTION_DATABASE_ID"):
-        return Check("Notion", "ok", "token and database ID set (sync arrives in milestone 6)")
+        return Check("Notion", "ok", "token and database ID set; `helper sync-notion --check` tests the connection")
     return Check("Notion", "warn", "not configured yet; connects in milestone 6 (see .env.example)")
 
 

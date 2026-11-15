@@ -235,3 +235,48 @@ def test_report_lists_blockers_first() -> None:
     lines = text.splitlines()
     assert lines[0] == "Eligibility (spec 8): recommend skipping; ask Vatsal"
     assert lines[1].startswith("  [blocker]")
+
+
+# --------------------------------------------------------------------------- duplicates (spec 9 step 1)
+
+
+def dup(n: int, status: str = "applied", url: Optional[str] = None, company: str = "Acme",
+        role: str = "Software Engineer Intern") -> CompanyApplication:
+    return CompanyApplication(id=n, company=company, role_title=role, status=status, date_applied="2026-10-01",
+                              job_url=url)
+
+
+GH = "https://boards.greenhouse.io/acme/jobs/4567890"
+
+
+def check_url(url: Optional[str], apps: list[CompanyApplication], role: str = "Software Engineer Intern") -> Eligibility:
+    job = Job(url=url, company="Acme, Inc.", role_title=role, description_text="Join us.", source="jd_file",
+              fetched_at="2026-11-14")
+    return check_eligibility(job, CFG, caps=CAPS, applications=apps, profile=PROFILE, today=TODAY)
+
+
+def test_applying_twice_to_the_same_posting_blocks() -> None:
+    by_id = check_url(GH + "?gh_src=linkedin", [dup(1, url="https://job-boards.greenhouse.io/acme/jobs/4567890")])
+    assert levels(by_id)["duplicate"] == "blocker" and "same job id" in by_id.flags[0].message
+    by_link = check_url("https://acme.com/careers/swe-intern/", [dup(2, url="https://www.acme.com/careers/swe-intern")])
+    assert levels(by_link)["duplicate"] == "blocker" and "same link" in by_link.flags[0].message
+
+
+def test_a_tracked_but_unsent_posting_is_only_noted() -> None:
+    e = check_url(GH, [dup(3, status="drafted", url=GH)])
+    assert levels(e)["already_tracked"] == "note" and not e.blocked
+
+
+def test_same_title_different_posting_is_a_warning() -> None:
+    other = "https://boards.greenhouse.io/acme/jobs/1111111"
+    e = check_url(GH, [dup(4, url=other)])
+    assert levels(e)["similar_application"] == "warning" and not e.blocked
+    assert "different posting" in next(f.message for f in e.flags if f.id == "similar_application")
+    assert "similar_application" not in levels(check_url(GH, [dup(5, url=other, role="Data Intern")]))
+
+
+def test_greenhouse_embed_links_compare_by_token() -> None:
+    a = "https://boards.greenhouse.io/embed/job_app?for=acme&token=7654321"
+    b = "https://boards.greenhouse.io/embed/job_app?for=acme&token=1234567"
+    assert "duplicate" not in levels(check_url(a, [dup(6, url=b, role="Data Intern")]))
+    assert levels(check_url(a, [dup(7, url=a)]))["duplicate"] == "blocker"
