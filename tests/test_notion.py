@@ -126,13 +126,13 @@ def test_hand_edits_in_notion_come_back(conn: sqlite3.Connection, tmp_path: Path
 
 
 def test_a_sent_application_becomes_a_page_with_its_resume(conn: sqlite3.Connection, tmp_path: Path) -> None:
-    pdf = tmp_path / "resumes" / "VatsalPatel_Resume_Acme_SWEIntern.pdf"
-    pdf.parent.mkdir()
+    pdf = tmp_path / "resumes" / "run-1" / "VatsalPatel_Resume.pdf"
+    pdf.parent.mkdir(parents=True)
     pdf.write_bytes(b"%PDF-1.5 test")
     drafted = repo.insert(conn, company="Beta", role_title="Draft only", status="drafted")
     app_id = repo.insert(conn, company="Acme", role_title="SWE Intern", status="applied", date_applied="2026-11-14",
                          job_url="https://boards.greenhouse.io/acme/jobs/9", location="Seattle, WA",
-                         resume_path="resumes/VatsalPatel_Resume_Acme_SWEIntern.pdf", resume_hash="abc")
+                         resume_path="resumes/run-1/VatsalPatel_Resume.pdf", resume_hash="abc")
     api = FakeAPI()
     report = sync(conn, api, MAPPING, tmp_path, pull=False)
     assert report.created == [app_id] and api.uploads == [pdf.name]

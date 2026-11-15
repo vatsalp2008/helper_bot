@@ -238,7 +238,7 @@ def continue_run(paths: Paths, cfg: Config, run_id: str, build_anyway: bool = Fa
         raise HelperError(f"data/profile.yaml: the header must be filled in to render a resume: {exc}") from None
     content = build_content(out, ctx.master, ctx.meta, profile.header)
     tex_source = render_tex(content, paths.resume_template)
-    base = resume_basename(profile.header.name, job.company, job.role_title)
+    base = resume_basename(profile.header.name)  # VatsalPatel_Resume, the name recruiters see
     tex_path = write_tex(tex_source, folder / f"{base}.tex")
     compiled = compile_tex(tex_path, engine=cfg.latex_engine)
     check_compiled(compiled, tex_source, content, report)
@@ -249,9 +249,10 @@ def continue_run(paths: Paths, cfg: Config, run_id: str, build_anyway: bool = Fa
     if not report.ok:
         _reject(paths, state, report, "the rendered resume failed its checks")
 
-    paths.resumes.mkdir(parents=True, exist_ok=True)
-    final_pdf = paths.resumes / f"{base}.pdf"
-    final_tex = paths.resumes / f"{base}.tex"
+    out_dir = paths.resumes / state.run_id  # one folder per application, since every file has the same name
+    out_dir.mkdir(parents=True, exist_ok=True)
+    final_pdf = out_dir / f"{base}.pdf"
+    final_tex = out_dir / f"{base}.tex"
     shutil.copyfile(compiled.pdf, final_pdf)  # type: ignore[arg-type]
     shutil.copyfile(tex_path, final_tex)
     digest = hashlib.sha256(final_pdf.read_bytes()).hexdigest()

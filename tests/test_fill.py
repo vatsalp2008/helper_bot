@@ -92,7 +92,7 @@ def test_every_planned_field_exists_on_the_real_figma_form(browser: Any) -> None
 
 
 def test_filling_the_form_never_submits_it(browser: Any, tmp_path: Path) -> None:
-    pdf = tmp_path / "AlexExample_Resume_Acme_SWEIntern.pdf"
+    pdf = tmp_path / "AlexExample_Resume.pdf"
     pdf.write_bytes(b"%PDF-1.4 test")
     page = browser.new_page()
     page.goto(f"file://{MINI}")
@@ -121,7 +121,7 @@ def test_fill_run_waits_for_the_submit_and_logs_it(repo: Path, page_file: str) -
     run_id = "20261114-200000-acme-swe-intern"
     folder = paths.runs / run_id
     folder.mkdir(parents=True)
-    pdf = paths.resumes / "AlexExample_Resume_Acme_SWEIntern.pdf"
+    pdf = paths.resumes / run_id / "AlexExample_Resume.pdf"
     pdf.parent.mkdir(parents=True)
     pdf.write_bytes(b"%PDF-1.4 test")
     job = Job(url="https://job-boards.greenhouse.io/acme/jobs/1", ats="greenhouse", company="Acme",
@@ -131,12 +131,12 @@ def test_fill_run_waits_for_the_submit_and_logs_it(repo: Path, page_file: str) -
     write_json(folder / "answers_plan.json", mini_plan().model_dump(mode="json"))
     conn = open_db(paths, cfg)
     app_id = tracker_repo.insert(conn, company="Acme", role_title="Software Engineer Intern", job_url=job.url, run_id=run_id,
-                         resume_path="resumes/AlexExample_Resume_Acme_SWEIntern.pdf")
+                         resume_path=f"resumes/{run_id}/AlexExample_Resume.pdf")
     conn.commit()
     conn.close()
     state = RunState(run_id=run_id, created_at="now", command="apply", url=job.url, application_id=app_id,
                      options={"run": {"projects_per_resume": 5, "bullets_per_item": 2, "grad_date": "May 2027"},
-                              "result": {"pdf": "resumes/AlexExample_Resume_Acme_SWEIntern.pdf"}})
+                              "result": {"pdf": f"resumes/{run_id}/AlexExample_Resume.pdf"}})
     set_step(state, "answers", "done")
     save_state(paths, state)
 

@@ -44,7 +44,7 @@ Every command works. `helper apply` fills Greenhouse forms; Lever and Ashby arri
 2. Claude, in the Claude Code session, reads `tailor_input.json` and writes `tailor_output.json` in the same folder.
 3. `helper continue <run_id>` checks it against every rule in spec 7.7, renders it, and checks the PDF: one page, no title or tag running past the margin, at most 2 lines per bullet.
    - If something fails, `validation.json` lists each problem and the command exits with code 3 again, so Claude fixes the output and reruns it.
-   - When everything passes, the PDF lands in `resumes/` and the command prints the pre-build message: fit, keyword audit, track and projects.
+   - When everything passes, the PDF is saved as `resumes/<run_id>/VatsalPatel_Resume.pdf`. The file name never includes the company or role. The command then prints the pre-build message: fit, keyword audit, track and projects.
 4. Two proposal files wait for your approval. Nothing in them is used until you set `approved: true`:
    - `data/skill_synonyms.yaml`: skills-line terms such as Hypothesis Testing.
    - `data/tech_families.yaml`: same-family tech swaps such as GitHub Actions for GitLab CI.

@@ -113,11 +113,9 @@ def test_url_escapes_only_percent_and_hash() -> None:
 def test_display_phone_and_file_names() -> None:
     assert display_phone("(206) 555-0100") == "(206) 555--0100"
     assert display_phone("+1 206-555-0100") == "+1 206--555--0100"
-    assert resume_basename("Vatsal Patel", "Jane Street", "software engineer intern") == (
-        "VatsalPatel_Resume_JaneStreet_SoftwareEngineerIntern"
-    )
+    assert resume_basename("Vatsal Patel") == "VatsalPatel_Resume"  # never a company or role (Vatsal, 2026-11-14)
     with pytest.raises(RenderError):
-        resume_basename("Vatsal Patel", "  ", "SWE")
+        resume_basename("  ")
 
 
 # --------------------------------------------------------------------------- the reference resume

@@ -305,17 +305,13 @@ def tex_differences(rendered: str, reference: str) -> list[str]:
     ]
 
 
-def resume_basename(name: str, company: str, role: str) -> str:
-    """VatsalPatel_Resume_<Company>_<RoleShortName> (spec 6)."""
-
-    def camel(text: str) -> str:
-        parts = re.findall(r"[A-Za-z0-9]+", text)
-        return "".join(p[:1].upper() + p[1:] for p in parts)
-
-    pieces = [camel(name), "Resume", camel(company), camel(role)]
-    if not all(pieces):
-        raise RenderError(f"can't build a file name from name={name!r}, company={company!r}, role={role!r}")
-    return "_".join(pieces)
+def resume_basename(name: str) -> str:
+    """The resume's file name: VatsalPatel_Resume, nothing more (Vatsal, 2026-11-14; replaces spec 6's
+    _<Company>_<RoleShortName> suffix). Each run's copy lives in its own folder, resumes/<run_id>/."""
+    camel = "".join(p[:1].upper() + p[1:] for p in re.findall(r"[A-Za-z0-9]+", name))
+    if not camel:
+        raise RenderError(f"can't build a file name from name={name!r}")
+    return f"{camel}_Resume"
 
 
 def load_content(path: Path) -> ResumeContent:

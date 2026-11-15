@@ -88,7 +88,7 @@ def test_a_valid_output_becomes_a_one_page_pdf(ready: Path) -> None:
     shutil.copy(FIXTURES / "tailor_output_northwind.json", folder / "tailor_output.json")
     result = runner.invoke(app, ["continue", run_id])
     assert result.exit_code == 0, result.output
-    pdf = ready / "resumes" / "AlexExample_Resume_NorthwindLabs_BackendSWEIntern.pdf"
+    pdf = ready / "resumes" / run_id / "AlexExample_Resume.pdf"
     assert pdf.is_file() and pdf.with_suffix(".tex").is_file()
     assert "Matched verbatim: Java, Go, Kafka" in result.output
     assert "Genuine gaps not forced in: Scala, Cassandra" in result.output
@@ -104,7 +104,7 @@ def test_a_valid_output_becomes_a_one_page_pdf(ready: Path) -> None:
         row = repo.get(conn, 1)
         assert (row["status"], row["run_id"], row["source"]) == ("drafted", run_id, "helper")
         assert row["resume_hash"] == hashlib.sha256(pdf.read_bytes()).hexdigest()
-        assert row["resume_path"] == "resumes/AlexExample_Resume_NorthwindLabs_BackendSWEIntern.pdf"
+        assert row["resume_path"] == f"resumes/{run_id}/AlexExample_Resume.pdf"
     finally:
         conn.close()
 
