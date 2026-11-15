@@ -169,11 +169,19 @@ def app(n: int, company: str, status: str = "applied", when: str = "2026-10-01",
                               keyword_match_pct=pct)
 
 
-def test_caps() -> None:
+def test_caps_flag_but_never_block() -> None:
     three = [app(i, "Salesforce") for i in range(3)]
-    assert levels(check("x", company="Salesforce", apps=three))["cap_reached"] == "blocker"
+    reached = check("x", company="Salesforce", apps=three)
+    assert levels(reached)["cap_reached"] == "warning" and reached.recommendation == "build"
+    assert "recommendation, so building and applying anyway" in next(f.message for f in reached.flags
+                                                                    if f.id == "cap_reached")
     two = check("x", company="Salesforce", apps=three[:2])
-    assert levels(two)["cap_near"] == "warning" and "application 3 of 3" in two.flags[1].message
+    near = next(f for f in two.flags if f.id == "cap_near")
+    assert near.level == "warning" and "application 3 of the 3 Salesforce recommends per 12 months" in near.message
+    google = check("x", company="Google", apps=[app(i, "Google", when="2026-11-01") for i in range(3)])
+    assert google.recommendation == "build"
+    assert "Their site may refuse this one" in next(f.message for f in google.flags if f.id == "cap_reached")
+    assert levels(check("x", company="ByteDance"))["cap_note"] == "note"  # TikTok's limit covers affiliates
     assert "cap_near" not in levels(check("x", company="Salesforce", apps=three[:1]))
     old = [app(1, "Salesforce", when="2025-06-01")] * 3  # outside the 12-month window
     assert "cap_reached" not in levels(check("x", company="Salesforce", apps=old))
@@ -182,7 +190,7 @@ def test_caps() -> None:
 def test_caps_by_days_aliases_drafts_and_notes() -> None:
     assert levels(check("x", company="Databricks"))["cap_near"] == "warning"  # this would use the only slot
     recent = [app(1, "Databricks", when="2026-11-01")]
-    assert levels(check("x", company="Databricks", apps=recent))["cap_reached"] == "blocker"
+    assert levels(check("x", company="Databricks", apps=recent))["cap_reached"] == "warning"
     stale = [app(1, "Databricks", when="2026-09-01")]
     assert "cap_reached" not in levels(check("x", company="Databricks", apps=stale))
     drafts = [app(i, "Samsung Electronics", status="drafted") for i in range(12)]

@@ -3,9 +3,9 @@
 Explicit or physical blockers mean "recommend skipping and ask Vatsal" (exit 4):
 - a named F-1/OPT/CPT exclusion, or a citizenship or clearance requirement his profile doesn't meet;
 - an on-site office far from Seattle during the semester;
-- a reached company cap;
 - a graduation window that neither May 2027 nor December 2027 fits.
-Everything else is flagged and the resume is built.
+Everything else is flagged and the resume is built. Company limits never block: they are flagged first, then the
+resume is built and the application goes ahead (Vatsal, 2026-11-14).
 """
 
 from __future__ import annotations
@@ -533,12 +533,18 @@ def _cap_flags(company: str, caps: CapsFile, rows: list[CompanyApplication], tod
     submitted = [r for r in in_window if r.status not in IN_PROGRESS + ("skipped", "failed")]
     pending = [r for r in in_window if r.status in IN_PROGRESS]
     window = _window_text(cap)
+    kind = "allows" if cap.enforced else "recommends at most"
     if len(submitted) >= cap.max_applications:
-        flags.append(Flag(id="cap_reached", level="blocker", message=f"{cap.company} cap reached: {len(submitted)} "
-                          f"application(s) since {start}, and the cap is {cap.max_applications} per {window}."))
+        consequence = ("Their site may refuse this one; building and applying anyway." if cap.enforced
+                       else "It's a recommendation, so building and applying anyway.")
+        flags.append(Flag(id="cap_reached", level="warning", message=f"{cap.company} {kind} {cap.max_applications} "
+                          f"application(s) per {window}, and you have {len(submitted)} since {start}. {consequence}"))
     elif len(submitted) + 1 >= cap.max_applications:
         flags.append(Flag(id="cap_near", level="warning", message=f"This would be application {len(submitted) + 1} of "
-                          f"{cap.max_applications} allowed at {cap.company} per {window}."))
+                          f"the {cap.max_applications} {cap.company} {kind.replace('at most', '').strip()} per "
+                          f"{window}."))
+    if cap.note:
+        flags.append(Flag(id="cap_note", level="note", message=f"{cap.company}: {' '.join(cap.note.split())}"))
     if pending:
         flags.append(Flag(id="cap_pending", level="note", message=f"{len(pending)} more {cap.company} application(s) "
                           f"in progress, not counted yet."))

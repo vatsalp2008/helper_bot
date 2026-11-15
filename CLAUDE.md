@@ -6,7 +6,7 @@ helper is Vatsal's local job-application tool. The full spec is `helper_claude_c
 - No Anthropic API or SDK. Never call `claude -p` or any Claude binary from helper's code, background jobs, or scheduled tasks.
 - This interactive session is the only reasoning engine. Each judgment step is a file handoff: helper writes an input file in `runs/<run_id>/`, Claude writes the output file, and helper validates it.
 - Exit code 3 means "waiting for Claude". The message names the file to read and the file to write; after writing it, run `helper continue <run_id>`.
-- Exit code 4 means paused for Vatsal: an eligibility blocker, CAPTCHA, unknown required field, or cap. Tell him why; don't work around it. After an eligibility pause, run `helper continue <run_id> --build-anyway` only when he says build.
+- Exit code 4 means paused for Vatsal: an eligibility blocker, CAPTCHA, or unknown required field (caps only flag). Tell him why; don't work around it. After an eligibility pause, run `helper continue <run_id> --build-anyway` only when he says build.
 - Everything else is deterministic Python: Playwright, SQLite, the Notion REST API, LaTeX.
 - If a Claude feature is blocked on this seat (Claude in Chrome, connectors), say so and use plain Playwright.
 
@@ -54,6 +54,7 @@ Enforce these in code, not only in instructions.
 - **Small tweaks to fit a posting are fine** (Vatsal, 2026-11-14). Reword a project's details and pick its tech framing to match the job description.
   - **Tech swaps:** same-family swaps from `data/tech_families.yaml` (all approved). They apply in projects only; experience entries keep their own tools. A swap replaces, never adds. Prefer the posting's own tool names in projects. Nothing outside the master list becomes claimable.
   - **Skill names:** when a posting names a skill the master list has under another name, use the posting's name via `data/skill_synonyms.yaml` (all approved). For a new one with clear evidence, add it with `approved: true` and flag it as `new synonym: <term>` in that run.
+- **Company limits never block** (Vatsal, 2026-11-14). `data/caps.yaml` limits are flagged first, then helper still builds the resume and applies. `enforced: true` (Google, TikTok) means the company's site may refuse it; `enforced: false` (Salesforce) is a recommendation.
 - **`~` prints centered on the line** as `$\sim$` (bold inside bold phrases). Vatsal chose this on 2026-11-14; spec 6's `\textasciitilde{}` prints a raised tilde in this font encoding.
 - **Graduation date** (spec 8 item 4): May 2027 by default. Use December 2027 when the posting's graduation window or a "returning to school" requirement needs it. Use May 2027 when a full-time start date needs it. The run's chosen date also fills the form's expected-graduation field.
 - **Sponsorship answer** is "No", except "Yes" when the question explicitly says sponsorship includes CPT/OPT. If CPT/OPT is mentioned but it's unclear whether it counts, pause.

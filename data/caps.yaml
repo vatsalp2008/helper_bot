@@ -1,19 +1,37 @@
-# Application caps per company (spec 8.3). Before each run helper counts your applications in SQLite,
-# warns when you are near a cap, and stops at the cap.
-# A company matches when its name contains `company` as a whole word, case-insensitive
-# ("Samsung Electronics" counts as Samsung). Add `match: [Other Name]` for names that differ entirely.
+# Application limits per company (spec 8.3). Before each run helper counts your applications in SQLite and flags a
+# limit you are near or past. A limit never stops a run: helper flags it first, then still builds the resume and
+# applies (Vatsal, 2026-11-14).
+#   enforced: true   the company's own site refuses applications past the limit (Google, TikTok)
+#   enforced: false  a recommendation; you may apply past it (Salesforce)
+# A company matches when its name contains `company` as a whole word, case-insensitive ("Samsung Electronics" counts
+# as Samsung). Add `match: [Other Name]` for names that differ entirely.
 caps:
   - company: Salesforce
     max_applications: 3
     window_months: 12
+    enforced: false
   - company: Samsung
     max_applications: 10
     window_months: 6
+    enforced: false
   - company: Databricks
     max_applications: 1
     window_days: 30
+    enforced: false
+  - company: Google
+    max_applications: 3
+    window_days: 30
+    enforced: true
+    note: Google's careers site allows 3 applications in a rolling 30 days.
+  - company: TikTok
+    match: [ByteDance]
+    max_applications: 2
+    window_months: 6
+    enforced: true
+    note: 2 early-career roles per program in each window (January to June, July to December), across TikTok and its
+      affiliates; PhD and project intern roles are exempt. Counted here as the last 6 months.
 
-# Shown before a run at these companies; no limit enforced.
+# Shown before a run at these companies; no limit.
 notes:
   - company: Qualcomm
     note: Eightfold visibility setting

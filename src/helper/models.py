@@ -470,6 +470,10 @@ class Cap(StrictModel):
     max_applications: int = Field(ge=1)
     window_days: Optional[int] = Field(None, ge=1)
     window_months: Optional[int] = Field(None, ge=1)
+    # True: the company's own site refuses applications past the limit. False: a recommendation.
+    # Either way helper only flags it, then builds and applies (Vatsal, 2026-11-14).
+    enforced: bool = False
+    note: Optional[str] = None
 
     @model_validator(mode="after")
     def _one_window(self) -> "Cap":
