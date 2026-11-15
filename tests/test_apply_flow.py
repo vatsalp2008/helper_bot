@@ -60,7 +60,12 @@ def test_apply_until_the_answers_are_approved(ready: Path) -> None:
     built = runner.invoke(app, ["continue", run_id])
     assert built.exit_code == EXIT_WAITING_FOR_CLAUDE, built.output
     assert f"Resume: resumes/{run_id}/AlexExample_Resume.pdf" in built.output
-    assert f"read runs/{run_id}/questions_needed.json and write runs/{run_id}/answers_provided.json" in built.output
+    assert f"read runs/{run_id}/cover_letter_input.json" in built.output
+    shutil.copy(FIXTURES / "cover_letter_northwind.json", folder / "cover_letter_output.json")
+    lettered = runner.invoke(app, ["continue", run_id])
+    assert lettered.exit_code == EXIT_WAITING_FOR_CLAUDE, lettered.output
+    assert f"Cover letter: resumes/{run_id}/AlexExample_CoverLetter.pdf" in lettered.output
+    assert f"read runs/{run_id}/questions_needed.json and write runs/{run_id}/answers_provided.json" in lettered.output
     needed = json.loads((folder / "questions_needed.json").read_text(encoding="utf-8"))
     labels = {q["label"] for q in needed["questions"]}
     assert "Why do you want to join Figma?" in labels

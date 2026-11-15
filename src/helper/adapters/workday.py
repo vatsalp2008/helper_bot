@@ -343,7 +343,7 @@ def _fill_step(page: Any, kind: str, step: str, ctx: FlowContext, out: FlowResul
     missing = []
     for a in answers:
         if a.kind == "file":
-            if a.key in ("resume", "transcript"):
+            if a.key in ("resume", "transcript", "cover_letter"):
                 out.results.append(fill_answer(page, a, found.get(a.field, wp.Found()), ctx))
             elif a.required:
                 missing.append(a.label)  # a transcript or another document: Vatsal's
@@ -418,7 +418,7 @@ def fill_answer(page: Any, a: PlannedAnswer, found: wp.Found, ctx: FlowContext) 
             digits = wp.date_digits(value, found.dates or ["Month", "Day", "Year"])
             ok, shown, detail = bool(digits), wp.type_date(page, where, digits), "" if digits else f"can't read '{value}'"
         elif a.type == "file":
-            ok, shown, detail = wp.upload(page, where, Path(a.value) if a.key == "transcript" and a.value else ctx.resume_pdf)
+            ok, shown, detail = wp.upload(page, where, Path(a.value) if a.key in ("transcript", "cover_letter") and a.value else ctx.resume_pdf)
         else:
             box = where.locator("textarea, input:not([type=hidden]):not([type=checkbox]):not([type=radio])").first
             if box.input_value() != value:

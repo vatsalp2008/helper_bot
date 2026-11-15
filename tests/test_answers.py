@@ -231,3 +231,29 @@ def test_hispanic_or_latino_follows_the_profile() -> None:
     worded = q("Hispanic or Latino", "select", ["Hispanic or Latino", "Not Hispanic or Latino", "I don't wish to answer"])
     assert one(worded, profile=profile).value == "Not Hispanic or Latino"
     assert one(yes_no).value == "Decline To Self Identify"  # not set in the profile: the decline default
+
+
+def test_the_runs_cover_letter_goes_wherever_a_form_asks_for_one() -> None:
+    docs = {"cover_letter": "/runs/x/AlexExample_CoverLetter.pdf", "cover_letter_text": "Dear Hiring Team,\n\nHello."}
+    upload = one(q("Cover Letter", "file", required=False, name="cover_letter"), documents=docs)
+    assert (upload.kind, upload.value, upload.status) == ("file", docs["cover_letter"], "needs_review")
+    typed = one(q("Cover letter", "textarea", required=False, name="letter_box"), documents=docs)
+    assert (typed.kind, typed.value) == ("auto", docs["cover_letter_text"])
+    short_box = one(q("Cover letter", "textarea", name="letter_box"), documents={**docs, "cover_letter_text": "x" * 900})
+    assert short_box.kind == "free_text" or short_box.kind == "auto"
+    assert one(q("Cover Letter", "file", name="cover_letter")).kind == "unknown"  # no letter in this run
+
+
+def test_a_note_to_the_hiring_manager_is_drafted_short() -> None:
+    from helper.apply import _merge
+
+    note = one(q("Note to Hiring Manager", "textarea", required=False, name="note"))
+    assert note.kind == "free_text" and "60 to 90 words" in (note.note or "")
+    plan = plan_answers([q("Note to Hiring Manager", "textarea", required=False, name="note")], ctx())
+    long_note = "Hi,\n\n" + "word " * 150 + "\n\nThank you,\nVatsal Patel"
+    assert "hiring-manager note" in _merge(plan, {"answers": [{"field": "note", "answer": long_note}]})[0]
+    good = ("Hi,\n\nI enjoy figuring out why a system behaves the way it does, not just whether it works. My favorite "
+            "example is a fix I got merged into Chef that had crashed every resource for three and a half years, hidden "
+            "behind a second error that pointed elsewhere.\n\nYour platform team is where I want to grow.\n\n"
+            "Thank you,\nVatsal Patel")
+    assert _merge(plan, {"answers": [{"field": "note", "answer": good}]}) == []

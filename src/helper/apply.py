@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from pydantic import ValidationError
 
-from .answers import AnswerContext, AnswerPlan, PlannedAnswer, format_plan, match_option, plan_answers
+from .answers import NOTE_STYLE, AnswerContext, AnswerPlan, PlannedAnswer, format_plan, match_option, plan_answers
 from .browser import browser_session, captcha_visible, make_pause
 from .config import Paths, env_value, load_yaml
 from .errors import HelperError, NeedsUser, WaitingForClaude
@@ -69,8 +69,19 @@ def _context(paths: Paths, cfg: Config, run_id: str, job: Job) -> AnswerContext:
         employment=eligibility.get("employment", "unknown"), season=eligibility.get("season"),
         season_year=eligibility.get("season_year"), approved=AnswersFile.model_validate(load_yaml(paths.answers) or {}),
         past_employers=[e.organization for e in master.experience if e.organization],
-        documents=documents(paths, profile),
+        documents={**documents(paths, profile), **_letter_documents(paths, state.options)},
     )
+
+
+def _letter_documents(paths: Paths, options: dict[str, Any]) -> dict[str, str]:
+    """The run's cover letter, when one is built: the PDF for uploads and the plain text for text boxes."""
+    letter = options.get("cover_letter") or {}
+    found = {}
+    if letter.get("pdf") and (paths.root / letter["pdf"]).is_file():
+        found["cover_letter"] = str(paths.root / letter["pdf"])
+    if letter.get("text") and (paths.root / letter["text"]).is_file():
+        found["cover_letter_text"] = (paths.root / letter["text"]).read_text(encoding="utf-8").strip()
+    return found
 
 
 def documents(paths: Paths, profile: Profile) -> dict[str, str]:
@@ -99,7 +110,7 @@ def _needed(plan: AnswerPlan, job: Job, state_options: dict[str, Any], paths: Pa
         "questions": [
             {"field": a.field, "label": a.label, "type": a.type, "required": a.required, "options": a.options,
              "max_length": a.max_length, "description": a.description, "kind": a.kind, "suggested": a.value,
-             "note": a.note}
+             "note": a.note, **({"style": NOTE_STYLE} if a.key == "hiring_manager_note" else {})}
             for a in plan.open_items()
         ],
     }
@@ -123,6 +134,12 @@ def _merge(plan: AnswerPlan, provided: dict[str, Any]) -> list[str]:
         if a.max_length and len(text) > a.max_length:
             problems.append(f"{name}: {len(text)} characters, the limit is {a.max_length}")
             continue
+        if a.key == "hiring_manager_note":
+            words = len(text.split())
+            if not 40 <= words <= 110 or not text.startswith("Hi") or not text.rstrip().endswith("Vatsal Patel"):
+                problems.append(f"{name}: a hiring-manager note opens with 'Hi,', runs about 60 to 90 words "
+                                f"(this one has {words}), and ends 'Thank you,' then 'Vatsal Patel'")
+                continue
         if a.options:
             best, score = match_option(text, a.options)
             if best is None or score < 0.95:

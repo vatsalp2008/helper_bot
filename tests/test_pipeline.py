@@ -87,7 +87,8 @@ def test_a_valid_output_becomes_a_one_page_pdf(ready: Path) -> None:
     folder = ready / "runs" / run_id
     shutil.copy(FIXTURES / "tailor_output_northwind.json", folder / "tailor_output.json")
     result = runner.invoke(app, ["continue", run_id])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == EXIT_WAITING_FOR_CLAUDE, result.output  # the cover letter comes next
+    assert f"read runs/{run_id}/cover_letter_input.json" in result.output
     pdf = ready / "resumes" / run_id / "AlexExample_Resume.pdf"
     assert pdf.is_file() and pdf.with_suffix(".tex").is_file()
     assert "Matched verbatim: Java, Go, Kafka" in result.output
@@ -140,7 +141,7 @@ def test_a_to_apply_row_from_notion_is_reused(ready: Path) -> None:
     (run_id,) = [p.name for p in (ready / "runs").iterdir()]
     shutil.copy(FIXTURES / "tailor_output_northwind.json", ready / "runs" / run_id / "tailor_output.json")
     done = runner.invoke(app, ["continue", run_id])
-    assert done.exit_code == 0, done.output
+    assert done.exit_code == EXIT_WAITING_FOR_CLAUDE, done.output  # resume built; the cover letter comes next
     assert f"Tracked as application #{app_id} (drafted)" in done.output
     conn = open_db(Paths(ready), load_config(Paths(ready)))
     try:

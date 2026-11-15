@@ -130,6 +130,7 @@ class Tier1(StrictModel):
     major: Optional[str] = None
     expected_graduation: Optional[str] = None  # "per_run" = the grad date chosen for each application
     how_did_you_hear: Optional[str] = None
+    nuid: Optional[str] = None  # Northeastern ID: only on Northeastern campus job letters
     willing_to_relocate: Optional[str] = None
     work_location_preferences: Optional[str] = None
 
@@ -296,6 +297,15 @@ class TailorProject(StrictModel):
 class SkillsLine(StrictModel):
     label: str
     items: list[str]
+
+
+class CoverLetterOutput(StrictModel):
+    """What Claude writes for a cover letter (cover_letter_output.json)."""
+
+    hook: Optional[str] = None  # the posting phrase paragraph 1 quotes
+    stories: list[str]  # the resume items the letter goes deep on
+    paragraphs: list[str]
+    flags: list[str] = Field(default_factory=list)
 
 
 class KeywordAudit(StrictModel):

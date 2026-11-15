@@ -167,7 +167,7 @@ def fill_dom_form(root: Any, answers: list[Any], resume_pdf: Path, *, city: Opti
 def _fill_one(root: Any, block: Any, a: Any, pdf: Path, city: Optional[str],
               date_text: Callable[[str], str]) -> tuple[bool, Optional[str], str]:
     if a.type == "file":
-        upload = Path(a.value) if a.key == "transcript" and a.value else pdf
+        upload = Path(a.value) if a.key in ("transcript", "cover_letter") and a.value else pdf
         block.locator("input[type=file]").first.set_input_files(str(upload))
         return True, upload.name, ""
     if a.type == "textarea":

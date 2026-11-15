@@ -245,19 +245,45 @@ def continue_(
     from .config import load_config
     from .pipeline import continue_run, format_finished
 
+    from .cover_letter import cover_letter_step
+
     paths = _paths()
     cfg = load_config(paths)
     done = continue_run(paths, cfg, run_id, build_anyway=build_anyway)
     if done is not None:
         typer.echo(format_finished(paths, done))
+    letter = cover_letter_step(paths, cfg, run_id)  # every resume gets a cover letter (Vatsal, 2026-11-14)
+    if letter:
+        typer.echo(letter)
     from .runs import load_state
 
     if load_state(paths, run_id).command == "apply":
         from .apply import answers_step
 
         typer.echo(answers_step(paths, cfg, run_id, approve=approve_answers))
-    elif done is None:
-        typer.echo(f"Run {run_id} is finished: its resume is built.")
+    elif done is None and not letter:
+        typer.echo(f"Run {run_id} is finished: its resume and cover letter are built.")
+
+
+@app.command("cover-letter")
+@guarded
+def cover_letter(
+    run_id: Annotated[str, typer.Argument(help="Run folder name under runs/.")],
+    redo: Annotated[bool, typer.Option("--redo", help="Write the letter again from scratch.")] = False,
+) -> None:
+    """Write (or rewrite) the cover letter for a run whose resume is built."""
+    from .config import load_config
+    from .cover_letter import cover_letter_step
+    from .errors import HelperError
+    from .runs import load_state
+
+    paths = _paths()
+    state = load_state(paths, run_id)
+    if not (state.steps.get("render") and state.steps["render"].status == "done"):
+        raise HelperError(f"run {run_id} has no resume yet: finish it with `helper continue {run_id}` first")
+    letter = cover_letter_step(paths, load_config(paths), run_id, redo=redo)
+    typer.echo(letter or f"The cover letter for {run_id} is already built: {state.options['cover_letter']['pdf']}. "
+                         "Use --redo to write it again.")
 
 
 # --------------------------------------------------------------------------- milestone 6

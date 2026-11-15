@@ -51,6 +51,18 @@ Every command works. `helper apply` fills Greenhouse, Lever, Ashby and Workday f
 
 `helper resume <link>` reads Greenhouse, Lever, Ashby and Workday postings directly; other sites need `--jd-file` for now.
 
+### Cover letters
+
+Every resume gets a cover letter. After the resume is built, `helper continue` writes `cover_letter_input.json`:
+the posting, the resume's five projects and two experience entries with their master-list facts, and the letter rules.
+Claude writes four paragraphs in `cover_letter_output.json`. helper then checks them:
+- every number and tool against the item each sentence talks about;
+- no gap terms, no em dashes;
+- 400 to 450 words on one page.
+
+It renders `templates/cover_letter.tex.j2` and saves `resumes/<run_id>/<Name>_CoverLetter.pdf` next to the resume. Forms
+that ask for a cover letter get it. `helper cover-letter <run_id> --redo` writes it again.
+
 ### Applying (milestones 7 and 8: Greenhouse, Lever, Ashby, Workday)
 
 1. `helper apply <link>` reads the posting from the site's public API.

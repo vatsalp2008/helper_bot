@@ -375,6 +375,8 @@ def test_apply_on_workday_goes_from_the_resume_to_the_fill(repo: Path, sample_pr
     assert started.exit_code == EXIT_WAITING_FOR_CLAUDE, started.output
     (run_id,) = [p.name for p in (repo / "runs").iterdir()]
     shutil.copy(FIXTURES / "tailor_output_northwind.json", repo / "runs" / run_id / "tailor_output.json")
+    assert runner.invoke(app, ["continue", run_id]).exit_code == EXIT_WAITING_FOR_CLAUDE  # the cover letter
+    shutil.copy(FIXTURES / "cover_letter_northwind.json", repo / "runs" / run_id / "cover_letter_output.json")
     built = runner.invoke(app, ["continue", run_id])
     assert built.exit_code == 0, built.output
     assert "Workday shows its questions page by page" in built.output and f"helper fill {run_id}" in built.output

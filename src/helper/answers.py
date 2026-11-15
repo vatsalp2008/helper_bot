@@ -115,6 +115,7 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("keep_for_other_roles", r"\bretain\w*\b.{0,80}\b(future|other|alternative)\b.{0,40}\b(roles?|opportunit\w*|"
                              r"positions?|openings?)\b|\btalent (pool|community)\b", 0.9),
     ("transcript", r"\btranscripts?\b|\bacademic record\b", 0.95),
+    ("hiring_manager_note", r"\b(note|message)\b.{0,25}\b(hiring manager|recruiter|hiring team)\b", 0.9),
     ("cover_letter", r"\bcover letter\b", 0.95),
     ("resume", r"\bresume\b|\bcv\b", 0.95),
     ("preferred_first_name", r"\bpreferred (first )?name\b|\bnickname\b", 0.95),
@@ -502,8 +503,10 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
                                                                                 if q.required else "")))
             continue
         if key == "cover_letter":
-            answers.append(PlannedAnswer(**base, kind="unknown" if q.required else "skip",
-                                         note="a cover letter needs text Vatsal approved"))
+            answers.append(_cover_letter(q, base, ctx))
+            continue
+        if key == "hiring_manager_note" and q.type in ("textarea", "text"):
+            answers.append(PlannedAnswer(**base, kind="free_text", note=NOTE_STYLE))
             continue
         if key == "transcript" and q.type == "file":
             answers.append(_transcript(q, base, ctx))
@@ -526,6 +529,27 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
         answers.append(PlannedAnswer(**base, **planned))
     _split_street(answers, ctx)
     return AnswerPlan(answers=answers)
+
+
+NOTE_STYLE = ("a short note in Vatsal's style: 'Hi,' on top, then two short paragraphs, about 60 to 90 words in "
+              "all (one specific story from the resume, then one honest line about fit that names a real gap if the "
+              "posting asks for something he hasn't done), and 'Thank you,' with 'Vatsal Patel' on the next line")
+
+
+def _cover_letter(q: FormQuestion, base: dict[str, object], ctx: AnswerContext) -> PlannedAnswer:
+    """The run's cover letter (one is written with every resume, Vatsal 2026-11-14): the PDF for an upload, the text
+    for a text box. Vatsal sees it with the other answers before anything is filled."""
+    pdf, text = ctx.documents.get("cover_letter"), ctx.documents.get("cover_letter_text")
+    if q.type == "file" and pdf:
+        return PlannedAnswer(**base, kind="file", value=pdf, confidence=1.0, source="this posting's cover letter",
+                             status="needs_review")
+    if q.type in ("textarea", "text") and text:
+        if q.max_length and len(text) > q.max_length:
+            return PlannedAnswer(**base, kind="unknown" if q.required else "skip",
+                                 note=f"the cover letter has {len(text)} characters; this box takes {q.max_length}")
+        return PlannedAnswer(**base, kind="auto", value=text, confidence=1.0, source="this posting's cover letter",
+                             status="needs_review")
+    return PlannedAnswer(**base, kind="unknown" if q.required else "skip", note="this run has no cover letter yet")
 
 
 def _transcript(q: FormQuestion, base: dict[str, object], ctx: AnswerContext) -> PlannedAnswer:
@@ -621,8 +645,8 @@ def format_plan(plan: AnswerPlan) -> str:
     lines = []
     for a in sorted(plan.answers, key=lambda a: (order[a.kind], a.label.lower())):
         star = "*" if a.required else " "
-        value = (a.value or "") if a.kind != "file" else (f"({a.value.rsplit('/', 1)[-1]})" if a.key == "transcript"
-                                                          and a.value else "(the tailored resume PDF)")
+        value = (a.value or "") if a.kind != "file" else (f"({a.value.rsplit('/', 1)[-1]})" if a.key in (
+            "transcript", "cover_letter") and a.value else "(the tailored resume PDF)")
         if a.kind == "free_text" and a.value:
             value = f"{a.value[:70]}..." if len(a.value) > 70 else a.value
         conf = f" [{a.confidence:.2f}]" if a.kind in ("auto", "confirm") and a.confidence < 1 else ""

@@ -1,0 +1,146 @@
+"""Cover letters: one with every resume, checked like the resume, rendered with Vatsal's template."""
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+from typer.testing import CliRunner
+
+from helper.cli import app
+from helper.config import Paths, load_config
+from helper.convert import run_convert
+from helper.cover_letter import (cover_letter_step, is_northeastern_campus, plain_letter, prose_numbers, salutation,
+                                 validate_letter, word_count)
+from helper.errors import EXIT_WAITING_FOR_CLAUDE, WaitingForClaude
+from helper.latex import find_binary
+from helper.models import CoverLetterOutput, Job, Profile, TailorOutput
+from helper.validate import RunOptions, load_context
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+LETTER = json.loads((FIXTURES / "cover_letter_northwind.json").read_text(encoding="utf-8"))
+TAILOR = TailorOutput.model_validate_json((FIXTURES / "tailor_output_northwind.json").read_text(encoding="utf-8"))
+JD = FIXTURES / "jd_backend_intern.txt"
+runner = CliRunner()
+needs_tex = pytest.mark.skipif(find_binary("pdflatex") is None, reason="needs pdflatex")
+
+
+@pytest.fixture
+def ready(repo: Path, sample_profile_text: str) -> Path:
+    (repo / "data" / "profile.yaml").write_text(sample_profile_text, encoding="utf-8")
+    run_convert(Paths(repo), load_config(Paths(repo)))
+    return repo
+
+
+def job(company: str = "Northwind Labs") -> Job:
+    return Job(company=company, role_title="Backend SWE Intern", description_text=JD.read_text(encoding="utf-8"),
+               source="jd_file", fetched_at="now")
+
+
+def check(ready: Path, paragraphs: list[str], **changes: Any) -> Any:
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="May 2027"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    out = CoverLetterOutput.model_validate({**LETTER, "paragraphs": paragraphs, **changes})
+    return validate_letter(out, ctx, items, job(), TAILOR, profile)
+
+
+def test_the_sample_letter_passes(ready: Path) -> None:
+    report = check(ready, LETTER["paragraphs"])
+    assert report.ok, [str(e) for e in report.errors]
+    assert 400 <= sum(word_count(p) for p in LETTER["paragraphs"]) <= 450
+
+
+P = LETTER["paragraphs"]
+
+
+@pytest.mark.parametrize("paragraphs,changes,expected", [
+    ([P[0].replace("habit:", "habit —"), *P[1:]], {}, "no em dashes"),
+    ([P[0], P[1].replace("10,000 trade events", "12,000 trade events"), *P[2:]], {}, "'12,000' isn't a number"),
+    ([P[0], P[1].replace("Terraform modules", "Terraform and Snowflake modules"), *P[2:]], {},
+     "'Snowflake' (Snowflake) isn't a technology ecommerce_platform used"),
+    ([P[0], P[1].replace("of **9 microservices**", "of **8 microservices**"), *P[2:]], {},
+     "'8' isn't a number in ecommerce_platform"),
+    ([P[0], P[1] + " I also built EchoCoach, a voice coach.", *P[2:]], {}, "isn't on this resume"),
+    ([P[0], P[1], P[2] + " I also created supplementary materials for the course.", P[3]], {}, "never mentions creating"),
+    ([P[0], P[1].replace("through **Kafka**", "through **Kafka** and Cassandra"), *P[2:]], {}, "is a gap"),
+    ([P[0], P[1], P[2].replace("I merged a fix into chef/chef, PR #16260,", "I opened PR #16260 against chef/chef"),
+      P[3]], {}, "always described as merged"),
+    (P[:3], {}, "exactly 4"),
+    ([*P[:3], "Thank you for your time."], {}, "close with"),
+    (P, {"hook": "an embedded builder mindset"}, "isn't in the posting"),
+    (P, {"stories": ["echocoach", "chef"]}, "isn't on this resume"),
+    ([P[0][:200], P[1], P[2][:300], P[3]], {}, "words; write about 400 to 450"),
+])
+def test_the_letter_checks(ready: Path, paragraphs: list[str], changes: dict[str, Any], expected: str) -> None:
+    report = check(ready, paragraphs, **changes)
+    assert not report.ok and any(expected in str(e) for e in report.errors), [str(e) for e in report.errors]
+
+
+def test_numbers_read_the_way_people_write_them() -> None:
+    assert prose_numbers("a bug that sat for three and a half years") == "a bug that sat for 3.5 years"
+    assert prose_numbers("p99 latency under 50ms") == "p99 latency <50ms"
+    assert prose_numbers("more than 100 students and about 200 issues") == "100+ students and ~200 issues"
+
+
+def test_northeastern_campus_letters() -> None:
+    campus = job("Northeastern University")
+    assert is_northeastern_campus(campus) and not is_northeastern_campus(job())
+    assert salutation(campus) == "Dear Career Team," and salutation(job()) == "Dear Hiring Team,"
+    text = plain_letter("Dear Career Team,", ["One **bold** thing.", "Two."], "Alex Example", "000000000")
+    assert text.endswith("Sincerely,\nAlex Example\nNUID: 000000000\n") and "**" not in text
+    assert "NUID" not in plain_letter("Dear Hiring Team,", ["One."], "Alex Example", None)
+
+
+@needs_tex
+def test_every_resume_gets_a_cover_letter(ready: Path) -> None:
+    started = runner.invoke(app, ["resume", "--jd-file", str(JD), "--company", "Northwind Labs",
+                                  "--role", "Backend SWE Intern"])
+    assert started.exit_code == EXIT_WAITING_FOR_CLAUDE, started.output
+    (run_id,) = [p.name for p in (ready / "runs").iterdir()]
+    folder = ready / "runs" / run_id
+    shutil.copy(FIXTURES / "tailor_output_northwind.json", folder / "tailor_output.json")
+    built = runner.invoke(app, ["continue", run_id])
+    assert built.exit_code == EXIT_WAITING_FOR_CLAUDE, built.output
+    assert f"Resume: resumes/{run_id}/AlexExample_Resume.pdf" in built.output
+    assert f"read runs/{run_id}/cover_letter_input.json and write runs/{run_id}/cover_letter_output.json" in built.output
+    given = json.loads((folder / "cover_letter_input.json").read_text(encoding="utf-8"))
+    assert [i["id"] for i in given["items"]] == ["ta", "kalini_sde", "pulsetrader", "ecommerce_platform", "spiceai",
+                                                 "experimentiq", "chef"]
+    assert given["salutation"] == "Dear Hiring Team," and given["resume"]["keyword_audit"]["gaps"] == ["Scala", "Cassandra"]
+    assert any("100+ students" in rule for rule in given["rules"]) and len(given["structure"]) == 4
+
+    bad = {**LETTER, "paragraphs": [P[0].replace("habit:", "habit —"), *P[1:]]}
+    (folder / "cover_letter_output.json").write_text(json.dumps(bad), encoding="utf-8")
+    rejected = runner.invoke(app, ["continue", run_id])
+    assert rejected.exit_code == EXIT_WAITING_FOR_CLAUDE and "no em dashes" in rejected.output
+
+    shutil.copy(FIXTURES / "cover_letter_northwind.json", folder / "cover_letter_output.json")
+    done = runner.invoke(app, ["continue", run_id])
+    assert done.exit_code == 0, done.output
+    assert f"Cover letter: resumes/{run_id}/AlexExample_CoverLetter.pdf (418 words, 1 page)" in done.output
+    pdf = ready / "resumes" / run_id / "AlexExample_CoverLetter.pdf"
+    assert pdf.is_file() and (ready / "resumes" / run_id / "AlexExample_Resume.pdf").is_file()
+    assert (folder / "cover_letter.txt").read_text(encoding="utf-8").startswith("Dear Hiring Team,\n\nI'm writing")
+    state = json.loads((folder / "state.json").read_text(encoding="utf-8"))
+    assert state["steps"]["cover_letter"]["status"] == "done" and state["options"]["cover_letter"]["words"] == 418
+
+    assert "resume and cover letter are built" in runner.invoke(app, ["continue", run_id]).output
+    assert "already built" in runner.invoke(app, ["cover-letter", run_id]).output
+    redo = runner.invoke(app, ["cover-letter", run_id, "--redo"])
+    assert redo.exit_code == EXIT_WAITING_FOR_CLAUDE and not (folder / "cover_letter_output.json").exists()
+
+
+def test_no_letter_before_the_resume(ready: Path) -> None:
+    started = runner.invoke(app, ["resume", "--jd-file", str(JD), "--company", "Northwind Labs",
+                                  "--role", "Backend SWE Intern"])
+    (run_id,) = [p.name for p in (ready / "runs").iterdir()]
+    assert started.exit_code == EXIT_WAITING_FOR_CLAUDE
+    assert cover_letter_step(Paths(ready), load_config(Paths(ready)), run_id) is None
+    assert "has no resume yet" in runner.invoke(app, ["cover-letter", run_id]).output

@@ -13,12 +13,14 @@ helper is Vatsal's local job-application tool. The full spec is `helper_claude_c
 | helper writes | Claude writes | Notes |
 |---|---|---|
 | `tailor_input.json` | `tailor_output.json` | Schema in spec 7.6. Optional extras: `fit_paragraph`, per-project `reason`. Mark a bullet with no number with a flag `"qualitative: <item_id> bullet <n>: <why>"`. |
+| `cover_letter_input.json` | `cover_letter_output.json` | `{hook, stories, paragraphs, flags}`: four paragraphs, 400 to 450 words, bold key words (at most 4 per paragraph). Facts only from the resume's 7 items; helper checks each sentence against the item it names. `hook` must be the posting's own words. |
 | `questions_needed.json` | `answers_provided.json` | Use only master-list facts and the job description. Every draft is `needs_review` until Vatsal approves it, then offer to save it to `data/answers.yaml`. |
 
 The resume loop:
 1. `helper resume --jd-file F --company C --role R` writes `tailor_input.json`. It holds the rules, the posting's keywords, and each item's allowed tech, numbers and wording rules.
 2. Write `tailor_output.json`, then run `helper continue <run_id>`.
 3. A rejection lists every problem in `validation.json`. Fix the output and continue again.
+4. Then the cover letter: `cover_letter_input.json` -> `cover_letter_output.json`, `helper continue` again (rejections in `cover_letter_validation.json`). `helper cover-letter <run_id> [--redo]` writes one for an older run or starts over.
 Never edit validation results or loosen a check to get a pass.
 
 ## 3. Source of truth
@@ -64,6 +66,11 @@ Enforce these in code, not only in instructions.
   - **AI screening and keeping the application for other roles** (for example HiredScore): yes, the choice that opts in (`tier2.ai_screening_consent`, `tier2.keep_for_other_roles`).
   - **Hispanic or Latino:** No (`tier2.eeo.hispanic_latino`). Other extra EEO questions, such as pronouns, keep the decline default.
   - **Transcripts:** `documents.transcript` (master's) and `documents.undergrad_transcript` are uploaded only when a form requires a transcript; the undergraduate one when the question asks for it. They're PDFs in the repo's top folder, which git ignores.
+- **Cover letters** (Vatsal, 2026-11-14): one with every resume, saved as `<Name>_CoverLetter.pdf` next to the resume, and uploaded wherever a form has a cover letter field (a text box gets the plain text).
+  - **Format:** his template (`templates/cover_letter.tex.j2`): resume header, thin cyan line, 14pt paragraph spacing. Bold key words. Always "Dear Hiring Team,"; Northeastern campus jobs get "Dear Career Team," and his NUID after the name (`tier1.nuid`, profile only).
+  - **Writing:** paragraph 1 why this role (a quoted posting phrase when it truly fits), 2 main proof, 3 rigor (often the open-source merges), 4 close (Master's student in Computer Science at Northeastern University, thanks). His approved examples are in `data/cover_letter_examples.md` (git-ignored).
+  - **"Note to Hiring Manager" boxes:** a short note, "Hi," then two short paragraphs (about 60 to 90 words: one story, one honest line about fit), then "Thank you," and "Vatsal Patel".
+- **Certifications** (Vatsal, 2026-11-14): `data/certifications.yaml` (git-ignored, read from his certificate images) lists his 13 certificates for Workday's Certifications section.
 - **Company limits never block** (Vatsal, 2026-11-14). `data/caps.yaml` limits are flagged first, then helper still builds the resume and applies. `enforced: true` (Google, TikTok) means the company's site may refuse it; `enforced: false` (Salesforce) is a recommendation.
 - **`~` prints centered on the line** as `$\sim$` (bold inside bold phrases). Vatsal chose this on 2026-11-14; spec 6's `\textasciitilde{}` prints a raised tilde in this font encoding.
 - **Graduation date** (spec 8 item 4): May 2027 by default. Use December 2027 when the posting's graduation window or a "returning to school" requirement needs it. Use May 2027 when a full-time start date needs it. The run's chosen date also fills the form's expected-graduation field.

@@ -1,0 +1,15 @@
+{
+  "hook": null,
+  "stories": [
+    "pulsetrader",
+    "ecommerce_platform",
+    "chef"
+  ],
+  "paragraphs": [
+    "I'm writing to apply for this internship on your engineering team. What draws me to backend engineering is owning systems that other people quietly depend on, where the work is judged by whether it stays correct when traffic and failures get messy. My strongest work has come from one habit: measuring how a system really behaves under load before I trust it, and fixing the root cause rather than the symptom. That is the kind of ownership this internship asks for, and it is the part of engineering I enjoy most.",
+    "Most recently I built PulseTrader, a real-time streaming pipeline that processes **10,000 trade events** per second across 8 symbols through **Kafka**, with Avro schema evolution and 3 Apache Flink jobs for normalization, windowed aggregation, and anomaly detection. The hard part was correctness rather than speed: I designed for exactly-once semantics and watermark-based handling of late trade events while keeping p99 latency under 50ms. Before that, I architected an event-driven e-commerce platform of **9 microservices**, a **Java** Spring Boot core plus one service in Go, where a choreography-based Saga pattern and a transactional outbox kept distributed transactions consistent. I then wrote Terraform modules that provision its production AWS infrastructure, so the stack can be rebuilt the same way every time, and added Prometheus and Grafana for observability.",
+    "I bring the same standard to open source. I merged a fix into chef/chef, PR #16260, for a defect that had affected every Chef resource for three and a half years, hidden behind a second error that pointed somewhere else. I triaged ~200 open issues before choosing it, added 4 **RSpec** tests that fail without the fix, and kept CI green across 13 unit-spec jobs. A maintainer pushed back hard before accepting it, and I won that argument with evidence from the codebase, not assumption. Later in the same review I caught a suggestion that would have broken 5 of 7 specs, and I traced an unrelated CI flake, 1 of 13 jobs failing before any spec ran, instead of assuming my change caused it. Teaching taught me the other half of the job: as a Graduate Teaching Assistant for Data Structures and Algorithms in C, I debugged linked lists, trees, graphs, and hash tables with 100+ students, and learned to explain a bug as clearly as I fix it.",
+    "I'm a Master's student in Computer Science at Northeastern University, and I'd welcome the chance to bring that same care for correctness to your team. Thank you for your consideration."
+  ],
+  "flags": []
+}
