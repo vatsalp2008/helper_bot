@@ -4,7 +4,7 @@ From one job posting URL, helper builds a tailored one-page PDF resume, fills th
 
 helper never calls an AI API. Judgment steps (tailoring, free-text answers) are done by Claude Code in an interactive session through files in `runs/<run_id>/`. Everything else is plain Python: Playwright, SQLite, the Notion REST API and LaTeX.
 
-> Status: milestone 8 of 11 (Greenhouse, Lever, Ashby and Workday applications). A full setup guide arrives in milestone 11.
+> Status: milestone 9 of 11 (Greenhouse, Lever, Ashby and Workday applications, cover letters, auto-submit gate). A full setup guide arrives in milestone 11.
 
 ## Setup
 
@@ -87,6 +87,16 @@ that ask for a cover letter get it. `helper cover-letter <run_id> --redo` writes
 - A failed sign-in is never retried. If Workday wants an email verification, a CAPTCHA, or an answer only you can give, helper says so and waits for you in the window.
 
 LinkedIn Easy Apply and Handshake are refused (rule 7). iCIMS, Taleo and similar sites are left to you, because they need accounts (rule 8). helper can still build the resume for any of them.
+
+### Auto-submit (milestone 9, off by default)
+
+`helper apply <link> --mode auto` (or `submit_mode: auto` in `config.yaml`) lets helper click Submit itself, once,
+when every condition in spec 10.5 holds. The site needs 5 clean review-mode runs first. Every required answer must come
+from your profile, a fixed rule or an approved answer, and nothing may still need review. There can be no eligibility
+warnings, duplicates, CAPTCHAs or form errors.
+
+If any condition fails, the run stays in review mode and helper says why. `helper stats` shows how many clean runs each
+site has. Workday is always review-only.
 
 ### Tracking applications (milestone 6)
 

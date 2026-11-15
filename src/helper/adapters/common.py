@@ -47,6 +47,41 @@ def find_form(page: Any, anchors: tuple[str, ...], hosts: tuple[str, ...] = (), 
         page.wait_for_timeout(500)
 
 
+def click_submit(form: Any, selectors: tuple[str, ...]) -> bool:
+    """Click the form's Submit button once (auto mode only). Only when exactly one visible, enabled button matches."""
+    for selector in selectors:
+        buttons = form.locator(selector)
+        ready = [buttons.nth(i) for i in range(buttons.count())
+                 if buttons.nth(i).is_visible() and buttons.nth(i).is_enabled()]
+        if len(ready) == 1:
+            ready[0].click()
+            return True
+        if len(ready) > 1:
+            return False
+    return False
+
+
+VISIBLE_ERRORS_JS = r"""
+() => {
+  const visible = e => !!(e.offsetParent || e.getClientRects().length);
+  const texts = [...document.querySelectorAll('[role=alert], .error, .error-message, .field-error, .errors, '
+                                               + '[class*="error" i]:not(svg):not(path)')]
+    .filter(e => visible(e) && (e.innerText || '').trim())
+    .map(e => e.innerText.replace(/\s+/g, ' ').trim().slice(0, 120));
+  const invalid = [...document.querySelectorAll('[aria-invalid=true]')].filter(visible).length;
+  return [...new Set(texts)].concat(invalid ? [invalid + ' field(s) marked invalid'] : []);
+}
+"""
+
+
+def visible_errors(form: Any) -> list[str]:
+    """Error messages the form shows right now (checked before an auto-submit)."""
+    try:
+        return list(form.evaluate(VISIBLE_ERRORS_JS))
+    except Exception:
+        return ["helper couldn't read the form to check it for errors"]
+
+
 def is_confirmation(page: Any, form: Optional[Any] = None, hosts: tuple[str, ...] = ()) -> bool:
     """The page, the frame that held the form, or an embedded ATS frame shows a confirmation."""
     frames = [page.main_frame] + ([form] if form is not None and form is not page.main_frame else [])

@@ -147,8 +147,6 @@ def apply(
     from .config import load_config
     from .pipeline import blocked_message, format_started, start_run, waiting
 
-    if mode == SubmitMode.auto:
-        raise NotBuiltYet("Auto-submit arrives in milestone 9. Review mode fills the form and stops before Submit.")
     paths = _paths()
     cfg = load_config(paths)
     job = fetch_job(url, jd_text=jd_file.read_text(encoding="utf-8") if jd_file else None)
@@ -159,7 +157,16 @@ def apply(
         return
     started = start_run(paths, cfg, job, command="apply", projects=projects, include_experience=include_experience,
                         grad_date=grad_date)
+    submit_mode = mode.value if mode is not None else cfg.submit_mode
+    if submit_mode != "review":  # auto: helper submits only when every spec 10.5 condition holds
+        from .runs import save_state
+
+        started.state.options["submit_mode"] = submit_mode
+        save_state(paths, started.state)
     typer.echo(format_started(paths, started))
+    if submit_mode == "auto":
+        typer.echo("Submit mode: auto. helper clicks Submit itself only if every auto-submit condition holds "
+                   "(spec 10.5); otherwise this run falls back to review mode and says why.")
     if started.blocked:
         raise blocked_message(started.state)
     raise waiting(paths, started.state.run_id)
@@ -335,10 +342,14 @@ def stats(weeks: Annotated[int, typer.Option("--weeks", min=1, max=104, help="We
     from .tracker import repo
     from .tracker.commands import format_stats, open_db
 
+    from .autosubmit import readiness
+
     paths = _paths()
-    conn = open_db(paths, load_config(paths))
+    cfg = load_config(paths)
+    conn = open_db(paths, cfg)
     try:
         typer.echo(format_stats(repo.stats(conn, weeks=weeks)))
+        typer.echo(readiness(conn, cfg.auto_submit_min_clean_runs))
     finally:
         conn.close()
 

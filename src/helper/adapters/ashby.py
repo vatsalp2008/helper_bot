@@ -90,5 +90,11 @@ def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:
     return common.is_confirmation(page, form, hosts=HOSTS)
 
 
+def submit(form: Any) -> bool:
+    """Auto mode only: click Submit once."""
+    return common.click_submit(form, ("button.ashby-application-form-submit-button",
+                                      "button:has-text('Submit Application')"))
+
+
 def is_submit_request(url: str, method: str) -> bool:
     return method == "POST" and bool(re.search(r"ashbyhq\.com/api/non-user-graphql\?op=\w*Submit", url))

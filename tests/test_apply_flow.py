@@ -14,7 +14,7 @@ from helper.adapters import greenhouse
 from helper.cli import app
 from helper.config import Paths, load_config
 from helper.convert import run_convert
-from helper.errors import EXIT_NEEDS_USER, EXIT_NOT_BUILT, EXIT_WAITING_FOR_CLAUDE
+from helper.errors import EXIT_NEEDS_USER, EXIT_WAITING_FOR_CLAUDE
 from helper.latex import find_binary
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -46,7 +46,11 @@ def test_dry_run_and_auto_mode(ready: Path) -> None:
     assert preview.exit_code == 0, preview.output
     assert "Figma: Data Engineer Intern (2027)" in preview.output and "Form answers (dry run" in preview.output
     assert not (ready / "runs").exists() or not any((ready / "runs").iterdir())
-    assert runner.invoke(app, ["apply", URL, "--mode", "auto"]).exit_code == EXIT_NOT_BUILT
+    auto = runner.invoke(app, ["apply", URL, "--mode", "auto"])
+    assert auto.exit_code == EXIT_WAITING_FOR_CLAUDE and "Submit mode: auto" in auto.output
+    (run_id,) = [p.name for p in (ready / "runs").iterdir()]
+    state = json.loads((ready / "runs" / run_id / "state.json").read_text(encoding="utf-8"))
+    assert state["options"]["submit_mode"] == "auto"
 
 
 @pytest.mark.skipif(find_binary("pdflatex") is None, reason="needs pdflatex")

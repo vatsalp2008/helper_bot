@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Statuses a run sets (spec 11).
 PIPELINE_STATUSES = ("drafted", "filled", "applied", "submitted_unverified", "skipped", "failed")
@@ -69,6 +69,17 @@ CREATE TABLE IF NOT EXISTS sync_state (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS fill_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id      TEXT NOT NULL,
+    ats         TEXT NOT NULL,
+    mode        TEXT NOT NULL,
+    outcome     TEXT NOT NULL,
+    clean       INTEGER NOT NULL,
+    problems    TEXT,
+    finished_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS status_history (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     application_id INTEGER NOT NULL REFERENCES applications (id) ON DELETE CASCADE,
@@ -99,6 +110,11 @@ _MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE applications ADD COLUMN notion_resume_hash TEXT",
         "CREATE INDEX IF NOT EXISTS idx_applications_notion ON applications (notion_page_id)",
         "CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    ],
+    3: [
+        "CREATE TABLE IF NOT EXISTS fill_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, "
+        "ats TEXT NOT NULL, mode TEXT NOT NULL, outcome TEXT NOT NULL, clean INTEGER NOT NULL, problems TEXT, "
+        "finished_at TEXT NOT NULL)",
     ],
 }
 

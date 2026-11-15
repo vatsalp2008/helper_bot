@@ -31,7 +31,6 @@ def test_version() -> None:
 @pytest.mark.parametrize(
     "args,milestone",
     [
-        (["apply", "https://boards.greenhouse.io/acme/jobs/1", "--mode", "auto"], 9),
         (["apply", "https://careers.example.com/jobs/123"], 10),
     ],
 )

@@ -17,7 +17,9 @@ from typing import Any, Optional
 
 from pydantic import ValidationError
 
+from .adapters.common import visible_errors
 from .answers import NOTE_STYLE, AnswerContext, AnswerPlan, PlannedAnswer, format_plan, match_option, plan_answers
+from .autosubmit import REVIEW_ONLY, Gate, blockers, clean_review_runs, record_fill_run, run_problems
 from .browser import browser_session, captcha_visible, make_pause
 from .config import Paths, env_value, load_yaml
 from .errors import HelperError, NeedsUser, WaitingForClaude
@@ -252,9 +254,11 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
     adapter = adapter_for(job.url or job.apply_url or "")
     profile = Profile.model_validate(load_yaml(paths.profile))
     wait = cfg.fill_wait_timeout_minutes if wait_minutes is None else wait_minutes
+    mode = state.options.get("submit_mode") or cfg.submit_mode
     if hasattr(adapter, "run_flow"):
-        return _fill_flow(paths, cfg, state, job, pdf, adapter, profile, wait, headless, poll_seconds)
+        return _fill_flow(paths, cfg, state, job, pdf, adapter, profile, wait, headless, poll_seconds, mode)
     submit_seen = {"value": False}
+    seen = {"captcha": False}
     with browser_session(paths, cfg, headless=headless) as context:
         page = context.pages[0] if context.pages else context.new_page()
         page.on("request", lambda req: submit_seen.update(value=True) if adapter.is_submit_request(req.url, req.method)
@@ -264,7 +268,7 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
             page.wait_for_load_state("networkidle", timeout=20000)
         except Exception:
             pass
-        _wait_out_captcha(page, wait, poll_seconds)
+        seen["captcha"] = _wait_out_captcha(page, wait, poll_seconds)
         form = adapter.find_form(page)
         if form is None:
             _say("helper couldn't find the application form on this page, so it filled nothing. Fill it in the "
@@ -279,21 +283,54 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
         _record_status(paths, cfg, state, "filled")
         set_step(state, "fill", "done", f"{sum(r.ok for r in results)} field(s) filled")
         save_state(paths, state)
-        _say(_fill_summary(results, failed_required, wait))
-        outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, form)
+        submitted_by_helper = False
+        if mode == "auto":
+            reasons = _auto_blockers(paths, cfg, folder, job, plan, results, page, form, adapter, seen)
+            if reasons:
+                _say("Auto-submit is off for this run, so it's in review mode. Why:\n"
+                     + "\n".join(f"  - {r}" for r in reasons))
+            else:
+                _say("Auto-submit: every condition holds (spec 10.5). Clicking Submit once; helper never retries.")
+                submitted_by_helper = adapter.submit(form)
+                if not submitted_by_helper:
+                    _say("helper couldn't click Submit after all, so it's in review mode: submit it yourself.")
+        if submitted_by_helper:
+            _say(f"Filled {sum(r.ok for r in results)} of {len(results)} field(s); helper clicked Submit once.")
+        else:
+            _say(_fill_summary(results, failed_required, wait))
+        outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, form, seen)
         shot = None
         if outcome in ("confirmed", "unverified"):
             shot = folder / "confirmation.png"
             if not _snapshot(page, form, shot):
                 shot = None
-    return _log_outcome(paths, cfg, state, outcome, shot, results)
+    return _log_outcome(paths, cfg, state, outcome, shot, results, mode="auto" if submitted_by_helper else "review",
+                        problems=run_problems(results, seen["captcha"]), ats=job.ats)
+
+
+def _auto_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, plan: AnswerPlan, results: list[Any], page: Any,
+                   form: Optional[Any], adapter: Any, seen: dict[str, bool]) -> list[str]:
+    """Spec 10.5: the reasons helper must not submit this run by itself (none means it may)."""
+    from .tracker.commands import open_db
+
+    conn = open_db(paths, cfg)
+    try:
+        clean = clean_review_runs(conn, job.ats)
+    finally:
+        conn.close()
+    eligibility = read_json(folder / "eligibility.json") if (folder / "eligibility.json").is_file() else {}
+    gate = Gate(ats=job.ats, clean_runs=clean, min_clean_runs=cfg.auto_submit_min_clean_runs, answers=plan.answers,
+                results=results, eligibility=eligibility, captcha_seen=seen["captcha"] or captcha_visible(page),
+                page_errors=visible_errors(form) if form is not None else ["helper couldn't find the form"],
+                has_submit_button=hasattr(adapter, "submit") and form is not None)
+    return blockers(gate)
 
 
 # --------------------------------------------------------------------------- multi-page flows (Workday)
 
 
 def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapter: Any, profile: Profile, wait: float,
-               headless: Optional[bool], poll_seconds: float) -> FillOutcome:
+               headless: Optional[bool], poll_seconds: float, mode: str = "review") -> FillOutcome:
     """Fill a form that spans several pages. Questions are planned page by page; written answers are drafted by Claude
     while the window stays open; the flow ends on the site's Review page, and Vatsal submits."""
     folder = run_dir(paths, state.run_id)
@@ -320,6 +357,15 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
         return False
 
     submit_seen = {"value": False}
+    pauses: list[str] = []
+
+    def say(text: str) -> None:  # pauses for Vatsal keep the run from counting as clean (spec 10.5)
+        if any(w in text for w in ("yourself", "didn't accept", "CAPTCHA", "Paused", "verification", "ran out")):
+            pauses.append(text.splitlines()[0][:120])
+        _say(text)
+
+    if mode == "auto":
+        _say(f"Auto-submit is off for this run: {REVIEW_ONLY.get(job.ats, 'this site is review-only')}.")
     with browser_session(paths, cfg, headless=headless) as context:
         page = context.pages[0] if context.pages else context.new_page()
         page.on("request", lambda req: submit_seen.update(value=True) if adapter.is_submit_request(req.url, req.method)
@@ -328,7 +374,7 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
         flow = adapter.FlowContext(
             company=job.company, plan=plan_page, ask_claude=ask_claude, resume_pdf=pdf, work=work, schools=schools,
             skills=_resume_skills(folder), certifications=_certifications(paths),
-            say=_say, pause=make_pause(cfg), credentials=_workday_credentials(paths),
+            say=say, pause=make_pause(cfg), credentials=_workday_credentials(paths),
             has_account=_has_workday_account(paths, cfg, state, job), go_on=go_on, wait_seconds=wait * 60,
             poll_seconds=poll_seconds,
         )
@@ -346,7 +392,9 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
             shot = folder / "confirmation.png"
             if not _snapshot(page, None, shot):
                 shot = None
-    return _log_outcome(paths, cfg, state, outcome, shot, result.results)
+    return _log_outcome(paths, cfg, state, outcome, shot, result.results, mode="review", ats=job.ats,
+                        problems=run_problems(result.results, False, pauses + ([] if result.reached_review else
+                                                                                ["stopped before the Review page"])))
 
 
 def _ask_claude_midfill(paths: Paths, state: Any, job: Job, answers: list[PlannedAnswer], moved_on: Any,
@@ -525,18 +573,20 @@ def _fill_summary(results: list[Any], failed_required: list[Any], wait: float) -
     return "\n".join(lines)
 
 
-def _wait_out_captcha(page: Any, wait: float, poll: float) -> None:
+def _wait_out_captcha(page: Any, wait: float, poll: float) -> bool:
+    """True when a CAPTCHA showed (Vatsal solves it; helper never does, rule 6)."""
     if not captcha_visible(page):
-        return
+        return False
     _say("A CAPTCHA or verification step is showing. Please solve it in the browser window (helper never does, "
          "rule 6). Waiting...")
     deadline = time.monotonic() + wait * 60
     while captcha_visible(page) and time.monotonic() < deadline:
         time.sleep(poll)
+    return True
 
 
 def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait: float, poll: float,
-                     form: Optional[Any] = None) -> str:
+                     form: Optional[Any] = None, seen: Optional[dict[str, bool]] = None) -> str:
     deadline = time.monotonic() + wait * 60
     since_submit: Optional[float] = None
     warned_captcha = False
@@ -555,6 +605,8 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
         if not warned_captcha and captcha_visible(page):
             _say("A CAPTCHA appeared: solve it in the browser window; helper keeps watching.")
             warned_captcha = True
+            if seen is not None:
+                seen["captcha"] = True
         try:
             page.wait_for_timeout(poll * 1000)
         except Exception:
@@ -581,9 +633,19 @@ def _record_status(paths: Paths, cfg: Config, state: Any, status: str, *, screen
         conn.close()
 
 
-def _log_outcome(paths: Paths, cfg: Config, state: Any, outcome: str, shot: Optional[Path], results: list[Any]) -> FillOutcome:
-    """Spec 9 steps 10 and 11: SQLite first, then Notion, then the CSV."""
+def _log_outcome(paths: Paths, cfg: Config, state: Any, outcome: str, shot: Optional[Path], results: list[Any], *,
+                 mode: str = "review", problems: Optional[list[str]] = None, ats: Optional[str] = None) -> FillOutcome:
+    """Spec 9 steps 10 and 11: SQLite first, then Notion, then the CSV. Every fill is also logged for the auto-submit
+    count (spec 10.5)."""
     from .tracker.commands import export_csv, open_db, push_one
+
+    conn = open_db(paths, cfg)
+    try:
+        status_for_log = {"confirmed": "applied", "unverified": "submitted_unverified"}.get(outcome, outcome)
+        record_fill_run(conn, state.run_id, ats, mode, status_for_log, list(problems or []))
+        conn.commit()
+    finally:
+        conn.close()
 
     if outcome in ("closed", "timeout"):
         set_step(state, "submit", "waiting_for_user", "not submitted yet")

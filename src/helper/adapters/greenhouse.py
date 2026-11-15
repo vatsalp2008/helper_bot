@@ -263,5 +263,13 @@ def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:
     return common.is_confirmation(page, form, hosts=("greenhouse.io",))
 
 
+SUBMIT_BUTTONS = ("button[type=submit]:has-text('Submit')", "#submit_app", "input[type=submit][value*='Submit' i]")
+
+
+def submit(form: Any) -> bool:
+    """Auto mode only: click Submit once."""
+    return common.click_submit(form, SUBMIT_BUTTONS)
+
+
 def is_submit_request(url: str, method: str) -> bool:
     return method == "POST" and bool(re.search(r"greenhouse\.io/.*(?:applications|application_submit|/apply)", url))

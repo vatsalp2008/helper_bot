@@ -95,6 +95,17 @@ Supported sites: Greenhouse, Lever, Ashby and Workday. For any other site, use `
   4. It stops on the Review page; Vatsal submits.
 - Never type Vatsal's data into a live form outside a run he started. Live checks use the fictional test profile and never submit.
 
+## Auto-submit (milestone 9)
+- **Off by default** (`submit_mode: review` in config.yaml). Turn it on only when Vatsal asks: `helper apply <url> --mode auto` for one run, or `submit_mode: auto` in config.yaml for every run.
+- **The gate:** in auto mode helper clicks Submit itself, once and never again (rule 10), only if every spec 10.5 condition holds:
+  - the site has at least `auto_submit_min_clean_runs` (5) clean review-mode runs;
+  - every required answer came from the profile, a fixed rule or an approved answer, and nothing still needs review;
+  - there are no eligibility warnings or blockers, and no duplicates;
+  - no CAPTCHA or verification step appeared, and the form shows no errors.
+  Otherwise the run falls back to review mode and says why.
+- **Clean runs:** every fill is logged in SQLite (`fill_runs`). A review run is clean when the submit was confirmed and helper filled every field with nothing for Vatsal to fix. `helper stats` shows each site's count.
+- **Workday is always review-only.** The generic adapter (milestone 10) will never auto-submit either.
+
 ## Tracker and Notion (milestone 6)
 - `helper.db` (SQLite) is the system of record, and it holds Vatsal's imported Notion history.
 - Notion receives only sent applications (status applied or later), in the seven columns of `data/notion_mapping.yaml`. Never create Notion columns, never touch Deadline/Referral/Referral name, and never write test rows without asking.

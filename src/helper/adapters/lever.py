@@ -76,5 +76,10 @@ def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:
     return common.is_confirmation(page, form, hosts=HOSTS)
 
 
+def submit(form: Any) -> bool:
+    """Auto mode only: click Submit once."""
+    return common.click_submit(form, ("#btn-submit", "[data-qa=btn-submit]"))
+
+
 def is_submit_request(url: str, method: str) -> bool:
     return method == "POST" and bool(re.search(r"lever\.co/[^/]+/[0-9a-f-]{36}/apply", url, re.I))
