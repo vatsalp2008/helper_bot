@@ -533,7 +533,7 @@
 ## PROFESSIONAL EXPERIENCE
 
 ### Head Coordinator, Community Space Manager & Audio Manager
-**Organization:** BAPS Charities | **Location:** Mumbai, India | **Timeline:** Ongoing (long-term, multi-year)
+**Organization:** BAPS Charities | **Location:** Mumbai, India / Seattle, WA | **Timeline:** Ongoing (long-term, multi-year)
 
 - Coordinated 20+ annual programs serving 50+ participants, managing end-to-end event logistics (venue setup, supply restocking, day-of execution) across diverse age groups
 - Grew program attendance by 30% over 2 years by identifying operational gaps through participant feedback and improving scheduling, communication, resource allocation
@@ -579,6 +579,7 @@
 - Predictive classification (TensorFlow, Scikit-learn, 85% accuracy, 5+ algorithms)
 - Data pipeline (Pandas, SQL, 20+ features, 15% F1-score improvement)
 - Model optimization (40% inference speedup, Flask APIs, production deployment)
+- External clients (worked with external clients and customers, talking with them about the products we delivered)
 
 ---
 
@@ -588,6 +589,7 @@
 - Full-stack dashboard (React.js, Flask REST API, 5 production lines, sub-second latency)
 - Automation tools (Python, Bash, 8 workflows, 3.2 hours daily savings, Slack API integration)
 - Predictive maintenance (Random Forest, Logistic Regression, 85% accuracy, 20% downtime reduction, $50K quarterly savings)
+- External clients (worked with external clients and customers, talking with them about the products we delivered)
 
 ---
 

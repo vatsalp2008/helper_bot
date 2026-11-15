@@ -54,6 +54,8 @@ RULES = [
     "chef/chef PR #16260 is always \"merged\". spiceai #12747 is a bug report that led to the CEO's own fix, never "
     "Vatsal's implementation.",
     "Use the resume's keyword audit: matched terms may appear; gap terms never do.",
+    "Nonprofit work means BAPS Charities (Mumbai and Seattle); Northeastern is never a nonprofit Vatsal worked for. "
+    "For customer-facing or forward-deployed roles, the Kalini internships can be told as work with external clients.",
     "Bold (**term**) the posting's key words: core technologies and posting terms the letter backs with a real example, "
     "and key metrics; at most 4 per paragraph (Vatsal, 2026-11-14).",
     "About 400 to 450 words across the four paragraphs (helper rejects fewer than 360 or more than 480). It must fit "
@@ -88,10 +90,10 @@ STORY_GUIDE = [
     {"role_type": "Backend, distributed, platform", "main": "E-commerce Platform and StreamLine",
      "supporting": "chef/chef and spiceai merges, plus the Claude Code workflow"},
     {"role_type": "Data science and analytics", "main": "ExperimentIQ", "supporting": "Traffic Accident or PNWER"},
-    {"role_type": "Customer-facing, consulting, forward deployed", "main": "PNWER client delivery",
-     "supporting": "one technical story with metrics"},
+    {"role_type": "Customer-facing, consulting, forward deployed", "main": "the Kalini internships with external "
+     "clients, plus PNWER client delivery", "supporting": "one technical story with metrics"},
     {"role_type": "Campus, nonprofit, community", "main": "Graduate Teaching Assistant (100+ students), Event "
-     "Assistant, BAPS Charities", "supporting": "one data or technical story"},
+     "Assistant, BAPS Charities (Mumbai and Seattle)", "supporting": "one data or technical story"},
 ]
 OUTPUT_SCHEMA = {
     "hook": "the exact phrase from the posting that paragraph 1 quotes, or null",
@@ -388,6 +390,8 @@ def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Conte
     for trigger, name in ((r"(?i)16260|chef/chef", "the chef/chef fix"), (r"13507", "spiceai PR #13507")):
         if re.search(trigger, plain) and not re.search(r"(?i)\bmerged\b", plain):
             r.error("wording", where, f"{name} is always described as merged")
+    if re.search(r"(?i)northeastern[^.]{0,80}non-?profit|non-?profit[^.]{0,80}northeastern", plain):
+        r.error("wording", where, "Northeastern is never described as a nonprofit (BAPS Charities is the nonprofit)")
     if _MATERIALS_RE.search(plain):
         r.error("wording", where, "the TA work never mentions creating materials")
     for term in tailor.keyword_audit.gaps:

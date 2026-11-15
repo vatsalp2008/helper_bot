@@ -46,7 +46,7 @@ def test_every_bullet_in_the_markdown_is_kept_verbatim(master: MasterData) -> No
     body = text[text.index("## PROJECT DETAILS"): text.index("## SUMMARY STATISTICS")]
     source_bullets = [line[2:].strip() for line in body.splitlines() if line.startswith("- ")]
     parsed = {b for item in master.items() for b in item.bullets()}
-    assert len(source_bullets) == len(parsed) > 150
+    assert len(set(source_bullets)) == len(parsed) > 150  # a line can belong to two entries (both Kalini internships)
     assert all(b in parsed for b in source_bullets)
 
 

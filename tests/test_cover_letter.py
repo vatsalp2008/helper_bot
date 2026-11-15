@@ -144,3 +144,8 @@ def test_no_letter_before_the_resume(ready: Path) -> None:
     assert started.exit_code == EXIT_WAITING_FOR_CLAUDE
     assert cover_letter_step(Paths(ready), load_config(Paths(ready)), run_id) is None
     assert "has no resume yet" in runner.invoke(app, ["cover-letter", run_id]).output
+
+
+def test_northeastern_is_never_the_nonprofit(ready: Path) -> None:
+    report = check(ready, [P[0], P[1], P[2] + " At Northeastern, a nonprofit university, I learned a lot.", P[3]])
+    assert any("never described as a nonprofit" in str(e) for e in report.errors)
