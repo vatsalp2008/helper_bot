@@ -225,6 +225,7 @@ class FormQuestion(StrictModel):
     options: list[str] = Field(default_factory=list)
     description: Optional[str] = None
     max_length: Optional[int] = None
+    section: str = "questions"  # questions | location | eeoc | demographic
 
 
 class Job(StrictModel):
@@ -239,6 +240,7 @@ class Job(StrictModel):
     questions: list[FormQuestion] = Field(default_factory=list)
     source: str  # greenhouse_api | lever_api | ashby_api | browser | jd_file
     fetched_at: str
+    apply_url: Optional[str] = None  # where the application form is (can differ from the posting link)
 
 
 # --------------------------------------------------------------------------- runs/<id>/state.json

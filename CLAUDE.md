@@ -62,6 +62,15 @@ Enforce these in code, not only in instructions.
 - **Profile values:** "ask" means ask Vatsal every time. "per_run" means decided per application. `data/profile.yaml` is git-ignored.
 - **Location data:** experience locations and project display names live in `data/resume_meta.yaml`, because the master list doesn't have them.
 
+## Applying (milestone 7)
+1. `helper apply <link>` goes through eligibility (exit 4 pauses), then the tailor handoff (exit 3). Then `helper continue <run_id>`.
+2. After the resume is built, the answers handoff starts: read `questions_needed.json` and write `answers_provided.json`, as `{"answers": [{"field", "answer"}]}`.
+   - Drafts use master-list facts and the job description only. Dropdown answers must be one of the options.
+   - Leave out anything only Vatsal can answer.
+3. `helper continue` then pauses (exit 4) so Vatsal can review. Show him every draft. Run `helper continue <run_id> --approve-answers` only after he approves.
+4. Then run `helper fill <run_id>` in the background (run_in_background). It opens a visible Chromium window on Vatsal's screen, fills the form, and never clicks Submit. It waits up to `fill_wait_timeout_minutes` for him to submit, then logs to SQLite, Notion and CSV. Report the result when the task exits.
+- Never type Vatsal's data into a live form outside a run he started. Live checks use the fictional test profile and never submit.
+
 ## Tracker and Notion (milestone 6)
 - `helper.db` (SQLite) is the system of record, and it holds Vatsal's imported Notion history.
 - Notion receives only sent applications (status applied or later), in the seven columns of `data/notion_mapping.yaml`. Never create Notion columns, never touch Deadline/Referral/Referral name, and never write test rows without asking.

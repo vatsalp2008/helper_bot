@@ -177,6 +177,10 @@ _DEADLINE_RE = re.compile(
     rf"(?P<date>(?:{_MONTHS})\.?\s+\d{{1,2}}(?:st|nd|rd|th)?,?\s+\d{{4}}|\d{{1,2}}/\d{{1,2}}/\d{{2,4}}"
     rf"|(?:{_MONTHS})\.?\s+\d{{4}})"
 )
+_STATED_LIMIT_RE = re.compile(
+    r"(?i)submit (?:up to|a maximum of|no more than) (?P<n>\d+) applications? (?:during|in|within|per|every) "
+    r"(?:any |a )?(?:rolling )?(?P<days>\d+)[- ]day"
+)
 _URGENCY_RE = re.compile(r"(?i)\brolling basis\b|\bapply early\b|\bfill(?:ed)? quickly\b|\burgent(?:ly)?\b"
                          r"|\bpriority deadline\b|\blimited (?:number of )?(?:spots|openings)\b")
 
@@ -492,6 +496,18 @@ def check_eligibility(
     urgency = _matching(sentences, _URGENCY_RE)
     if urgency:
         flag("urgency", "note", "Apply soon: the posting signals rolling or limited review.", urgency[:1])
+
+    # 7b. A limit the posting states itself ("submit up to 5 applications during any rolling 30-day period").
+    stated = _STATED_LIMIT_RE.search(text)
+    if stated:
+        limit, days = int(stated.group("n")), int(stated.group("days"))
+        since = (today - timedelta(days=days)).isoformat()
+        recent = [a for a in applications if same_company(a.company, job.company) and a.date_applied
+                  and a.date_applied[:10] >= since and a.status not in IN_PROGRESS + ("skipped", "failed")]
+        level: FlagLevel = "warning" if len(recent) + 1 > limit else "note"
+        flag("posting_limit", level, f"The posting allows {limit} applications per {days} days; you have {len(recent)} "
+             f"at {job.company} since {since}." + (" Its site may refuse this one; building anyway." if level == "warning"
+                                                    else ""), [_quote(stated.group(0))])
 
     # 7. Company caps (8.3) and earlier applications.
     coverage = None

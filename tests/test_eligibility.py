@@ -289,3 +289,13 @@ def test_greenhouse_embed_links_compare_by_token() -> None:
     b = "https://boards.greenhouse.io/embed/job_app?for=acme&token=1234567"
     assert "duplicate" not in levels(check_url(a, [dup(9, url=b)]))
     assert levels(check_url(a, [dup(10, url=a)]))["duplicate"] == "blocker"
+
+
+def test_a_limit_the_posting_states_is_flagged_but_never_blocks() -> None:
+    text = "Application limits: Candidates may submit up to 5 applications during any rolling 30-day period."
+    calm = check(text, company="Figma", apps=[app(1, "Figma", when="2026-11-01")])
+    assert levels(calm)["posting_limit"] == "note"
+    full = check(text, company="Figma", apps=[app(i, "Figma", when="2026-11-01") for i in range(5)])
+    assert levels(full)["posting_limit"] == "warning" and full.recommendation == "build"
+    old = check(text, company="Figma", apps=[app(i, "Figma", when="2026-09-01") for i in range(5)])
+    assert levels(old)["posting_limit"] == "note"

@@ -1,0 +1,68 @@
+<!doctype html>
+<!-- A small stand-in for a job-boards.greenhouse.io application form, for tests: the same ids, labels and dropdown
+     markup (role=combobox inputs whose options have ids react-select-<id>-option-<n>), with a few lines of script so
+     the dropdowns work offline. With #autosubmit in the URL it "submits" by itself once the last field is filled, like a person. -->
+<html><head><meta charset="utf-8"><title>Job Application for Software Engineer Intern at Acme</title></head>
+<body>
+<form id="application-form">
+  <label for="first_name">First Name*</label><input id="first_name" type="text" aria-required="true">
+  <label for="last_name">Last Name*</label><input id="last_name" type="text" aria-required="true">
+  <label for="email">Email*</label><input id="email" type="text" aria-required="true">
+  <label for="country">Country*</label><input id="country" role="combobox" data-options='["Canada +1","India +91","United States +1"]'>
+  <label for="phone">Phone*</label><input id="phone" type="tel">
+  <label for="candidate-location">Location (City)*</label>
+  <input id="candidate-location" role="combobox" data-options='["Seattle, Washington, United States","Seattle Bar, Oregon, United States","Portland, Oregon, United States"]'>
+  <label for="resume">Attach</label><input id="resume" type="file" style="display:none">
+  <label for="question_1">LinkedIn Profile</label><input id="question_1" type="text">
+  <label for="question_2">Are you authorized to work in the country for which you applied?*</label>
+  <input id="question_2" role="combobox" data-options='["Yes","No"]'>
+  <label for="question_3">If you are currently enrolled in university, what is your expected graduation date?*</label>
+  <input id="question_3" role="combobox" data-options='["Spring 2027","Fall 2027","Spring 2028","Other"]'>
+  <label for="question_4">Why do you want to join Acme?*</label><textarea id="question_4"></textarea>
+  <label for="gender">Gender</label><input id="gender" role="combobox" data-options='["Decline To Self Identify","Female","Male"]'>
+  <label for="hispanic_ethnicity">Are you Hispanic/Latino?</label>
+  <input id="hispanic_ethnicity" role="combobox" data-options='["Yes","No","Decline To Self Identify"]'>
+  <button type="submit" id="submit">Submit application</button>
+</form>
+<script>
+  const chosen = {};
+  function closeAll() { document.querySelectorAll('[role=listbox]').forEach(l => l.remove()); }
+  function open(input) {
+    closeAll();
+    const opts = JSON.parse(input.dataset.options || '[]');
+    const term = (input.value || '').toLowerCase();
+    const list = document.createElement('div');
+    list.setAttribute('role', 'listbox');
+    list.id = 'react-select-' + input.id + '-listbox';
+    opts.filter(o => o.toLowerCase().includes(term)).forEach((o, i) => {
+      const el = document.createElement('div');
+      el.setAttribute('role', 'option');
+      el.id = 'react-select-' + input.id + '-option-' + i;
+      el.textContent = o;
+      el.addEventListener('click', () => {
+        chosen[input.id] = o; input.value = ''; input.dataset.selected = o; closeAll();
+      });
+      list.appendChild(el);
+    });
+    input.insertAdjacentElement('afterend', list);
+  }
+  document.querySelectorAll('[role=combobox]').forEach(input => {
+    input.addEventListener('click', () => open(input));
+    input.addEventListener('input', () => open(input));
+    input.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+  });
+  document.getElementById('application-form').addEventListener('submit', e => {
+    e.preventDefault();
+    window.submitted = true;
+    document.body.innerHTML = '<h1>Thank you for applying.</h1><p>Your application has been submitted.</p>';
+  });
+  if (location.hash === '#autosubmit') {  // "the person" submits once the last field is filled
+    const timer = setInterval(() => {
+      if (document.getElementById('hispanic_ethnicity').dataset.selected) {
+        clearInterval(timer);
+        setTimeout(() => document.getElementById('submit').click(), 800);
+      }
+    }, 200);
+  }
+</script>
+</body></html>

@@ -4,7 +4,7 @@ From one job posting URL, helper builds a tailored one-page PDF resume, fills th
 
 helper never calls an AI API. Judgment steps (tailoring, free-text answers) are done by Claude Code in an interactive session through files in `runs/<run_id>/`. Everything else is plain Python: Playwright, SQLite, the Notion REST API and LaTeX.
 
-> Status: milestone 6 of 11 (tracker and Notion). A full setup guide arrives in milestone 11.
+> Status: milestone 7 of 11 (Greenhouse applications). A full setup guide arrives in milestone 11.
 
 ## Setup
 
@@ -25,14 +25,14 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 helper setup [--interactive]
 helper convert [--show ID]
 helper template-check [--sample tailor_output.json]
-helper apply <url> [--projects N] [--mode review|auto] [--include-experience NAME] [--jd-file PATH] [--dry-run]
+helper apply <url> [--projects N] [--include-experience ID] [--jd-file PATH] [--grad-date DATE] [--dry-run]
 helper resume [url] --jd-file PATH --company NAME --role TITLE [--projects N] [--include-experience ID] [--grad-date DATE]
-helper fill <run_id> [--dry-run]
+helper fill <run_id> [--dry-run] [--wait MINUTES]
 helper continue <run_id>
 helper list | show <id> | stats | export --csv | mark <id> <status> | sync-notion
 ```
 
-Everything except `helper apply` and `helper fill` works so far. Those two print the milestone that builds them.
+Every command works. `helper apply` fills Greenhouse forms; Lever and Ashby arrive in milestone 8, and other sites in milestone 10.
 
 ### Building a resume (milestone 4)
 
@@ -49,7 +49,20 @@ Everything except `helper apply` and `helper fill` works so far. Those two print
    - `data/skill_synonyms.yaml`: skills-line terms such as Hypothesis Testing.
    - `data/tech_families.yaml`: same-family tech swaps such as GitHub Actions for GitLab CI.
 
-Reading a posting from its URL arrives in milestone 7. Until then, pass `--jd-file`.
+`helper resume <greenhouse link>` reads the posting directly; other sites need `--jd-file` for now.
+
+### Applying (milestone 7: Greenhouse)
+
+1. `helper apply <greenhouse link>` reads the posting and its form questions from Greenhouse's public API. It then runs the same duplicate check, eligibility check and resume steps as `helper resume`.
+2. After the resume is built, `helper continue` plans every form answer from your profile, each with a confidence:
+   - **Sure answers** are filled automatically. Free-text questions use an answer you approved in `data/answers.yaml`, or Claude drafts one from the master list and the job description (`questions_needed.json` -> `answers_provided.json`).
+   - **Everything else waits for you:** drafts and uncertain answers are shown first, and `helper continue <run_id> --approve-answers` approves them. A GPA question is never filled.
+3. `helper fill <run_id>` opens a Chromium window with helper's own browser profile and fills the form.
+   - **It never clicks Submit** (review mode). You review the form and submit it yourself. If a CAPTCHA appears, you solve it; helper never does.
+   - **After you submit,** helper sees Greenhouse's confirmation, takes a screenshot, and logs the application as *applied*: SQLite, then Notion, then `exports/applications.csv`. If Submit was clicked but no confirmation showed, it's logged as *submitted_unverified* and never retried.
+4. `helper apply <link> --dry-run` shows the eligibility check and the planned answers without starting a run. `helper fill <run_id> --dry-run` shows what would be filled.
+
+LinkedIn Easy Apply and Handshake are refused (rule 7), and Workday, iCIMS and similar sites are left to you (rule 8). helper can still build the resume for any of them.
 
 ### Tracking applications (milestone 6)
 

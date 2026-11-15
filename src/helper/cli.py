@@ -129,24 +129,46 @@ def template_check(
 @guarded
 def apply(
     url: Annotated[str, typer.Argument(help="Job posting URL.")],
-    projects: Annotated[Optional[int], typer.Option("--projects", min=1, help="Projects on the resume.")] = None,
-    mode: Annotated[Optional[SubmitMode], typer.Option("--mode", help="review or auto.")] = None,
+    projects: Annotated[Optional[int], typer.Option("--projects", min=1, max=8, help="Projects on the resume.")] = None,
+    mode: Annotated[Optional[SubmitMode], typer.Option("--mode", help="review (default) or auto.")] = None,
     include_experience: Annotated[
         Optional[list[str]], typer.Option("--include-experience", help="Add an off-by-default experience entry.")
     ] = None,
     jd_file: Annotated[
         Optional[Path], typer.Option("--jd-file", exists=True, dir_okay=False, help="Use this job description text.")
     ] = None,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Fill nothing; show what would be filled.")] = False,
+    grad_date: Annotated[
+        Optional[str], typer.Option("--grad-date", help='Override the graduation date the eligibility check picks.')
+    ] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Read the posting and show checks and answers; no run.")] = False,
 ) -> None:
-    """Full run: intake, eligibility, tailored resume, form fill, submit (review mode stops first), log."""
-    _not_built("apply", 7, "Greenhouse adapter")
+    """Full run: intake, eligibility, tailored resume, form answers, then `helper fill` (review mode stops before Submit)."""
+    from .apply import fetch_job
+    from .config import load_config
+    from .pipeline import blocked_message, format_started, start_run, waiting
+
+    if mode == SubmitMode.auto:
+        raise NotBuiltYet("Auto-submit arrives in milestone 9. Review mode fills the form and stops before Submit.")
+    paths = _paths()
+    cfg = load_config(paths)
+    job = fetch_job(url, jd_text=jd_file.read_text(encoding="utf-8") if jd_file else None)
+    if dry_run:
+        from .apply import preview
+
+        typer.echo(preview(paths, cfg, job))
+        return
+    started = start_run(paths, cfg, job, command="apply", projects=projects, include_experience=include_experience,
+                        grad_date=grad_date)
+    typer.echo(format_started(paths, started))
+    if started.blocked:
+        raise blocked_message(started.state)
+    raise waiting(paths, started.state.run_id)
 
 
 @app.command()
 @guarded
 def resume(
-    url: Annotated[Optional[str], typer.Argument(help="Job posting URL (recorded; reading it arrives in milestone 7).")] = None,
+    url: Annotated[Optional[str], typer.Argument(help="Job posting URL (Greenhouse links are read directly).")] = None,
     jd_file: Annotated[
         Optional[Path], typer.Option("--jd-file", exists=True, dir_okay=False, help="The job description as text.")
     ] = None,
@@ -165,18 +187,22 @@ def resume(
     from .config import load_config
     from .pipeline import blocked_message, format_started, start_resume, waiting
 
-    if jd_file is None:
-        if url:
-            raise NotBuiltYet("Reading a posting from its URL arrives in milestone 7 (Greenhouse). For now save the "
-                              "job description as a text file and pass --jd-file.")
-        raise HelperError("pass --jd-file with the job description saved as text")
-    if not company or not role:
-        raise HelperError("--company and --role are required with --jd-file")
     paths = _paths()
-    started = start_resume(
-        paths, load_config(paths), jd_text=jd_file.read_text(encoding="utf-8"), company=company, role=role, url=url,
-        location=location, projects=projects, include_experience=include_experience, grad_date=grad_date,
-    )
+    if jd_file is None:
+        if not url:
+            raise HelperError("pass a posting link, or --jd-file with the job description saved as text")
+        from .apply import fetch_job
+        from .pipeline import start_run
+
+        started = start_run(paths, load_config(paths), fetch_job(url), command="resume", projects=projects,
+                            include_experience=include_experience, grad_date=grad_date)
+    else:
+        if not company or not role:
+            raise HelperError("--company and --role are required with --jd-file")
+        started = start_resume(
+            paths, load_config(paths), jd_text=jd_file.read_text(encoding="utf-8"), company=company, role=role,
+            url=url, location=location, projects=projects, include_experience=include_experience, grad_date=grad_date,
+        )
     typer.echo(format_started(paths, started))
     if started.blocked:
         raise blocked_message(started.state)
@@ -187,10 +213,21 @@ def resume(
 @guarded
 def fill(
     run_id: Annotated[str, typer.Argument(help="Run folder name under runs/.")],
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Fill nothing; show what would be filled.")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be filled; open no browser.")] = False,
+    wait: Annotated[Optional[float], typer.Option("--wait", help="Minutes to wait for you to submit.")] = None,
+    headless: Annotated[bool, typer.Option("--headless", help="Hidden browser (tests only).")] = False,
 ) -> None:
-    """Fill the application form for an existing run."""
-    _not_built("fill", 7, "Greenhouse adapter")
+    """Fill the application form in a browser window, stop before Submit, and log the result after you submit."""
+    from .apply import fill_run
+    from .config import load_config
+    from .errors import EXIT_NEEDS_USER
+
+    paths = _paths()
+    outcome = fill_run(paths, load_config(paths), run_id, dry_run=dry_run, wait_minutes=wait,
+                       headless=True if headless else None)
+    typer.echo(outcome.message)
+    if outcome.status == "filled":
+        raise typer.Exit(EXIT_NEEDS_USER)
 
 
 @app.command("continue")
@@ -200,13 +237,27 @@ def continue_(
     build_anyway: Annotated[
         bool, typer.Option("--build-anyway", help="Build even though the eligibility check recommends skipping.")
     ] = False,
+    approve_answers: Annotated[
+        bool, typer.Option("--approve-answers", help="Vatsal approved the drafted form answers (apply runs).")
+    ] = False,
 ) -> None:
     """Resume a run: after an eligibility pause, or after Claude wrote its output file (validate, render, check)."""
     from .config import load_config
     from .pipeline import continue_run, format_finished
 
     paths = _paths()
-    typer.echo(format_finished(paths, continue_run(paths, load_config(paths), run_id, build_anyway=build_anyway)))
+    cfg = load_config(paths)
+    done = continue_run(paths, cfg, run_id, build_anyway=build_anyway)
+    if done is not None:
+        typer.echo(format_finished(paths, done))
+    from .runs import load_state
+
+    if load_state(paths, run_id).command == "apply":
+        from .apply import answers_step
+
+        typer.echo(answers_step(paths, cfg, run_id, approve=approve_answers))
+    elif done is None:
+        typer.echo(f"Run {run_id} is finished: its resume is built.")
 
 
 # --------------------------------------------------------------------------- milestone 6

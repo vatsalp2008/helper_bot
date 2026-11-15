@@ -1,0 +1,168 @@
+"""Filling Greenhouse forms in a real (headless) browser: the saved Figma form and an interactive stand-in."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Iterator
+
+import pytest
+import yaml
+
+from helper.adapters.greenhouse import css_id, dom_id, fill_form, is_confirmation, job_from_api
+from helper.answers import AnswerContext, plan_answers
+from helper.apply import fill_run
+from helper.config import Paths, load_config
+from helper.models import Config, FormQuestion, Job, Profile, RunState
+from helper.runs import save_state, set_step, write_json
+from helper.tracker import repo as tracker_repo
+from helper.tracker.commands import open_db
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+FIGMA_JSON = json.loads((FIXTURES / "greenhouse_figma_job.json").read_text(encoding="utf-8"))
+MINI = (FIXTURES / "greenhouse_mini_form.html").resolve()
+SAMPLE = (FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")
+# The stand-in form's location search knows Seattle; the fictional profile gets a Seattle address for these tests.
+SEATTLE = SAMPLE.replace("city: Springfield", "city: Seattle").replace("state: ST", "state: WA")
+PROFILE = Profile.model_validate(yaml.safe_load(SEATTLE))
+
+playwright_api = pytest.importorskip("playwright.sync_api")
+
+
+@pytest.fixture
+def browser() -> Iterator[Any]:  # per test: fill_run starts its own Playwright, which can't run inside another
+    with playwright_api.sync_playwright() as pw:
+        try:
+            b = pw.chromium.launch(headless=True)
+        except Exception as exc:  # Chromium not downloaded
+            pytest.skip(f"Chromium isn't installed: {exc}")
+        yield b
+        b.close()
+
+
+MINI_QUESTIONS = [
+    FormQuestion(label="First Name", field_name="first_name", required=True),
+    FormQuestion(label="Last Name", field_name="last_name", required=True),
+    FormQuestion(label="Email", field_name="email", required=True),
+    FormQuestion(label="Phone", field_name="phone", required=True),
+    FormQuestion(label="Location", field_name="location", required=True, section="location"),
+    FormQuestion(label="Resume/CV", field_name="resume", type="file", required=True),
+    FormQuestion(label="LinkedIn Profile", field_name="question_1"),
+    FormQuestion(label="Are you authorized to work in the country for which you applied?", field_name="question_2",
+                 type="select", options=["Yes", "No"], required=True),
+    FormQuestion(label="If you are currently enrolled in university, what is your expected graduation date?",
+                 field_name="question_3", type="select", options=["Spring 2027", "Fall 2027", "Spring 2028", "Other"],
+                 required=True),
+    FormQuestion(label="Why do you want to join Acme?", field_name="question_4", type="textarea", required=True),
+    FormQuestion(label="Gender", field_name="gender", type="select", options=["Decline To Self Identify", "Female", "Male"],
+                 section="eeoc"),
+    FormQuestion(label="Are you Hispanic/Latino?", field_name="hispanic_ethnicity", type="select",
+                 options=["Yes", "No", "Decline To Self Identify"], section="eeoc"),
+]
+
+
+def mini_plan() -> Any:
+    job = Job(company="Acme", role_title="Software Engineer Intern", description_text="x", source="greenhouse_api",
+              fetched_at="now", questions=MINI_QUESTIONS)
+    ctx = AnswerContext(profile=PROFILE, cfg=Config(), job=job, grad_date="May 2027", employment="internship",
+                        season="summer", season_year=2027)
+    plan = plan_answers(MINI_QUESTIONS, ctx)
+    why = plan.get("question_4")
+    assert why is not None
+    why.kind, why.value, why.status = "auto", "Acme builds the tools I use every day.", "approved"
+    return plan
+
+
+def test_every_planned_field_exists_on_the_real_figma_form(browser: Any) -> None:
+    page = browser.new_page(java_script_enabled=False)
+    page.goto(f"file://{(FIXTURES / 'greenhouse_figma_form.html').resolve()}")
+    job = job_from_api(FIGMA_JSON, "https://job-boards.greenhouse.io/figma/jobs/6178851004", "figma")
+    ctx = AnswerContext(profile=PROFILE, cfg=Config(), job=job, grad_date="May 2027")
+    for a in plan_answers(job.questions, ctx).answers:
+        if a.section == "eeoc" and a.field == "race":
+            continue  # shown only after the Hispanic/Latino answer
+        target = page.locator(css_id(dom_id(a.field)))
+        assert target.count() == 1, a.field
+        if a.type == "file":
+            assert target.get_attribute("type") == "file"
+        elif a.type in ("select", "multi_select") or a.field == "location":
+            assert target.get_attribute("role") == "combobox", a.field
+    assert page.locator("#country").get_attribute("role") == "combobox"  # the phone's country, filled too
+    page.close()
+
+
+def test_filling_the_form_never_submits_it(browser: Any, tmp_path: Path) -> None:
+    pdf = tmp_path / "AlexExample_Resume_Acme_SWEIntern.pdf"
+    pdf.write_bytes(b"%PDF-1.4 test")
+    page = browser.new_page()
+    page.goto(f"file://{MINI}")
+    results = fill_form(page, mini_plan().answers, pdf, country="United States", city="Seattle", pause=lambda: None)
+    failed = [(r.label, r.detail) for r in results if not r.ok]
+    assert not failed, failed
+    assert page.input_value("#first_name") == PROFILE.tier1.first_name
+    assert page.input_value("#question_4") == "Acme builds the tools I use every day."
+    selected = lambda i: page.get_attribute(f"#{i}", "data-selected")  # noqa: E731
+    assert (selected("question_2"), selected("question_3"), selected("country")) == ("Yes", "Spring 2027",
+                                                                                     "United States +1")
+    assert selected("candidate-location") == "Seattle, Washington, United States"
+    assert selected("hispanic_ethnicity") == "Decline To Self Identify"
+    assert page.evaluate("() => document.getElementById('resume').files[0].name") == pdf.name
+    assert page.evaluate("() => window.submitted === undefined")  # helper never clicks Submit
+    assert not is_confirmation(page)
+    page.close()
+
+
+def test_fill_run_waits_for_the_submit_and_logs_it(repo: Path) -> None:
+    (repo / "data" / "profile.yaml").write_text(SEATTLE, encoding="utf-8")
+    paths = Paths(repo)
+    cfg = load_config(paths)
+    run_id = "20261114-200000-acme-swe-intern"
+    folder = paths.runs / run_id
+    folder.mkdir(parents=True)
+    pdf = paths.resumes / "AlexExample_Resume_Acme_SWEIntern.pdf"
+    pdf.parent.mkdir(parents=True)
+    pdf.write_bytes(b"%PDF-1.4 test")
+    job = Job(url="https://job-boards.greenhouse.io/acme/jobs/1", ats="greenhouse", company="Acme",
+              role_title="Software Engineer Intern", description_text="x", source="greenhouse_api", fetched_at="now",
+              questions=MINI_QUESTIONS, apply_url=f"file://{MINI}#autosubmit")
+    write_json(folder / "job.json", job.model_dump(mode="json"))
+    write_json(folder / "answers_plan.json", mini_plan().model_dump(mode="json"))
+    conn = open_db(paths, cfg)
+    app_id = tracker_repo.insert(conn, company="Acme", role_title="Software Engineer Intern", job_url=job.url, run_id=run_id,
+                         resume_path="resumes/AlexExample_Resume_Acme_SWEIntern.pdf")
+    conn.commit()
+    conn.close()
+    state = RunState(run_id=run_id, created_at="now", command="apply", url=job.url, application_id=app_id,
+                     options={"run": {"projects_per_resume": 5, "bullets_per_item": 2, "grad_date": "May 2027"},
+                              "result": {"pdf": "resumes/AlexExample_Resume_Acme_SWEIntern.pdf"}})
+    set_step(state, "answers", "done")
+    save_state(paths, state)
+
+    outcome = fill_run(paths, cfg, run_id, headless=True, wait_minutes=0.5, poll_seconds=0.3)
+    assert outcome.status == "applied", outcome.message
+    assert "Notion: not set up" in outcome.message
+    conn = open_db(paths, cfg)
+    row = tracker_repo.get(conn, app_id)
+    conn.close()
+    assert (row["status"], row["confirmation_screenshot"]) == ("applied", f"runs/{run_id}/confirmation.png")
+    assert [h for h in ("filled.png", "confirmation.png", "fill_log.json") if not (folder / h).exists()] == []
+    assert (paths.exports / "applications.csv").is_file()
+    saved = json.loads((folder / "state.json").read_text(encoding="utf-8"))
+    assert saved["steps"]["submit"]["message"] == "applied"
+
+
+def test_dry_run_opens_no_browser(repo: Path) -> None:
+    paths = Paths(repo)
+    run_id = "20261114-200001-acme"
+    folder = paths.runs / run_id
+    folder.mkdir(parents=True)
+    write_json(folder / "job.json", Job(url="https://job-boards.greenhouse.io/acme/jobs/1", company="Acme",
+                                        role_title="SWE Intern", description_text="x", source="greenhouse_api",
+                                        fetched_at="now", apply_url="https://job-boards.greenhouse.io/acme/jobs/1")
+               .model_dump(mode="json"))
+    write_json(folder / "answers_plan.json", mini_plan().model_dump(mode="json"))
+    state = RunState(run_id=run_id, created_at="now", command="apply", options={"result": {"pdf": "x.pdf"}})
+    set_step(state, "answers", "done")
+    save_state(paths, state)
+    outcome = fill_run(paths, load_config(paths), run_id, dry_run=True)
+    assert outcome.status == "dry_run" and "Would fill https://job-boards.greenhouse.io/acme/jobs/1" in outcome.message

@@ -86,6 +86,26 @@ def start_resume(
         raise HelperError("the job description is empty")
     if not company.strip() or not role.strip():
         raise HelperError("--company and --role are needed to name the run and the resume file")
+    job = Job(url=url, ats=detect_ats(url) if url else "jd_file", company=company.strip(), role_title=role.strip(),
+              location=location, description_text=jd_text, source="jd_file", fetched_at=now_iso())
+    return start_run(paths, cfg, job, command="resume", projects=projects, include_experience=include_experience,
+                     grad_date=grad_date)
+
+
+def start_run(
+    paths: Paths,
+    cfg: Config,
+    job: Job,
+    *,
+    command: str,
+    projects: Optional[int] = None,
+    include_experience: Optional[list[str]] = None,
+    grad_date: Optional[str] = None,
+) -> Started:
+    """Spec 9 steps 1 to 5: duplicates and eligibility, keywords, then the tailoring handoff."""
+    if not job.description_text.strip():
+        raise HelperError("the job description is empty")
+    company, role, url, jd_text = job.company, job.role_title, job.url, job.description_text
     if grad_date and grad_date not in (cfg.default_grad_date, cfg.alt_grad_date):
         raise HelperError(f"--grad-date must be '{cfg.default_grad_date}' or '{cfg.alt_grad_date}' (spec 8 item 4)")
     placeholder = RunOptions(projects_per_resume=projects or cfg.projects_per_resume,
@@ -106,8 +126,6 @@ def start_resume(
         run_id, n = f"{base_id}-{n}", n + 1
     folder = run_dir(paths, run_id)
     folder.mkdir(parents=True)
-    job = Job(url=url, ats=detect_ats(url) if url else "jd_file", company=company.strip(), role_title=role.strip(),
-              location=location, description_text=jd_text, source="jd_file", fetched_at=now_iso())
     write_json(folder / "job.json", job.model_dump(mode="json"))
 
     keywords = extract_keywords(jd_text, ctx.master, ctx.vocab, ctx.project_sets, ctx.families)
@@ -131,12 +149,12 @@ def start_resume(
         "require_open_source": bool(keywords.open_source_signals),
         "open_source_signals": keywords.open_source_signals,
     })
-    state = RunState(run_id=run_id, created_at=now_iso(), command="resume", url=url, options={
+    state = RunState(run_id=run_id, created_at=now_iso(), command=command, url=url, options={
         "run": ctx.run.model_dump(),
         "eligibility": {"recommendation": eligibility.recommendation, "grad_date": grad,
                         "flags": [f.model_dump() for f in eligibility.flags]},
     })
-    set_step(state, "intake", "done", "job description from --jd-file")
+    set_step(state, "intake", "done", "job description from --jd-file" if job.source == "jd_file" else job.source)
     set_step(state, "keywords", "done")
     if eligibility.blocked:
         set_step(state, "eligibility", "waiting_for_user", "recommend skipping; ask Vatsal")
@@ -175,11 +193,14 @@ def waiting(paths: Paths, run_id: str, note: str = "") -> WaitingForClaude:
     return WaitingForClaude(run_id, rel(paths, folder / TAILOR_INPUT), rel(paths, folder / TAILOR_OUTPUT), note)
 
 
-def continue_run(paths: Paths, cfg: Config, run_id: str, build_anyway: bool = False) -> Finished:
+def continue_run(paths: Paths, cfg: Config, run_id: str, build_anyway: bool = False) -> Optional[Finished]:
+    """Advance a run through eligibility and tailoring. None when the resume was already built."""
     state = load_state(paths, run_id)
     folder = run_dir(paths, run_id)
     if "run" not in state.options:
         raise HelperError(f"run {run_id} has no resume options; start it again with `helper resume`")
+    if state.steps.get("render") and state.steps["render"].status == "done":
+        return None
     if state.steps.get("eligibility") and state.steps["eligibility"].status == "waiting_for_user":
         if not build_anyway:
             raise blocked_message(state)
