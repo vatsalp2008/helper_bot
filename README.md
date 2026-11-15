@@ -4,7 +4,7 @@ From one job posting URL, helper builds a tailored one-page PDF resume, fills th
 
 helper never calls an AI API. Judgment steps (tailoring, free-text answers) are done by Claude Code in an interactive session through files in `runs/<run_id>/`. Everything else is plain Python: Playwright, SQLite, the Notion REST API and LaTeX.
 
-> Status: milestone 4 of 11 (tailor pipeline). A full setup guide arrives in milestone 11.
+> Status: milestone 5 of 11 (eligibility and caps). A full setup guide arrives in milestone 11.
 
 ## Setup
 
@@ -36,7 +36,10 @@ helper list | show <id> | stats | export --csv | mark <id> <status> | sync-notio
 
 ### Building a resume (milestone 4)
 
-1. Save the job description as a text file. `helper resume --jd-file jd.txt --company "Acme" --role "Backend SWE Intern"` creates `runs/<run_id>/`. It writes `job.json`, `keywords.json` (the posting's technologies, sorted against the master list) and `tailor_input.json`, then exits with code 3.
+1. Save the job description as a text file. `helper resume --jd-file jd.txt --company "Acme" --role "Backend SWE Intern"` creates `runs/<run_id>/`. It writes `job.json` and `keywords.json` (the posting's technologies, sorted against the master list).
+   - It then runs the eligibility check (spec 8) and writes `eligibility.json`. The check covers work authorization, degree level, timing, the graduation date, location, deadlines, and company caps from `data/caps.yaml` against your applications in SQLite.
+   - If something blocks the application (for example a named F-1/OPT exclusion, an office far from Seattle during the semester, or a reached cap), it recommends skipping and exits with code 4. `helper continue <run_id> --build-anyway` builds it anyway.
+   - Otherwise it writes `tailor_input.json` and exits with code 3.
 2. Claude, in the Claude Code session, reads `tailor_input.json` and writes `tailor_output.json` in the same folder.
 3. `helper continue <run_id>` checks it against every rule in spec 7.7, renders it, and checks the PDF: one page, no title or tag running past the margin, at most 2 lines per bullet.
    - If something fails, `validation.json` lists each problem and the command exits with code 3 again, so Claude fixes the output and reruns it.

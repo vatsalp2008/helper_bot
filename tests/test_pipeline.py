@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 from helper.cli import app
 from helper.config import Paths, load_config
 from helper.convert import run_convert
-from helper.errors import EXIT_WAITING_FOR_CLAUDE
+from helper.errors import EXIT_NEEDS_USER, EXIT_WAITING_FOR_CLAUDE
 from helper.latex import find_binary
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -42,7 +42,8 @@ def start(repo: Path) -> str:
 def test_resume_writes_the_handoff_and_waits(ready: Path) -> None:
     run_id = start(ready)
     folder = ready / "runs" / run_id
-    assert {p.name for p in folder.iterdir()} == {"job.json", "keywords.json", "tailor_input.json", "state.json"}
+    assert {p.name for p in folder.iterdir()} == {"job.json", "keywords.json", "eligibility.json", "tailor_input.json",
+                                                  "state.json"}
     tailor_input = json.loads((folder / "tailor_input.json").read_text(encoding="utf-8"))
     assert tailor_input["write_to"] == f"runs/{run_id}/tailor_output.json"
     assert tailor_input["run"]["require_open_source"] is True
@@ -95,3 +96,42 @@ def test_a_valid_output_becomes_a_one_page_pdf(ready: Path) -> None:
     assert state["options"]["result"]["sha256"] == hashlib.sha256(pdf.read_bytes()).hexdigest()
     assert state["options"]["result"]["pages"] == 1
     assert "—" not in result.output  # rule 4 covers helper's own messages too
+
+
+def test_an_eligibility_blocker_pauses_for_vatsal_until_he_says_build(ready: Path, tmp_path: Path) -> None:
+    jd = tmp_path / "jd.txt"
+    jd.write_text("Backend Intern (Summer 2027)\nF-1 and OPT candidates are not eligible for this role.\n",
+                  encoding="utf-8")
+    result = runner.invoke(app, ["resume", "--jd-file", str(jd), "--company", "Acme", "--role", "Backend Intern"])
+    assert result.exit_code == EXIT_NEEDS_USER, result.output
+    assert "[blocker] The posting names F-1, OPT or CPT candidates as ineligible." in result.output
+    assert "--build-anyway" in result.output
+    (run_id,) = [p.name for p in (ready / "runs").iterdir()]
+    folder = ready / "runs" / run_id
+    assert (folder / "eligibility.json").is_file() and not (folder / "tailor_input.json").exists()
+
+    again = runner.invoke(app, ["continue", run_id])
+    assert again.exit_code == EXIT_NEEDS_USER
+    build = runner.invoke(app, ["continue", run_id, "--build-anyway"])
+    assert build.exit_code == EXIT_WAITING_FOR_CLAUDE, build.output
+    assert (folder / "tailor_input.json").is_file()
+    state = json.loads((folder / "state.json").read_text(encoding="utf-8"))
+    assert state["steps"]["eligibility"] == {**state["steps"]["eligibility"], "status": "done",
+                                             "message": "built anyway at Vatsal's request"}
+
+
+def test_the_graduation_date_comes_from_the_eligibility_check(ready: Path, tmp_path: Path) -> None:
+    jd = tmp_path / "jd.txt"
+    jd.write_text("Software Engineer Intern (Summer 2027)\nYou must be returning to school after the internship.\n",
+                  encoding="utf-8")
+    result = runner.invoke(app, ["resume", "--jd-file", str(jd), "--company", "Acme", "--role", "SWE Intern"])
+    assert result.exit_code == EXIT_WAITING_FOR_CLAUDE, result.output
+    assert "Graduation date: December 2027 (the posting requires returning to school after Summer 2027)" in result.output
+    (run_id,) = [p.name for p in (ready / "runs").iterdir()]
+    tailor_input = json.loads((ready / "runs" / run_id / "tailor_input.json").read_text(encoding="utf-8"))
+    assert tailor_input["run"]["grad_date"] == "December 2027"
+
+    forced = runner.invoke(app, ["resume", "--jd-file", str(jd), "--company", "Acme", "--role", "SWE Intern 2",
+                                 "--grad-date", "May 2027"])
+    assert forced.exit_code == EXIT_WAITING_FOR_CLAUDE
+    assert "set to May 2027 by --grad-date" in forced.output

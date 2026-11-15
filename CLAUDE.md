@@ -6,7 +6,7 @@ helper is Vatsal's local job-application tool. The full spec is `helper_claude_c
 - No Anthropic API or SDK. Never call `claude -p` or any Claude binary from helper's code, background jobs, or scheduled tasks.
 - This interactive session is the only reasoning engine. Each judgment step is a file handoff: helper writes an input file in `runs/<run_id>/`, Claude writes the output file, and helper validates it.
 - Exit code 3 means "waiting for Claude". The message names the file to read and the file to write; after writing it, run `helper continue <run_id>`.
-- Exit code 4 means paused for Vatsal: an eligibility blocker, CAPTCHA, unknown required field, or cap. Tell him why; don't work around it.
+- Exit code 4 means paused for Vatsal: an eligibility blocker, CAPTCHA, unknown required field, or cap. Tell him why; don't work around it. After an eligibility pause, run `helper continue <run_id> --build-anyway` only when he says build.
 - Everything else is deterministic Python: Playwright, SQLite, the Notion REST API, LaTeX.
 - If a Claude feature is blocked on this seat (Claude in Chrome, connectors), say so and use plain Playwright.
 

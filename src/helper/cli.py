@@ -163,7 +163,7 @@ def resume(
 ) -> None:
     """Tailor and render only: writes tailor_input.json for Claude, then `helper continue` builds the PDF."""
     from .config import load_config
-    from .pipeline import format_started, start_resume, waiting
+    from .pipeline import blocked_message, format_started, start_resume, waiting
 
     if jd_file is None:
         if url:
@@ -178,6 +178,8 @@ def resume(
         location=location, projects=projects, include_experience=include_experience, grad_date=grad_date,
     )
     typer.echo(format_started(paths, started))
+    if started.blocked:
+        raise blocked_message(started.state)
     raise waiting(paths, started.state.run_id)
 
 
@@ -193,13 +195,18 @@ def fill(
 
 @app.command("continue")
 @guarded
-def continue_(run_id: Annotated[str, typer.Argument(help="Run folder name under runs/.")]) -> None:
-    """Resume a run after Claude wrote its output file: validate, render, and check the PDF."""
+def continue_(
+    run_id: Annotated[str, typer.Argument(help="Run folder name under runs/.")],
+    build_anyway: Annotated[
+        bool, typer.Option("--build-anyway", help="Build even though the eligibility check recommends skipping.")
+    ] = False,
+) -> None:
+    """Resume a run: after an eligibility pause, or after Claude wrote its output file (validate, render, check)."""
     from .config import load_config
     from .pipeline import continue_run, format_finished
 
     paths = _paths()
-    typer.echo(format_finished(paths, continue_run(paths, load_config(paths), run_id)))
+    typer.echo(format_finished(paths, continue_run(paths, load_config(paths), run_id, build_anyway=build_anyway)))
 
 
 @app.command("list")
