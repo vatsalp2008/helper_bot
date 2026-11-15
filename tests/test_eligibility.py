@@ -241,17 +241,18 @@ def test_report_lists_blockers_first() -> None:
 
 
 def dup(n: int, status: str = "applied", url: Optional[str] = None, company: str = "Acme",
-        role: str = "Software Engineer Intern") -> CompanyApplication:
+        role: str = "Software Engineer Intern", location: Optional[str] = None) -> CompanyApplication:
     return CompanyApplication(id=n, company=company, role_title=role, status=status, date_applied="2026-10-01",
-                              job_url=url)
+                              job_url=url, location=location)
 
 
 GH = "https://boards.greenhouse.io/acme/jobs/4567890"
 
 
-def check_url(url: Optional[str], apps: list[CompanyApplication], role: str = "Software Engineer Intern") -> Eligibility:
-    job = Job(url=url, company="Acme, Inc.", role_title=role, description_text="Join us.", source="jd_file",
-              fetched_at="2026-11-14")
+def check_url(url: Optional[str], apps: list[CompanyApplication], role: str = "Software Engineer Intern",
+              location: Optional[str] = None) -> Eligibility:
+    job = Job(url=url, company="Acme, Inc.", role_title=role, location=location, description_text="Join us.",
+              source="jd_file", fetched_at="2026-11-14")
     return check_eligibility(job, CFG, caps=CAPS, applications=apps, profile=PROFILE, today=TODAY)
 
 
@@ -267,16 +268,24 @@ def test_a_tracked_but_unsent_posting_is_only_noted() -> None:
     assert levels(e)["already_tracked"] == "note" and not e.blocked
 
 
-def test_same_title_different_posting_is_a_warning() -> None:
-    other = "https://boards.greenhouse.io/acme/jobs/1111111"
-    e = check_url(GH, [dup(4, url=other)])
-    assert levels(e)["similar_application"] == "warning" and not e.blocked
-    assert "different posting" in next(f.message for f in e.flags if f.id == "similar_application")
-    assert "similar_application" not in levels(check_url(GH, [dup(5, url=other, role="Data Intern")]))
+def test_the_same_title_with_another_id_link_or_location_is_a_different_posting() -> None:
+    other_id = check_url(GH, [dup(4, url="https://boards.greenhouse.io/acme/jobs/1111111")])
+    assert not {"duplicate", "possible_duplicate"} & set(levels(other_id))
+    other_link = check_url("https://acme.com/careers/swe-intern-seattle", [dup(5, url="https://acme.com/careers/swe-intern-nyc")])
+    assert not {"duplicate", "possible_duplicate"} & set(levels(other_link))
+    no_link_other_place = check_url(None, [dup(6, url=GH, location="New York, NY")], location="Seattle, WA")
+    assert "possible_duplicate" not in levels(no_link_other_place)
+    no_location = check_url(None, [dup(7, url=GH, location="Seattle, WA")])
+    assert "possible_duplicate" not in levels(no_location)  # can't confirm, so no flag
+
+
+def test_without_a_link_only_company_title_and_location_together_suggest_a_duplicate() -> None:
+    e = check_url(None, [dup(8, url=GH, location="Seattle, WA")], location="Seattle, WA")
+    assert levels(e)["possible_duplicate"] == "note" and not e.blocked
 
 
 def test_greenhouse_embed_links_compare_by_token() -> None:
     a = "https://boards.greenhouse.io/embed/job_app?for=acme&token=7654321"
     b = "https://boards.greenhouse.io/embed/job_app?for=acme&token=1234567"
-    assert "duplicate" not in levels(check_url(a, [dup(6, url=b, role="Data Intern")]))
-    assert levels(check_url(a, [dup(7, url=a)]))["duplicate"] == "blocker"
+    assert "duplicate" not in levels(check_url(a, [dup(9, url=b)]))
+    assert levels(check_url(a, [dup(10, url=a)]))["duplicate"] == "blocker"

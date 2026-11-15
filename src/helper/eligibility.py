@@ -52,30 +52,42 @@ class CompanyApplication(StrictModel):
     ats: Optional[str] = None
     run_id: Optional[str] = None
     notion_page_id: Optional[str] = None
+    location: Optional[str] = None
 
 
 class Duplicate(StrictModel):
     application: CompanyApplication
-    kind: Literal["exact", "similar"]  # exact: same job id or link; similar: same company and title
+    kind: Literal["exact", "possible"]  # exact: same job id or link; possible: see find_duplicates
     reason: str
 
 
-def find_duplicates(url: Optional[str], company: str, role_title: str,
-                    applications: list[CompanyApplication]) -> list[Duplicate]:
-    """Spec 9 step 1: duplicates by job id, link, and company plus title."""
+def _norm_location(text: Optional[str]) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).split())
+
+
+def find_duplicates(url: Optional[str], company: str, role_title: str, applications: list[CompanyApplication],
+                    location: Optional[str] = None) -> list[Duplicate]:
+    """Spec 9 step 1. A posting is identified by its job id or its link. Postings often share a title while having
+    different job ids, links or locations, so a title never makes two postings the same (Vatsal, 2026-11-14). Only
+    when there is no link or id to compare does a match on company, title AND location count, as "possible"."""
     ats, job_id, norm, title = detect_ats(url), job_id_from_url(url), normalize_url(url), norm_title(role_title)
+    place = _norm_location(location)
     found: list[Duplicate] = []
     for a in applications:
         a_ats, a_id = a.ats or detect_ats(a.job_url), a.job_id or job_id_from_url(a.job_url)
         if job_id and a_id and ats == a_ats and ats != "unknown":
             if job_id == a_id:
                 found.append(Duplicate(application=a, kind="exact", reason="same job id"))
-                continue
-        elif norm and a.job_url and normalize_url(a.job_url) == norm:
-            found.append(Duplicate(application=a, kind="exact", reason="same link"))
-            continue
-        if title and same_company(a.company, company) and norm_title(a.role_title) == title:
-            found.append(Duplicate(application=a, kind="similar", reason="same company and title"))
+            continue  # both have ids: different ids are different postings
+        a_norm = normalize_url(a.job_url)
+        if norm and a_norm:
+            if norm == a_norm:
+                found.append(Duplicate(application=a, kind="exact", reason="same link"))
+            continue  # both have links: different links are different postings
+        if (title and place and same_company(a.company, company) and norm_title(a.role_title) == title
+                and _norm_location(a.location) == place):
+            found.append(Duplicate(application=a, kind="possible",
+                                   reason="same company, title and location; no link to compare"))
     return found
 
 
@@ -341,7 +353,7 @@ def load_applications(db_path: Path) -> list[CompanyApplication]:
     try:
         rows = conn.execute(
             "SELECT id, company, role_title, status, COALESCE(date_applied, substr(created_at, 1, 10)) AS date_applied, "
-            "keyword_match_pct, job_url, job_id, ats, run_id, notion_page_id FROM applications"
+            "keyword_match_pct, job_url, job_id, ats, run_id, notion_page_id, location FROM applications"
         ).fetchall()
     except sqlite3.OperationalError:
         return []
@@ -371,23 +383,23 @@ def check_eligibility(
     def flag(fid: str, level: FlagLevel, message: str, evidence: Optional[list[str]] = None) -> None:
         flags.append(Flag(id=fid, level=level, message=message, evidence=evidence or []))
 
-    # 0. Duplicates (spec 9 step 1).
-    duplicates = find_duplicates(job.url, job.company, job.role_title, applications)
+    # 0. Duplicates (spec 9 step 1): by job id or link; a title alone never counts.
+    posting_location = job.location or (m.group("loc").strip() if (m := _LOCATION_LINE_RE.search(text)) else None)
+    duplicates = find_duplicates(job.url, job.company, job.role_title, applications, posting_location)
     for kind, level, fid, lead in (
         ("exact", "blocker", "duplicate", "You already applied to this posting"),
         ("exact", "note", "already_tracked", "This posting is already in your tracker"),
-        ("similar", "warning", "similar_application", "You applied to the same title at this company"),
+        ("possible", "note", "possible_duplicate", "Possibly already in your tracker"),
     ):
         sent = fid != "already_tracked"
-        hits = [d for d in duplicates if d.kind == kind and (d.application.status not in IN_PROGRESS + ("skipped", "failed"))
-                == sent]
+        hits = [d for d in duplicates if d.kind == kind and
+                (fid == "possible_duplicate" or (d.application.status not in IN_PROGRESS + ("skipped", "failed")) == sent)]
         if hits:
             shown = "; ".join(f"#{d.application.id} {d.application.company}, {d.application.role_title} "
                               f"({d.application.status}{', ' + d.application.date_applied if d.application.date_applied else ''}"
                               f", {d.reason})" for d in hits[:3])
             more = f" and {len(hits) - 3} more" if len(hits) > 3 else ""
-            tail = ". Make sure this is a different posting." if kind == "similar" else "."
-            flag(fid, level, f"{lead}: {shown}{more}{tail}")
+            flag(fid, level, f"{lead}: {shown}{more}.")
 
     # 1. Work authorization.
     excluded = _matching(sentences, *_EXCLUSION_RES)
