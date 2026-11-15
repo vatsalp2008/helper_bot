@@ -41,7 +41,9 @@ ANSWER_RULES = [
 
 def fetch_job(url: str, jd_text: Optional[str] = None) -> Job:
     from .adapters import adapter_for
+    from .ats import clean_url
 
+    url = clean_url(url)
     job: Job = adapter_for(url).fetch_job(url)
     if jd_text:  # rule 12: a job description Vatsal gave is used as is
         job = job.model_copy(update={"description_text": jd_text, "description_html": None})
@@ -218,24 +220,44 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
         except Exception:
             pass
         _wait_out_captcha(page, wait, poll_seconds)
-        results = adapter.fill_form(page, plan.answers, pdf, country=profile.tier1.address.country,
-                                    city=profile.tier1.address.city, pause=make_pause(cfg))
-        page.screenshot(path=str(folder / "filled.png"), full_page=True)
+        form = adapter.find_form(page)
+        if form is None:
+            _say("helper couldn't find the application form on this page, so it filled nothing. Fill it in the "
+                 "browser window yourself; helper still watches for the confirmation and logs it.")
+            results = []
+        else:
+            results = adapter.fill_form(form, plan.answers, pdf, country=profile.tier1.address.country,
+                                        city=profile.tier1.address.city, pause=make_pause(cfg))
+        _snapshot(page, form, folder / "filled.png")
         write_json(folder / "fill_log.json", [vars(r) for r in results])
         failed_required = [r for r in results if not r.ok and _required(plan, r.field)]
         _record_status(paths, cfg, state, "filled")
         set_step(state, "fill", "done", f"{sum(r.ok for r in results)} field(s) filled")
         save_state(paths, state)
         _say(_fill_summary(results, failed_required, wait))
-        outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds)
+        outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, form)
         shot = None
         if outcome in ("confirmed", "unverified"):
             shot = folder / "confirmation.png"
-            try:
-                page.screenshot(path=str(shot), full_page=True)
-            except Exception:
+            if not _snapshot(page, form, shot):
                 shot = None
     return _log_outcome(paths, cfg, state, outcome, shot, results)
+
+
+def _snapshot(page: Any, form: Optional[Any], path: Path) -> bool:
+    """A screenshot of the form itself: the embedded frame when the form lives in one, else the whole page."""
+    try:
+        if form is not None and form is not page.main_frame:
+            form.frame_element().screenshot(path=str(path))
+        else:
+            page.screenshot(path=str(path), full_page=True)
+        return True
+    except Exception:
+        try:
+            page.screenshot(path=str(path), full_page=True)
+            return True
+        except Exception:
+            return False
 
 
 def _required(plan: AnswerPlan, field_name: str) -> bool:
@@ -266,14 +288,15 @@ def _wait_out_captcha(page: Any, wait: float, poll: float) -> None:
         time.sleep(poll)
 
 
-def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait: float, poll: float) -> str:
+def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait: float, poll: float,
+                     form: Optional[Any] = None) -> str:
     deadline = time.monotonic() + wait * 60
     since_submit: Optional[float] = None
     warned_captcha = False
     while time.monotonic() < deadline:
         if page.is_closed():
             return "unverified" if submit_seen["value"] else "closed"
-        if adapter.is_confirmation(page):
+        if adapter.is_confirmation(page, form):
             return "confirmed"
         if submit_seen["value"] and since_submit is None:
             since_submit = time.monotonic()

@@ -286,7 +286,8 @@ def _record_application(paths: Paths, cfg: Config, state: RunState, job: Job, ou
              if f["level"] != "note"]
     fields = {
         "company": job.company, "role_title": job.role_title, "location": job.location, "job_url": job.url,
-        "ats": detect_ats(job.url) if job.url else None, "job_id": job_id_from_url(job.url),
+        "ats": job.ats if job.ats not in ("jd_file", "unknown", "") else (detect_ats(job.url) if job.url else None),
+        "job_id": job.job_id or job_id_from_url(job.url),
         "resume_path": rel(paths, pdf), "resume_hash": digest, "projects_used": [p.project_id for p in out.projects],
         "keyword_match_pct": report.keyword_match_pct, "flags": flags, "run_id": state.run_id,
     }

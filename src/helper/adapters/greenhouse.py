@@ -188,26 +188,54 @@ class FieldResult:
     detail: str = ""
 
 
-def choose_option(page: Any, dom: str, wanted: str, *, search: Optional[str] = None,
+def _keyboard(root: Any) -> Any:
+    """The keyboard of a Page, or of the page a Frame belongs to."""
+    return root.keyboard if hasattr(root, "keyboard") else root.page.keyboard
+
+
+_FORM_ANCHORS = ("#first_name", "#email", "#application-form", "#application_form")
+
+
+def find_form(page: Any, timeout_ms: int = 20000) -> Optional[Any]:
+    """The frame holding the application form: the page itself, or the Greenhouse frame a company careers page
+    embeds (job-boards links can forward there, like nuro.ai/careersitem?gh_jid=...)."""
+    import time
+
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        frames = [page.main_frame] + sorted((f for f in page.frames if f is not page.main_frame),
+                                            key=lambda f: "greenhouse.io" not in f.url)
+        for frame in frames:
+            try:
+                if any(frame.locator(a).count() for a in _FORM_ANCHORS):
+                    return frame
+            except Exception:
+                continue
+        if time.monotonic() > deadline:
+            return None
+        page.wait_for_timeout(500)
+
+
+def choose_option(root: Any, dom: str, wanted: str, *, search: Optional[str] = None,
                   timeout_ms: int = 6000) -> tuple[bool, str]:
     """Open the dropdown for one field, optionally type to search, and click the best matching option."""
     from ..answers import match_option
 
-    box = page.locator(css_id(dom))
+    box = root.locator(css_id(dom))
     box.click()
     if search:
         box.fill("")
         box.type(search, delay=40)
-    options = page.locator(f"[id^='react-select-{dom}-option-']")
+    options = root.locator(f"[id^='react-select-{dom}-option-']")
     try:
         options.first.wait_for(state="visible", timeout=timeout_ms)
     except Exception:
-        page.keyboard.press("Escape")
+        _keyboard(root).press("Escape")
         return False, "no options appeared"
     texts = [t.strip() for t in options.all_inner_texts()]
     best, score = match_option(wanted, texts)
     if best is None or score < 0.8:
-        page.keyboard.press("Escape")
+        _keyboard(root).press("Escape")
         return False, f"no option matches '{wanted}' (options: {', '.join(texts[:12])})"
     options.nth(texts.index(best)).click()
     return True, best
@@ -215,7 +243,7 @@ def choose_option(page: Any, dom: str, wanted: str, *, search: Optional[str] = N
 
 def fill_form(page: Any, answers: list[Any], resume_pdf: Path, *, country: Optional[str], city: Optional[str],
               pause: Callable[[], None]) -> list[FieldResult]:
-    """Fill every planned answer. Never touches the submit button."""
+    """Fill every planned answer in `page` (a Page or the Frame find_form returned). Never touches Submit."""
     results: list[FieldResult] = []
     if country and page.locator("#country").count():
         ok, chosen = choose_option(page, "country", country, search=country[:9])
@@ -258,13 +286,19 @@ def fill_form(page: Any, answers: list[Any], resume_pdf: Path, *, country: Optio
     return results
 
 
-def is_confirmation(page: Any) -> bool:
-    try:
-        if "/confirmation" in page.url:
-            return True
-        return bool(CONFIRMATION_RE.search(page.locator("body").inner_text(timeout=2000)))
-    except Exception:
-        return False
+def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:
+    """The page, the frame that held the form, or a Greenhouse frame embedded in the page shows the confirmation."""
+    frames = [page.main_frame] + ([form] if form is not None and form is not page.main_frame else [])
+    frames += [f for f in page.frames if f not in frames and "greenhouse.io" in f.url]
+    for frame in frames:
+        try:
+            if "/confirmation" in frame.url:
+                return True
+            if CONFIRMATION_RE.search(frame.locator("body").inner_text(timeout=2000)):
+                return True
+        except Exception:
+            continue
+    return False
 
 
 def is_submit_request(url: str, method: str) -> bool:

@@ -127,6 +127,9 @@ def test_immediate_start_is_checked_against_the_target() -> None:
         ("You must be returning to school after the internship.", "Software Engineer Intern (Summer 2026)", "May 2027"),
         ("Open to the class of 2027.", SUMMER, "May 2027"),
         ("Expected graduation in Fall 2027.", SUMMER, "December 2027"),
+        ("Graduating before or in June 2027.", "Systems Engineer, New Grad 2027", "May 2027"),
+        ("Looking for engineers graduating before or by June 2027.", "New Grad 2027", "May 2027"),
+        ("Must graduate on or before December 2027.", SUMMER, "May 2027"),
     ],
 )
 def test_graduation_date(text: str, title: str, expected: str) -> None:

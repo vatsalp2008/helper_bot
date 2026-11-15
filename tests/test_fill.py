@@ -112,7 +112,9 @@ def test_filling_the_form_never_submits_it(browser: Any, tmp_path: Path) -> None
     page.close()
 
 
-def test_fill_run_waits_for_the_submit_and_logs_it(repo: Path) -> None:
+@pytest.mark.parametrize("page_file", ["greenhouse_mini_form.html#autosubmit", "greenhouse_company_page.html"],
+                         ids=["greenhouse page", "form embedded in a company page"])
+def test_fill_run_waits_for_the_submit_and_logs_it(repo: Path, page_file: str) -> None:
     (repo / "data" / "profile.yaml").write_text(SEATTLE, encoding="utf-8")
     paths = Paths(repo)
     cfg = load_config(paths)
@@ -124,7 +126,7 @@ def test_fill_run_waits_for_the_submit_and_logs_it(repo: Path) -> None:
     pdf.write_bytes(b"%PDF-1.4 test")
     job = Job(url="https://job-boards.greenhouse.io/acme/jobs/1", ats="greenhouse", company="Acme",
               role_title="Software Engineer Intern", description_text="x", source="greenhouse_api", fetched_at="now",
-              questions=MINI_QUESTIONS, apply_url=f"file://{MINI}#autosubmit")
+              questions=MINI_QUESTIONS, apply_url=f"file://{FIXTURES.resolve()}/{page_file}")
     write_json(folder / "job.json", job.model_dump(mode="json"))
     write_json(folder / "answers_plan.json", mini_plan().model_dump(mode="json"))
     conn = open_db(paths, cfg)

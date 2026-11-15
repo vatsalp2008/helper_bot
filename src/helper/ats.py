@@ -67,3 +67,16 @@ def normalize_url(url: Optional[str]) -> Optional[str]:
     path = re.sub(r"/(?:apply|application)/?$", "", parsed.path.rstrip("/"), flags=re.I)
     keep = sorted(f"{k.lower()}={v}" for k, v in parse_qsl(parsed.query) if k.lower() in _ID_QUERY_KEYS)
     return (f"{host}{path}".lower() + (f"?{'&'.join(keep)}" if keep else "")) or None
+
+
+_TRACKING_KEYS = re.compile(r"^(?:fbclid|gclid|dclid|msclkid|mc_cid|mc_eid|igshid|ref|referrer|source|gh_src|lever-source"
+                            r"|lever-origin|utm_[a-z]+)$", re.I)
+
+
+def clean_url(url: str) -> str:
+    """The posting link without tracking parameters (fbclid, utm_*, gh_src...), so it is what gets stored."""
+    from urllib.parse import urlencode, urlunparse
+
+    parsed = urlparse(url.strip())
+    query = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if not _TRACKING_KEYS.match(k)]
+    return urlunparse(parsed._replace(query=urlencode(query), fragment=""))

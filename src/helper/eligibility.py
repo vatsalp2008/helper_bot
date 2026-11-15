@@ -250,17 +250,20 @@ def _grad_window(sentences: list[str]) -> tuple[Optional[tuple[int, int]], Optio
                 upper = min(upper, rb[1]) if upper else rb[1]
                 found = True
         if not found:
-            for m in re.finditer(rf"(?i)\b(by|before|no later than|prior to|in|during|after|no earlier than|on or after)"
-                                 rf"\s+({_WHEN})|\bclass of\s+(\d{{4}})", s):
+            # Longest phrases first: "before or in June 2027" is an upper bound, not "in June 2027".
+            for m in re.finditer(rf"(?i)\b(before or (?:in|by|on)|on or before|by or before|no later than|prior to"
+                                 rf"|on or after|no earlier than|by|before|in|during|after)\s+({_WHEN})"
+                                 rf"|\bclass of\s+(\d{{4}})", s):
                 if m.group(3):
                     r = _when_range(m.group(3))
                     word = "in"
                 else:
                     r = _when_range(m.group(2))
-                    word = m.group(1).lower()
+                    word = " ".join(m.group(1).lower().split())
                 if not r:
                     continue
-                if word in ("by", "no later than", "in", "during"):
+                if word in ("by", "no later than", "in", "during", "on or before", "by or before") or word.startswith(
+                        "before or"):
                     upper = min(upper, r[1]) if upper else r[1]
                 if word in ("before", "prior to"):
                     upper = min(upper, _month_before(r[0])) if upper else _month_before(r[0])
