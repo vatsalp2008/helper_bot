@@ -1,0 +1,25 @@
+{
+ "id": "85c6aec7-8da2-445d-9c4d-812365dbce97",
+ "text": "Data Science Intern [Summer 2027]",
+ "categories": {
+  "commitment": "Internship/Co-op",
+  "department": "Zoox Internships",
+  "location": "Foster City, CA",
+  "team": "Data Science",
+  "allLocations": [
+   "Foster City, CA",
+   "Boston, MA"
+  ]
+ },
+ "hostedUrl": "https://jobs.lever.co/zoox/85c6aec7-8da2-445d-9c4d-812365dbce97",
+ "applyUrl": "https://jobs.lever.co/zoox/85c6aec7-8da2-445d-9c4d-812365dbce97/apply",
+ "workplaceType": "hybrid",
+ "description": "<div>Zoox is hiring a Data Science Intern. (Description shortened for this test fixture.)</div>",
+ "lists": [
+  {
+   "text": "What you'll do",
+   "content": "<li>Analyze autonomy data with Python and SQL</li><li>Build dashboards</li>"
+  }
+ ],
+ "additional": "<div>Graduating between September 2027 and August 2028.</div>"
+}

@@ -147,11 +147,11 @@ _CLEARANCE_RE = re.compile(
 )
 _UNDERGRAD_RE = re.compile(
     r"(?i)\b(?:pursuing|enrolled in|working towards?|candidates? for|currently in)\s+(?:a |an |your )?"
-    r"(?:bachelor'?s|B\.?S\.?|B\.?A\.?|undergraduate)(?: degree| program)?\b"
+    r"(?:bachelor['’]?s|B\.?S\.?|B\.?A\.?|undergraduate)(?: degree| program)?\b"
     r"|\bundergraduate (?:students?|candidates?) only\b|\bonly (?:open to )?undergraduates?\b"
     r"|\b(?:rising )?(?:sophomores?|juniors? or seniors?|sophomore or junior)\b"
 )
-_GRAD_LEVEL_RE = re.compile(r"(?i)\b(?:master'?s|M\.?S\.?|graduate (?:students?|degree|program)|Ph\.?D\.?|MBA)\b")
+_GRAD_LEVEL_RE = re.compile(r"(?i)\b(?:master['’]?s|M\.?S\.?|graduate (?:students?|degree|program)|Ph\.?D\.?|MBA)\b")
 _IMMEDIATE_RE = re.compile(
     r"(?i)\bimmediate(?:ly)? start|\bstart immediately\b|\bstart(?:ing)? (?:ASAP|as soon as possible)\b"
     r"|\bimmediate (?:opening|availability|start date)\b"

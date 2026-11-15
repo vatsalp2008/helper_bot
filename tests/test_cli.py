@@ -32,7 +32,7 @@ def test_version() -> None:
     "args,milestone",
     [
         (["apply", "https://boards.greenhouse.io/acme/jobs/1", "--mode", "auto"], 9),
-        (["apply", "https://jobs.lever.co/acme/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b"], 8),
+        (["apply", "https://careers.example.com/jobs/123"], 10),
     ],
 )
 def test_unbuilt_commands_exit_5_and_name_their_milestone(repo: Path, args: list[str], milestone: int) -> None:
@@ -42,8 +42,8 @@ def test_unbuilt_commands_exit_5_and_name_their_milestone(repo: Path, args: list
 
 
 def test_resume_needs_a_readable_link_or_a_jd_file(repo: Path, tmp_path: Path) -> None:
-    lever = runner.invoke(app, ["resume", "https://jobs.lever.co/acme/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b"])
-    assert lever.exit_code == EXIT_NOT_BUILT and "--jd-file" in lever.output
+    other = runner.invoke(app, ["resume", "https://careers.example.com/jobs/123"])
+    assert other.exit_code == EXIT_NOT_BUILT and "--jd-file" in other.output
     assert runner.invoke(app, ["resume"]).exit_code == EXIT_ERROR
     jd = tmp_path / "jd.txt"
     jd.write_text("We are hiring.", encoding="utf-8")

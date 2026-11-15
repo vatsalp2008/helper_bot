@@ -88,8 +88,8 @@ def test_which_sites_helper_takes_on() -> None:
         adapter_for("https://app.joinhandshake.com/jobs/123")
     with pytest.raises(NeedsUser, match="never creates"):
         adapter_for("https://acme.wd5.myworkdayjobs.com/en-US/Careers/job/X_R1")
-    with pytest.raises(NotBuiltYet, match="milestone 8"):
-        adapter_for("https://jobs.lever.co/acme/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b")
+    with pytest.raises(NotBuiltYet, match="milestone 10"):
+        adapter_for("https://careers.example.com/jobs/123")
 
 
 def test_tracking_parameters_are_dropped() -> None:

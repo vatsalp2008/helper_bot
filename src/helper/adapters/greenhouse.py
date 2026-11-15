@@ -30,9 +30,8 @@ _TYPES = {
     "multi_value_multi_select": "multi_select",
     "boolean": "boolean",
 }
-# Text that means the application went through (new and legacy boards).
-CONFIRMATION_RE = re.compile(r"(?i)thank you for (?:applying|your application)|application (?:has been )?(?:submitted|received)"
-                             r"|we(?:'|’)ve received your application|thanks for applying")
+from .common import CONFIRMATION_RE, FieldResult  # noqa: E402,F401  (re-exported for callers and tests)
+from . import common  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -179,41 +178,14 @@ def css_id(dom: str) -> str:
     return "#" + re.sub(r"([^A-Za-z0-9_-])", r"\\\1", dom)
 
 
-@dataclass
-class FieldResult:
-    field: str
-    label: str
-    ok: bool
-    value: Optional[str]
-    detail: str = ""
-
-
-def _keyboard(root: Any) -> Any:
-    """The keyboard of a Page, or of the page a Frame belongs to."""
-    return root.keyboard if hasattr(root, "keyboard") else root.page.keyboard
-
-
+_keyboard = common.keyboard
 _FORM_ANCHORS = ("#first_name", "#email", "#application-form", "#application_form")
 
 
 def find_form(page: Any, timeout_ms: int = 20000) -> Optional[Any]:
     """The frame holding the application form: the page itself, or the Greenhouse frame a company careers page
     embeds (job-boards links can forward there, like nuro.ai/careersitem?gh_jid=...)."""
-    import time
-
-    deadline = time.monotonic() + timeout_ms / 1000
-    while True:
-        frames = [page.main_frame] + sorted((f for f in page.frames if f is not page.main_frame),
-                                            key=lambda f: "greenhouse.io" not in f.url)
-        for frame in frames:
-            try:
-                if any(frame.locator(a).count() for a in _FORM_ANCHORS):
-                    return frame
-            except Exception:
-                continue
-        if time.monotonic() > deadline:
-            return None
-        page.wait_for_timeout(500)
+    return common.find_form(page, _FORM_ANCHORS, hosts=("greenhouse.io",), timeout_ms=timeout_ms)
 
 
 def choose_option(root: Any, dom: str, wanted: str, *, search: Optional[str] = None,
@@ -287,18 +259,7 @@ def fill_form(page: Any, answers: list[Any], resume_pdf: Path, *, country: Optio
 
 
 def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:
-    """The page, the frame that held the form, or a Greenhouse frame embedded in the page shows the confirmation."""
-    frames = [page.main_frame] + ([form] if form is not None and form is not page.main_frame else [])
-    frames += [f for f in page.frames if f not in frames and "greenhouse.io" in f.url]
-    for frame in frames:
-        try:
-            if "/confirmation" in frame.url:
-                return True
-            if CONFIRMATION_RE.search(frame.locator("body").inner_text(timeout=2000)):
-                return True
-        except Exception:
-            continue
-    return False
+    return common.is_confirmation(page, form, hosts=("greenhouse.io",))
 
 
 def is_submit_request(url: str, method: str) -> bool:

@@ -63,7 +63,8 @@ Enforce these in code, not only in instructions.
 - **Profile values:** "ask" means ask Vatsal every time. "per_run" means decided per application. `data/profile.yaml` is git-ignored.
 - **Location data:** experience locations and project display names live in `data/resume_meta.yaml`, because the master list doesn't have them.
 
-## Applying (milestone 7)
+## Applying (milestones 7 and 8)
+Supported sites: Greenhouse, Lever and Ashby. For any other site, use `helper resume --jd-file` until milestone 10.
 1. `helper apply <link>` goes through eligibility (exit 4 pauses), then the tailor handoff (exit 3). Then `helper continue <run_id>`.
 2. After the resume is built, the answers handoff starts: read `questions_needed.json` and write `answers_provided.json`, as `{"answers": [{"field", "answer"}]}`.
    - Drafts use master-list facts and the job description only. Dropdown answers must be one of the options.

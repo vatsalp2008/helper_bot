@@ -137,3 +137,28 @@ def test_label_keys() -> None:
     assert key_for(q("Preferred First Name"))[0] == "preferred_first_name"
     assert key_for(q("LinkedIn Profile"))[0] == "linkedin_url"
     assert key_for(q("What is your expected graduation date?"))[0] == "graduation_date"
+
+
+# --------------------------------------------------------------------------- forms with checkbox groups (Lever, Ashby)
+
+
+def test_checkbox_groups() -> None:
+    offices = ["New York, NY", "San Francisco, CA", "Remote (US)"]
+    every = one(q("Which office locations would you consider?", "multi_select", offices))
+    assert (every.kind, every.value) == ("auto", "New York, NY; San Francisco, CA; Remote (US)")  # open to all
+    heard = one(q("How did you hear about us? (select all that apply)", "multi_select", ["LinkedIn", "Career site", "Referral"]))
+    assert (heard.kind, heard.value) == ("auto", "Career site")
+    degree = one(q("Degree Type", "multi_select", ["Bachelor's", "Master's", "PhD"]))
+    assert (degree.kind, degree.value) == ("auto", "Master's")
+
+
+def test_sponsorship_choices_that_name_a_student_visa_pause() -> None:
+    choices = ["None", "F1 Visa (CPT/OPT/STEM OPT)", "H-1B", "Other"]
+    answer = one(q("Will you require any of the below sponsorship for employment?", "radio", choices))
+    assert answer.kind == "unknown" and answer.value is None
+
+
+def test_a_question_in_the_eeo_survey_is_trusted() -> None:
+    assert key_for(q("Race"))[1] == 0.85
+    survey = FormQuestion(label="Race", field_name="race", type="radio", options=["Asian", "White"], section="eeoc")
+    assert key_for(FormQuestion(**{**survey.model_dump(), "field_name": "ashby:race"})) == ("eeo_race", 0.95)

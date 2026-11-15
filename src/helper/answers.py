@@ -127,14 +127,15 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                         r"|\bclass of\b|\bwhen (do|will) you graduate\b", 0.9),
     ("previous_employee", r"\b(ever|previously|before|formerly)\b.*\b(work(ed)?|employ\w*|contractor|consultant)\b", 0.9),
     ("major", r"\bmajor\b|\bdiscipline\b|\bfield of study\b|\barea of study\b", 0.9),
+    ("degree", r"^\s*degree( type| level)?\s*\??\s*$|\bhighest degree\b|\b(type|level) of degree\b", 0.95),
     ("degree", r"\bdegree\b", 0.85),
     ("school", r"\bschool\b|\buniversity\b|\bcollege\b|\binstitution\b", 0.85),
     ("relocate", r"\breloca", 0.9),
     ("start_date", r"\bstart date\b|\bwhen can you (start|begin)\b|\bavailab\w* to (start|begin)\b"
                    r"|\bearliest\b.*\b(start|begin)\b", 0.9),
     ("salary", r"\bsalary\b|\bcompensation\b|\bpay (expectation|range)s?\b|\bdesired pay\b", 0.9),
-    ("how_did_you_hear", r"\bhow did you (hear|learn|find|connect|come across)\b|\bwhere did you (hear|find|learn)\b"
-                         r"|\bsource\b", 0.9),
+    ("how_did_you_hear", r"\bhow did you (hear|learn|find|connect|come across)\b|\bwhere did you (hear|find|learn)\b", 0.95),
+    ("how_did_you_hear", r"\bsource\b", 0.85),
     ("referral", r"\b(referred|referral)\b", 0.9),
     ("age_18", r"\b18\b|\beighteen\b|\blegal age\b", 0.9),
     ("background_check", r"\bbackground (check|screen)", 0.9),
@@ -144,7 +145,7 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("eeo_gender", r"\bgender\b|^\s*sex\s*\??\s*$", 0.9),
     ("eeo_veteran", r"\bveteran\b", 0.9),
     ("eeo_disability", r"\bdisabilit", 0.9),
-    ("eeo_other", r"\bpronoun|\bsexual orientation\b|\blgbt|\btransgender\b", 0.9),
+    ("eeo_other", r"\bpronoun|\bsexual orientation\b|\blgbt|\btransgender\b", 0.95),
     ("work_location", r"\bwhich (\w+ )?(office|hub|location|city)\b|\b(prefer|preference)\w*\b.*\b(location|office|hub|site"
                       r"|city)\b|\bwork (location|arrangement)\b", 0.95),
     ("address_zip", r"\bzip\b|\bpostal\b", 0.9),
@@ -170,6 +171,8 @@ def key_for(q: FormQuestion) -> tuple[Optional[str], float]:
     text = q.label
     for key, pattern, confidence in LABEL_RULES:
         if re.search(pattern, text, re.IGNORECASE):
+            if key.startswith("eeo_") and q.section in ("eeoc", "demographic"):
+                confidence = max(confidence, 0.95)  # a question in the EEO survey means what it says
             return key, confidence
     return None, 0.0
 
@@ -267,16 +270,20 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     if key == "work_authorization":
         return tier2(t2.work_authorization, "work_authorization")
     if key == "sponsorship":
-        mentions = re.search(r"\b(CPT|OPT)\b", text)
+        mentions = re.search(r"\b(CPT|OPT|F-?1)\b", f"{text} {' '.join(q.options)}")
         includes = re.search(r"(includ\w*|such as|e\.g\.|counts?|consider\w*)[^.?]{0,60}\b(CPT|OPT)\b"
                              r"|\b(CPT|OPT)\b[^.?]{0,40}\b(count|includ|consider)", text, re.I)
         if mentions and includes and t2.sponsorship.yes_when_question_includes_cpt_opt:
             return Value("Yes", "rule: sponsorship that includes CPT/OPT")
         if mentions:
-            return Value(None, "rule: sponsorship and CPT/OPT", note="mentions CPT/OPT but doesn't say whether they count")
+            return Value(None, "rule: sponsorship and CPT/OPT",
+                         note="names CPT/OPT/F-1 (in the question or its choices) without saying they count")
         return tier2(t2.sponsorship, "sponsorship")
     if key == "us_citizen":
         return tier2(t2.us_citizen_or_permanent_resident, "us_citizen_or_permanent_resident")
+    open_to_all = "all" in (t1.work_location_preferences or "").lower()
+    if key in ("relocate", "work_location") and q.type == "multi_select" and q.options and open_to_all:
+        return Value("; ".join(q.options), "profile work_location_preferences (open to all)", confidence=0.95)
     if key == "relocate":
         return Value(t1.willing_to_relocate, "profile willing_to_relocate")
     if key == "work_location":
@@ -392,6 +399,17 @@ def _decide(q: FormQuestion, value: Value, label_conf: float, cfg: Config) -> di
         return {"kind": "unknown" if q.required else "skip", "note": value.note or "no value in your profile",
                 "source": value.source}
     text, match_conf = value.text, 1.0
+    if q.options and q.type == "multi_select":
+        picked, scores = [], []
+        for part in [p.strip() for p in value.text.split(";") if p.strip()]:
+            opt, s = match_option(part, q.options, value.aliases)
+            if opt is None or s < 0.8:
+                picked = []
+                break
+            picked.append(opt)
+            scores.append(s)
+        if picked:
+            return _finish(q, value, label_conf, "; ".join(dict.fromkeys(picked)), min(scores), cfg)
     if q.options:
         best, score = None, 0.0
         for candidate in value.candidates or (value.text,):
@@ -410,6 +428,11 @@ def _decide(q: FormQuestion, value: Value, label_conf: float, cfg: Config) -> di
         text, match_conf = best, score
     elif q.type == "textarea" and len(text) < 3:
         return {"kind": "unknown" if q.required else "skip", "source": value.source, "note": "needs a written answer"}
+    return _finish(q, value, label_conf, text, match_conf, cfg)
+
+
+def _finish(q: FormQuestion, value: Value, label_conf: float, text: str, match_conf: float,
+            cfg: Config) -> dict[str, object]:
     confidence = round(label_conf * match_conf * value.confidence, 3)
     if confidence >= cfg.match_auto_threshold:
         kind = "auto"

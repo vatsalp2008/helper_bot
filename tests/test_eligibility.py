@@ -92,6 +92,8 @@ def test_degree_level() -> None:
     assert levels(check("Open to rising juniors or seniors."))["undergrad_only"] == "warning"
     both = check("Currently pursuing a BS or MS in Computer Science.")
     assert "undergrad_only" not in levels(both)
+    curly = check("Currently pursuing a Bachelor’s or Master’s degree in Computer Science.")
+    assert "undergrad_only" not in levels(curly)  # postings often use the curly apostrophe
     pay = check("Hourly rate: Bachelor's students $40/hr, Master's students $45/hr, PhD students $50/hr.")
     assert levels(pay)["grad_students_considered"] == "note"
 
