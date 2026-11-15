@@ -1,0 +1,166 @@
+<!doctype html>
+<!-- A small imitation of Workday's apply flow for tests: the same data-automation-id markup as the real pages
+     (tests/fixtures/workday_*.html), with just enough script for dropdowns, search boxes, dates and Next. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mock Workday apply flow</title>
+<style>
+  .hidden { display: none; }
+  input.date { width: 4em; }
+</style>
+</head>
+<body>
+<div data-automation-id="applyFlowPage">
+  <div data-automation-id="progressBar"><div data-automation-id="progressBarActiveStep" id="active"></div></div>
+
+  <section data-step="My Information">
+    <div data-automation-id="formField-source">
+      <label for="source--source">How Did You Hear About Us?<abbr title="required">*</abbr></label>
+      <div data-automation-id="multiselectInputContainer"><input type="text" id="source--source"></div>
+      <ul role="listbox" data-automation-id="selectedItemList"></ul>
+    </div>
+    <div data-automation-id="formField-candidateIsPreviousWorker">
+      <fieldset><legend><label>Have you been employed by Mockco in the past?<abbr title="required">*</abbr></label></legend>
+        <input type="radio" id="pw-yes" name="pw" value="true"><label for="pw-yes">Yes</label>
+        <input type="radio" id="pw-no" name="pw" value="false"><label for="pw-no">No</label>
+      </fieldset>
+    </div>
+    <div data-automation-id="formField-country">
+      <label>Country<abbr title="required">*</abbr></label>
+      <button type="button" aria-haspopup="listbox" id="country"
+              data-options="Canada|United States Minor Outlying Islands|United States of America">United States of America</button>
+    </div>
+    <div data-automation-id="formField-legalName--firstName">
+      <label for="fn">First Name<abbr title="required">*</abbr></label><input type="text" id="fn">
+    </div>
+    <div data-automation-id="formField-legalName--lastName">
+      <label for="ln">Last Name<abbr title="required">*</abbr></label><input type="text" id="ln">
+    </div>
+    <div data-automation-id="formField-phoneNumber">
+      <label for="ph">Phone Number<abbr title="required">*</abbr></label><input type="text" id="ph">
+    </div>
+    <div data-automation-id="formField-extension">
+      <label for="ext">Phone Extension</label><input type="text" id="ext">
+    </div>
+  </section>
+
+  <section data-step="Application Questions" class="hidden">
+    <div data-automation-id="formField-q1">
+      <label>Will you now or in the future require sponsorship for employment visa status?<abbr title="required">*</abbr></label>
+      <button type="button" aria-haspopup="listbox" id="sponsor" data-options="Yes|No">Select One</button>
+    </div>
+    <div data-automation-id="formField-q2">
+      <fieldset><legend><div><p><b>Have you ever worked at Mockco in the following capacity:</b><abbr title="required">*</abbr></p></div></legend>
+        <input type="checkbox" id="c1"><label for="c1">Employee</label>
+        <input type="checkbox" id="c2"><label for="c2">I have not worked for Mockco in the past.</label>
+      </fieldset>
+    </div>
+    <div data-automation-id="formField-q3">
+      <label for="why">Why do you want to work at Mockco?<abbr title="required">*</abbr></label><textarea id="why"></textarea>
+    </div>
+    <div data-automation-id="formField-q4">
+      <fieldset><legend><label>Earliest start date<abbr title="required">*</abbr></label></legend>
+        <div data-automation-id="dateInputWrapper">
+          <div data-automation-id="dateSectionMonth-display">MM</div><input class="date" id="mm" data-automation-id="dateSectionMonth-input">
+          <div data-automation-id="dateSectionDay-display">DD</div><input class="date" id="dd" data-automation-id="dateSectionDay-input">
+          <div data-automation-id="dateSectionYear-display">YYYY</div><input class="date" id="yy" data-automation-id="dateSectionYear-input">
+        </div>
+      </fieldset>
+    </div>
+  </section>
+
+  <section data-step="Voluntary Disclosures" class="hidden">
+    <div data-automation-id="formField-gender">
+      <label>Please select your gender.<abbr title="required">*</abbr></label>
+      <button type="button" aria-haspopup="listbox" id="gender" data-options="Female|Male|Not declared">Select One</button>
+    </div>
+    <div data-automation-id="formField-acceptTermsAndAgreements">
+      <input type="checkbox" id="terms"><label for="terms">Check this box to confirm the statement above.<abbr title="required">*</abbr></label>
+    </div>
+  </section>
+
+  <section data-step="Review" class="hidden"><h2>Review</h2></section>
+
+  <div data-automation-id="pageFooter">
+    <button type="button" data-automation-id="pageFooterNextButton" id="next">Next</button>
+  </div>
+</div>
+
+<script>
+  const sections = [...document.querySelectorAll('section[data-step]')];
+  let at = 0;
+  window.submitted = false;
+  window.pagesSeen = [];
+  function show() {
+    sections.forEach((s, i) => s.classList.toggle('hidden', i !== at));
+    const name = sections[at].dataset.step;
+    document.getElementById('active').innerHTML = `current step ${at + 1} of ${sections.length}<br>${name}`;
+    document.getElementById('next').textContent = name === 'Review' ? 'Submit' : 'Next';
+    window.pagesSeen.push(name);
+  }
+  document.getElementById('next').addEventListener('click', () => {
+    if (sections[at].dataset.step === 'Review') { window.submitted = true; return; }
+    at += 1; show();
+  });
+
+  // Dropdowns: a button that opens ul[role=listbox] > li[role=option]
+  function closeLists() { document.querySelectorAll('.popup').forEach(p => p.remove()); }
+  document.querySelectorAll('button[aria-haspopup=listbox]').forEach(button => {
+    button.addEventListener('click', () => {
+      closeLists();
+      const list = document.createElement('ul');
+      list.setAttribute('role', 'listbox');
+      list.className = 'popup';
+      ['Select One', ...button.dataset.options.split('|')].forEach(text => {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        li.innerHTML = `<div>${text}</div>`;
+        li.addEventListener('click', () => { button.textContent = text; closeLists(); });
+        list.appendChild(li);
+      });
+      document.body.appendChild(list);
+    });
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLists(); });
+
+  // A search box: Enter searches; one result is picked by itself, several are listed
+  const choices = ['Mockco.com', 'Mockco Career Academy', 'Job Board', 'LinkedIn'];
+  const source = document.getElementById('source--source');
+  const picked = document.querySelector('[data-automation-id=formField-source] [data-automation-id=selectedItemList]');
+  function pick(text) {
+    const li = document.createElement('li');
+    li.innerHTML = `<p data-automation-id="promptOption" data-automation-label="${text}">${text}</p>` +
+                   `<span data-automation-id="DELETE_charm">x</span>`;
+    li.querySelector('[data-automation-id=DELETE_charm]').addEventListener('click', () => li.remove());
+    picked.appendChild(li);
+    closeLists();
+  }
+  source.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    closeLists();
+    const found = choices.filter(c => c.toLowerCase().includes(source.value.toLowerCase().trim()));
+    if (found.length === 1) { pick(found[0]); source.value = ''; return; }
+    const box = document.createElement('div');
+    box.className = 'popup';
+    box.setAttribute('role', 'listbox');
+    box.setAttribute('data-automation-id', 'activeListContainer');
+    found.forEach(text => {
+      const option = document.createElement('div');
+      option.setAttribute('role', 'option');
+      option.innerHTML = `<div data-automation-id="promptOption">${text}</div>`;
+      option.addEventListener('click', () => { pick(text); source.value = ''; });
+      box.appendChild(option);
+    });
+    document.body.appendChild(box);
+  });
+
+  // Dates: clicking a visible box focuses its input
+  document.querySelectorAll('[data-automation-id$=-display]').forEach(display => {
+    display.addEventListener('click', () => display.nextElementSibling.focus());
+  });
+
+  show();
+</script>
+</body>
+</html>

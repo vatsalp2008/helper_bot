@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- A small imitation of Workday's account step for tests, with the real pages' data-automation-id markup.
+     The hash picks the behavior: #new (no account yet), #exists (an account exists), #wrong (wrong password). -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mock Workday account step</title>
+<style>.hidden { display: none; }</style>
+</head>
+<body>
+<div data-automation-id="progressBarActiveStep" id="active">current step 1 of 4<br>Create Account/Sign In</div>
+
+<div id="create">
+  <h2>Create Account</h2>
+  <input type="text" data-automation-id="email">
+  <input type="password" data-automation-id="password">
+  <input type="password" data-automation-id="verifyPassword">
+  <input type="text" data-automation-id="beecatcher" name="website">
+  <input type="checkbox" data-automation-id="createAccountCheckbox" id="consent"><label for="consent">I agree</label>
+  <div data-automation-id="click_filter" aria-label="Create Account" role="button" id="createButton">Create Account</div>
+  <button type="button" data-automation-id="signInLink" id="toSignIn">Sign In</button>
+</div>
+
+<div id="signin" class="hidden">
+  <h2>Sign In</h2>
+  <input type="text" data-automation-id="email">
+  <input type="password" data-automation-id="password">
+  <div data-automation-id="click_filter" aria-label="Sign In" role="button" id="signInButton">Sign In</div>
+  <button type="button" data-automation-id="createAccountLink" id="toCreate">Create Account</button>
+</div>
+
+<div data-automation-id="errorMessage" id="error" class="hidden"></div>
+<div data-automation-id="applyFlowPage" id="flow" class="hidden"><p>My Information</p></div>
+
+<script>
+  const mode = location.hash.slice(1) || 'new';
+  window.signInAttempts = 0;
+  window.created = false;
+  window.honeypot = '';
+  const $ = id => document.getElementById(id);
+  function error(text) { $('error').textContent = text; $('error').classList.remove('hidden'); }
+  function done() {
+    $('create').classList.add('hidden');
+    $('signin').classList.add('hidden');
+    $('error').classList.add('hidden');
+    $('flow').classList.remove('hidden');
+    $('active').innerHTML = 'current step 2 of 4<br>My Information';
+  }
+  $('toSignIn').onclick = () => { $('create').classList.add('hidden'); $('signin').classList.remove('hidden'); $('error').classList.add('hidden'); };
+  $('toCreate').onclick = () => { $('signin').classList.add('hidden'); $('create').classList.remove('hidden'); $('error').classList.add('hidden'); };
+  $('createButton').onclick = () => {
+    window.honeypot = document.querySelector('[data-automation-id=beecatcher]').value;
+    if (!$('consent').checked) return error('You must agree to continue.');
+    if (mode === 'new') { window.created = true; return done(); }
+    error('An account using this email address already exists.');
+  };
+  $('signInButton').onclick = () => {
+    window.signInAttempts += 1;
+    const password = document.querySelector('#signin [data-automation-id=password]').value;
+    if (mode === 'exists' && password === 'right-pass') return done();
+    error('Wrong email address or password.');
+  };
+</script>
+</body>
+</html>

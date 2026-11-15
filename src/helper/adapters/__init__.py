@@ -7,12 +7,12 @@ from types import ModuleType
 from ..ats import detect_ats
 from ..errors import NeedsUser, NotBuiltYet
 
-MANUAL = {"workday": "Workday", "icims": "iCIMS", "smartrecruiters": "SmartRecruiters", "taleo": "Taleo",
+MANUAL = {"icims": "iCIMS", "smartrecruiters": "SmartRecruiters", "taleo": "Taleo",
           "successfactors": "SuccessFactors"}
 
 
 def adapter_for(url: str) -> ModuleType:
-    from . import ashby, greenhouse, lever
+    from . import ashby, greenhouse, lever, workday
 
     ats = detect_ats(url)
     if ats == "greenhouse" or greenhouse.parse_ref(url):
@@ -21,6 +21,11 @@ def adapter_for(url: str) -> ModuleType:
         return lever
     if (ats == "ashby" and ashby.parse_ref(url)) or "ashby_jid=" in url:
         return ashby
+    if workday.parse_ref(url):
+        return workday
+    if ats == "workday":
+        raise NeedsUser("This Workday link isn't a job posting (it should contain /job/<location>/<title>_<id>). Open "
+                        "the posting on Workday and use that link.")
     if ats in ("linkedin", "handshake"):
         site = "LinkedIn Easy Apply" if ats == "linkedin" else "Handshake"
         raise NeedsUser(f"helper never automates {site} (rule 7). Find this job on the company's own careers page and "

@@ -27,6 +27,8 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HELPER_ROOT", str(root))
     monkeypatch.delenv("NOTION_TOKEN", raising=False)
     monkeypatch.delenv("NOTION_DATABASE_ID", raising=False)
+    monkeypatch.delenv("WORKDAY_EMAIL", raising=False)
+    monkeypatch.delenv("WORKDAY_PASSWORD", raising=False)
     return root
 
 

@@ -87,7 +87,12 @@ def test_which_sites_helper_takes_on() -> None:
     with pytest.raises(NeedsUser, match="Handshake"):
         adapter_for("https://app.joinhandshake.com/jobs/123")
     with pytest.raises(NeedsUser, match="never creates"):
-        adapter_for("https://acme.wd5.myworkdayjobs.com/en-US/Careers/job/X_R1")
+        adapter_for("https://careers-acme.icims.com/jobs/1234/software-engineer/job")
+    from helper.adapters import workday
+
+    assert adapter_for("https://acme.wd5.myworkdayjobs.com/en-US/Careers/job/Seattle/X_R1") is workday
+    with pytest.raises(NeedsUser, match="isn't a job posting"):
+        adapter_for("https://acme.wd5.myworkdayjobs.com/en-US/Careers")
     with pytest.raises(NotBuiltYet, match="milestone 10"):
         adapter_for("https://careers.example.com/jobs/123")
 

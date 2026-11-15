@@ -42,7 +42,7 @@ Enforce these in code, not only in instructions.
 5. **No summary section** on resumes.
 6. **Never solve or bypass CAPTCHAs.** Stop and hand control to me in the open browser window.
 7. **Never automate LinkedIn Easy Apply or Handshake.** Tell me to find the company's own careers page, and offer to extract the job description only.
-8. **Never create accounts** on employer portals (Workday, iCIMS, etc.). Stop and tell me.
+8. **Never create accounts** on employer portals (iCIMS, Taleo, etc.). Stop and tell me. The one exception is Workday (Vatsal, 2026-11-14): helper signs in or creates the account with the application login in `.env`.
 9. **Stop when unsure.** A required field helper cannot fill with high confidence pauses the run.
 10. **Never retry a submit.** An ambiguous result is logged as `submitted_unverified`.
 11. **Eligibility is checked before building** (section 8).
@@ -56,6 +56,9 @@ Enforce these in code, not only in instructions.
   - **Skill names:** when a posting names a skill the master list has under another name, use the posting's name via `data/skill_synonyms.yaml` (all approved). For a new one with clear evidence, add it with `approved: true` and flag it as `new synonym: <term>` in that run.
 - **Duplicates are identified by job ID or link** (Vatsal, 2026-11-14). Postings often share a title while having different job IDs, links or locations, so a title never makes two postings the same. Only when there's no link or ID to compare does company + title + location together give a "possible" note.
 - **The resume file is always named `VatsalPatel_Resume.pdf`** (Vatsal, 2026-11-14), with no company or role; this replaces spec 6's `_<Company>_<RoleShortName>`. Each run's copy lives in `resumes/<run_id>/`.
+- **Workday** (Vatsal, 2026-11-14): helper fills Workday applications.
+  - **Account:** it signs in, or creates the account, with `WORKDAY_EMAIL` / `WORKDAY_PASSWORD` from `.env`. Never print, log, commit or repeat them; helper types them only on Workday's own sites and never retries a failed sign-in.
+  - **No approval step:** company questions are drafted and filled as the pages open. Vatsal reviews everything on Workday's Review page before he submits.
 - **Company limits never block** (Vatsal, 2026-11-14). `data/caps.yaml` limits are flagged first, then helper still builds the resume and applies. `enforced: true` (Google, TikTok) means the company's site may refuse it; `enforced: false` (Salesforce) is a recommendation.
 - **`~` prints centered on the line** as `$\sim$` (bold inside bold phrases). Vatsal chose this on 2026-11-14; spec 6's `\textasciitilde{}` prints a raised tilde in this font encoding.
 - **Graduation date** (spec 8 item 4): May 2027 by default. Use December 2027 when the posting's graduation window or a "returning to school" requirement needs it. Use May 2027 when a full-time start date needs it. The run's chosen date also fills the form's expected-graduation field.
@@ -64,13 +67,18 @@ Enforce these in code, not only in instructions.
 - **Location data:** experience locations and project display names live in `data/resume_meta.yaml`, because the master list doesn't have them.
 
 ## Applying (milestones 7 and 8)
-Supported sites: Greenhouse, Lever and Ashby. For any other site, use `helper resume --jd-file` until milestone 10.
+Supported sites: Greenhouse, Lever, Ashby and Workday. For any other site, use `helper resume --jd-file` until milestone 10.
 1. `helper apply <link>` goes through eligibility (exit 4 pauses), then the tailor handoff (exit 3). Then `helper continue <run_id>`.
 2. After the resume is built, the answers handoff starts: read `questions_needed.json` and write `answers_provided.json`, as `{"answers": [{"field", "answer"}]}`.
    - Drafts use master-list facts and the job description only. Dropdown answers must be one of the options.
    - Leave out anything only Vatsal can answer.
 3. `helper continue` then pauses (exit 4) so Vatsal can review. Show him every draft. Run `helper continue <run_id> --approve-answers` only after he approves.
 4. Then run `helper fill <run_id>` in the background (run_in_background). It opens a visible Chromium window on Vatsal's screen, fills the form, and never clicks Submit. It waits up to `fill_wait_timeout_minutes` for him to submit, then logs to SQLite, Notion and CSV. Report the result when the task exits.
+- **Workday runs** differ: `helper continue` ends right after the resume, because Workday shows its questions page by page.
+  1. Run `helper fill <run_id>` in the background, and watch its output for "waiting for Claude" (a background until-loop that greps the output file).
+  2. When it asks, read `questions_needed.json` and write `answers_provided.json` (same format and rules as above). helper fills them and moves on by itself; there is no approval step.
+  3. If it says Workday sent a verification email, tell Vatsal. When he says he verified, create the empty file `runs/<run_id>/go_on` and helper signs in.
+  4. It stops on the Review page; Vatsal submits.
 - Never type Vatsal's data into a live form outside a run he started. Live checks use the fictional test profile and never submit.
 
 ## Tracker and Notion (milestone 6)

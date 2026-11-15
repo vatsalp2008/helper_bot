@@ -7,6 +7,7 @@ in a headed browser, never clicks Submit, waits for Vatsal to submit, and logs t
 
 from __future__ import annotations
 
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -16,9 +17,9 @@ from typing import Any, Optional
 
 from pydantic import ValidationError
 
-from .answers import AnswerContext, AnswerPlan, format_plan, match_option, plan_answers
+from .answers import AnswerContext, AnswerPlan, PlannedAnswer, format_plan, match_option, plan_answers
 from .browser import browser_session, captcha_visible, make_pause
-from .config import Paths, load_yaml
+from .config import Paths, env_value, load_yaml
 from .errors import HelperError, NeedsUser, WaitingForClaude
 from .models import AnswersFile, Config, Job, Profile
 from .runs import load_state, read_json, rel, run_dir, save_state, set_step, write_json
@@ -126,6 +127,13 @@ def answers_step(paths: Paths, cfg: Config, run_id: str, approve: bool = False) 
     step = state.steps.get("answers")
     if step and step.status == "done":
         return f"Answers are approved. Fill the form with `helper fill {run_id}`."
+    if job.ats == "workday" and not job.questions:
+        write_json(folder / PLAN, AnswerPlan(answers=[]).model_dump(mode="json"))
+        set_step(state, "answers", "done", "Workday: questions are answered page by page during the fill")
+        save_state(paths, state)
+        return (f"Workday shows its questions page by page, so `helper fill {run_id}` answers them as it goes. Claude "
+                "drafts any written answers while it runs, and you review everything on Workday's Review page "
+                "before you submit.")
     if not (folder / PLAN).is_file():
         plan = plan_answers(job.questions, _context(paths, cfg, run_id, job))
         write_json(folder / PLAN, plan.model_dump(mode="json"))
@@ -203,12 +211,18 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
     plan = AnswerPlan.model_validate(read_json(folder / PLAN))
     pdf = paths.root / state.options["result"]["pdf"]
     if dry_run:
+        if job.ats == "workday":
+            return FillOutcome("dry_run", f"Would fill {job.apply_url or job.url} page by page: the account step, "
+                                          "My Information, My Experience (from the resume and your profile), the "
+                                          "company's questions and the disclosures, stopping on the Review page.")
         return FillOutcome("dry_run", f"Would fill {job.apply_url or job.url} with:\n{format_plan(plan)}")
     if not pdf.is_file():
         raise HelperError(f"the resume PDF is missing: {rel(paths, pdf)}")
     adapter = adapter_for(job.url or job.apply_url or "")
     profile = Profile.model_validate(load_yaml(paths.profile))
     wait = cfg.fill_wait_timeout_minutes if wait_minutes is None else wait_minutes
+    if hasattr(adapter, "run_flow"):
+        return _fill_flow(paths, cfg, state, job, pdf, adapter, profile, wait, headless, poll_seconds)
     submit_seen = {"value": False}
     with browser_session(paths, cfg, headless=headless) as context:
         page = context.pages[0] if context.pages else context.new_page()
@@ -242,6 +256,195 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
             if not _snapshot(page, form, shot):
                 shot = None
     return _log_outcome(paths, cfg, state, outcome, shot, results)
+
+
+# --------------------------------------------------------------------------- multi-page flows (Workday)
+
+
+def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapter: Any, profile: Profile, wait: float,
+               headless: Optional[bool], poll_seconds: float) -> FillOutcome:
+    """Fill a form that spans several pages. Questions are planned page by page; written answers are drafted by Claude
+    while the window stays open; the flow ends on the site's Review page, and Vatsal submits."""
+    folder = run_dir(paths, state.run_id)
+    actx = _context(paths, cfg, state.run_id, job)
+    work, schools = _history(paths, cfg, state, folder, profile)
+    planned: list[PlannedAnswer] = []
+
+    def plan_page(questions: list[Any]) -> list[PlannedAnswer]:
+        answers = plan_answers(questions, actx).answers
+        planned.extend(answers)
+        write_json(folder / PLAN, AnswerPlan(answers=planned).model_dump(mode="json"))
+        return answers
+
+    def ask_claude(answers: list[PlannedAnswer], moved_on: Any) -> None:
+        _ask_claude_midfill(paths, state, job, answers, moved_on, wait * 60, poll_seconds)
+        write_json(folder / PLAN, AnswerPlan(answers=planned).model_dump(mode="json"))
+
+    go_flag = folder / "go_on"
+
+    def go_on() -> bool:
+        if go_flag.exists():
+            go_flag.unlink()
+            return True
+        return False
+
+    submit_seen = {"value": False}
+    with browser_session(paths, cfg, headless=headless) as context:
+        page = context.pages[0] if context.pages else context.new_page()
+        page.on("request", lambda req: submit_seen.update(value=True) if adapter.is_submit_request(req.url, req.method)
+                else None)
+        page.goto(job.apply_url or job.url, wait_until="domcontentloaded")
+        flow = adapter.FlowContext(
+            company=job.company, plan=plan_page, ask_claude=ask_claude, resume_pdf=pdf, work=work, schools=schools,
+            say=_say, pause=make_pause(cfg), credentials=_workday_credentials(paths),
+            has_account=_has_workday_account(paths, cfg, state, job), go_on=go_on, wait_seconds=wait * 60,
+            poll_seconds=poll_seconds,
+        )
+        result = adapter.run_flow(page, flow)
+        _snapshot(page, None, folder / "filled.png")
+        write_json(folder / "fill_log.json", [vars(r) for r in result.results])
+        _record_status(paths, cfg, state, "filled")
+        set_step(state, "fill", "done", f"{sum(r.ok for r in result.results)} field(s) filled"
+                                        + ("; stopped on the Review page" if result.reached_review else ""))
+        save_state(paths, state)
+        _say(_flow_summary(result, planned, wait))
+        outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, None)
+        shot = None
+        if outcome in ("confirmed", "unverified"):
+            shot = folder / "confirmation.png"
+            if not _snapshot(page, None, shot):
+                shot = None
+    return _log_outcome(paths, cfg, state, outcome, shot, result.results)
+
+
+def _ask_claude_midfill(paths: Paths, state: Any, job: Job, answers: list[PlannedAnswer], moved_on: Any,
+                        wait_seconds: float, poll: float) -> None:
+    """questions_needed.json -> answers_provided.json while the form stays open. No approval step: Vatsal reviews
+    the answers on the site's Review page (Vatsal, 2026-11-14)."""
+    folder = run_dir(paths, state.run_id)
+    plan = AnswerPlan(answers=[a.model_copy() for a in answers])
+    if not plan.open_items():
+        return
+    needed = _needed(plan, job, state.options, paths, state.run_id)
+    needed["then_run"] = "nothing: `helper fill` is waiting and continues by itself"
+    needed["note"] = ("Questions on the open application page. Answer what the master list and the job description "
+                      "support; leave out what only Vatsal can answer (he fills those in the window).")
+    provided = folder / PROVIDED
+    started = time.time()
+    write_json(folder / NEEDED, needed)
+    _say(f"waiting for Claude: read {rel(paths, folder / NEEDED)} and write {rel(paths, provided)} "
+         "(helper fill continues by itself once it's there)")
+    seen: Optional[float] = None
+    deadline = time.monotonic() + wait_seconds
+    while time.monotonic() < deadline:
+        if moved_on():
+            _say("You moved on in the window, so helper continues from there.")
+            return
+        mtime = provided.stat().st_mtime if provided.is_file() else None
+        if mtime is not None and mtime >= started - 1 and mtime != seen:
+            seen = mtime
+            try:
+                data = read_json(provided)
+            except Exception:
+                data = None
+            if data is not None:
+                problems = _merge(plan, data)
+                if not problems:
+                    by_field = {a.field: a for a in plan.answers}
+                    for a in answers:
+                        merged = by_field.get(a.field)
+                        if merged is not None and merged.value is not None and a.value != merged.value:
+                            for name in ("value", "kind", "status", "confidence", "source"):
+                                setattr(a, name, getattr(merged, name))
+                    _say("Claude's answers are in; filling them.")
+                    return
+                _say("waiting for Claude: fix these answers in " + rel(paths, provided) + ":\n"
+                     + "\n".join(f"  {p}" for p in problems))
+                plan = AnswerPlan(answers=[a.model_copy() for a in answers])
+        time.sleep(poll)
+    _say("No answers from Claude in time; those questions are left for you in the window.")
+
+
+def _plain(bullet: str) -> str:
+    return " ".join(bullet.replace("**", "").split())
+
+
+def _history(paths: Paths, cfg: Config, state: Any, folder: Path, profile: Profile) -> tuple[list[Any], list[Any]]:
+    """The resume's experience entries and the profile's schools, for forms that ask for them one by one."""
+    from .adapters.workday_page import SchoolEntry, WorkEntry
+    from .dates import MonthYear, parse_month_year
+
+    def month(iso: Optional[str]) -> Optional[MonthYear]:
+        if not iso or not re.match(r"^\d{4}-\d{2}$", iso):
+            return None
+        return MonthYear(int(iso[:4]), int(iso[5:]))
+
+    run = RunOptions.model_validate(state.options["run"])
+    ctx = load_context(paths, cfg, run)
+    tailor = read_json(folder / "tailor_output.json") if (folder / "tailor_output.json").is_file() else {}
+    work = []
+    for e in tailor.get("experience", []):
+        item = ctx.master.item(e["entry_id"])
+        meta = ctx.meta.experience.get(e["entry_id"])
+        dates = item.dates
+        work.append(WorkEntry(
+            title=e["title"], company=item.organization or "", location=(meta.location if meta else None) or item.location,
+            start=month(dates.start if dates else None), end=month(dates.end if dates else None),
+            current=bool(dates and (dates.end or "").lower() == "present"),
+            description="\n".join(f"- {_plain(b)}" for b in e["bullets"]),
+        ))
+    schools = [SchoolEntry(school=ed.school, degree=ed.degree, field_of_study=ed.major, start=parse_month_year(ed.start),
+                           end=parse_month_year(run.grad_date if ed.end == "per_run" else ed.end))
+               for ed in profile.education]
+    return work, schools
+
+
+def _workday_credentials(paths: Paths) -> Optional[Any]:
+    from .adapters.workday import Credentials
+
+    email, password = env_value(paths, "WORKDAY_EMAIL"), env_value(paths, "WORKDAY_PASSWORD")
+    return Credentials(email, password) if email and password else None
+
+
+def _has_workday_account(paths: Paths, cfg: Config, state: Any, job: Job) -> bool:
+    """An earlier application at this company's Workday means the account exists: sign in first."""
+    from .adapters.workday import parse_ref
+    from .tracker.commands import open_db
+
+    ref = parse_ref(job.url or "") or parse_ref(job.apply_url or "")
+    if ref is None:
+        return False
+    conn = open_db(paths, cfg)
+    try:
+        row = conn.execute("SELECT 1 FROM applications WHERE job_url LIKE ? AND id != ? LIMIT 1",
+                           (f"%{ref.account_key}%", state.application_id or -1)).fetchone()
+    finally:
+        conn.close()
+    return row is not None
+
+
+def _flow_summary(result: Any, planned: list[PlannedAnswer], wait: float) -> str:
+    ok = [r for r in result.results if r.ok]
+    account = f" Workday account: {result.account}." if result.account else ""
+    lines = [f"Filled {len(ok)} of {len(result.results)} field(s).{account}"]
+    for r in result.results:
+        if not r.ok:
+            lines.append(f"  NOT filled: {r.label}: {r.detail}")
+    drafted = [a for a in planned if a.status == "needs_review"]
+    guesses = [a for a in planned if a.kind == "confirm" and a.value]
+    if drafted:
+        lines.append("Drafted by Claude (check them on the Review page):")
+        lines += [f"  {a.label}\n    -> {a.value}" for a in drafted]
+    if guesses:
+        lines.append("Best guesses (check them on the Review page):")
+        lines += [f"  {a.label}: {a.value}" for a in guesses]
+    if result.reached_review:
+        lines.append("Stopped on Workday's Review page. Check everything there, then click Submit yourself; helper never "
+                     f"clicks it (review mode). It watches for the confirmation for up to {wait:g} minutes.")
+    else:
+        lines.append("helper stopped before the Review page (see above). Finish the application in the window and "
+                     f"submit it yourself; helper watches for the confirmation for up to {wait:g} minutes.")
+    return "\n".join(lines)
 
 
 def _snapshot(page: Any, form: Optional[Any], path: Path) -> bool:
@@ -293,11 +496,14 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
     deadline = time.monotonic() + wait * 60
     since_submit: Optional[float] = None
     warned_captcha = False
+    clicked = getattr(adapter, "submit_clicked", None)
     while time.monotonic() < deadline:
         if page.is_closed():
             return "unverified" if submit_seen["value"] else "closed"
         if adapter.is_confirmation(page, form):
             return "confirmed"
+        if clicked is not None and not submit_seen["value"] and clicked(page):
+            submit_seen["value"] = True
         if submit_seen["value"] and since_submit is None:
             since_submit = time.monotonic()
         if since_submit is not None and time.monotonic() - since_submit > 60:

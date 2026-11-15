@@ -4,7 +4,7 @@ From one job posting URL, helper builds a tailored one-page PDF resume, fills th
 
 helper never calls an AI API. Judgment steps (tailoring, free-text answers) are done by Claude Code in an interactive session through files in `runs/<run_id>/`. Everything else is plain Python: Playwright, SQLite, the Notion REST API and LaTeX.
 
-> Status: milestone 8 of 11 (Greenhouse, Lever and Ashby applications). A full setup guide arrives in milestone 11.
+> Status: milestone 8 of 11 (Greenhouse, Lever, Ashby and Workday applications). A full setup guide arrives in milestone 11.
 
 ## Setup
 
@@ -32,7 +32,7 @@ helper continue <run_id>
 helper list | show <id> | stats | export --csv | mark <id> <status> | sync-notion
 ```
 
-Every command works. `helper apply` fills Greenhouse, Lever and Ashby forms; other sites arrive in milestone 10.
+Every command works. `helper apply` fills Greenhouse, Lever, Ashby and Workday forms; other sites arrive in milestone 10.
 
 ### Building a resume (milestone 4)
 
@@ -49,9 +49,9 @@ Every command works. `helper apply` fills Greenhouse, Lever and Ashby forms; oth
    - `data/skill_synonyms.yaml`: skills-line terms such as Hypothesis Testing.
    - `data/tech_families.yaml`: same-family tech swaps such as GitHub Actions for GitLab CI, in projects only.
 
-`helper resume <link>` reads Greenhouse, Lever and Ashby postings directly; other sites need `--jd-file` for now.
+`helper resume <link>` reads Greenhouse, Lever, Ashby and Workday postings directly; other sites need `--jd-file` for now.
 
-### Applying (milestones 7 and 8: Greenhouse, Lever, Ashby)
+### Applying (milestones 7 and 8: Greenhouse, Lever, Ashby, Workday)
 
 1. `helper apply <link>` reads the posting from the site's public API.
    - **Form questions:** Greenhouse lists them in its API. Lever and Ashby don't, so helper opens the application page in a hidden browser, types nothing, and reads the questions from the form.
@@ -64,7 +64,17 @@ Every command works. `helper apply` fills Greenhouse, Lever and Ashby forms; oth
    - **After you submit,** helper sees the site's confirmation, takes a screenshot, and logs the application as *applied*: SQLite, then Notion, then `exports/applications.csv`. If Submit was clicked but no confirmation showed, it's logged as *submitted_unverified* and never retried.
 4. `helper apply <link> --dry-run` shows the eligibility check and the planned answers without starting a run. `helper fill <run_id> --dry-run` shows what would be filled.
 
-LinkedIn Easy Apply and Handshake are refused (rule 7), and Workday, iCIMS and similar sites are left to you (rule 8). helper can still build the resume for any of them.
+**Workday** works the same way, except that its questions appear page by page:
+- `helper continue` finishes right after the resume. `helper fill` then goes through every page:
+  - the account step (sign in, or create the account, with `WORKDAY_EMAIL` / `WORKDAY_PASSWORD` from `.env`);
+  - My Information;
+  - My Experience: your jobs from the resume, your schools from the profile, and the resume PDF (never a GPA);
+  - the company's questions and the voluntary disclosures.
+- Written answers are drafted by Claude while the window stays open, with no separate approval step.
+- It stops on Workday's Review page. You check everything there and click Submit.
+- A failed sign-in is never retried. If Workday wants an email verification, a CAPTCHA, or an answer only you can give, helper says so and waits for you in the window.
+
+LinkedIn Easy Apply and Handshake are refused (rule 7). iCIMS, Taleo and similar sites are left to you, because they need accounts (rule 8). helper can still build the resume for any of them.
 
 ### Tracking applications (milestone 6)
 

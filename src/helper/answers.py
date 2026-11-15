@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Literal, Optional
 
 from pydantic import Field
@@ -98,8 +99,8 @@ def match_option(value: str, options: list[str], aliases: tuple[str, ...] | list
                 score = max(score, 0.85)
             if _negative(value) != _negative(option):
                 score *= 0.5
-        if score > best_score:
-            best, best_score = option, score
+        if score > best_score or (score == best_score and best is not None and len(option) < len(best)):
+            best, best_score = option, score  # on a tie the closer (shorter) option wins
     return best, round(best_score, 3)
 
 
@@ -115,6 +116,9 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("last_name", r"\blast name\b|\bsurname\b|\bfamily name\b", 0.95),
     ("full_name", r"\bfull (legal )?name\b|^\s*(legal )?name\s*\??\s*$", 0.9),
     ("email", r"\be-?mail\b", 0.95),
+    ("phone_extension", r"\bextension\b|^\s*ext\.?\s*$", 0.9),
+    ("phone_type", r"\bphone (device )?type\b|\bdevice type\b|\btype of phone\b", 0.9),
+    ("phone_country_code", r"\bcountry (phone )?code\b|\bdialing code\b", 0.9),
     ("phone", r"\bphone\b|\bmobile\b|\bcell\b", 0.9),
     ("linkedin_url", r"\blinked ?in\b", 0.95),
     ("github_url", r"\bgit ?hub\b", 0.95),
@@ -125,7 +129,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("us_citizen", r"\bcitizen\b|\bpermanent resident\b|\bgreen card\b", 0.9),
     ("graduation_date", r"\bgraduat\w*\b.*\b(date|when|year|term|semester)\b|\bexpected graduation\b|\bgraduation\b"
                         r"|\bclass of\b|\bwhen (do|will) you graduate\b", 0.9),
-    ("previous_employee", r"\b(ever|previously|before|formerly)\b.*\b(work(ed)?|employ\w*|contractor|consultant)\b", 0.9),
+    ("previous_employee", r"\b(ever|previously|before|formerly)\b.*\b(work(ed)?|employ\w*|contractor|consultant)\b"
+                          r"|\b(work(ed)?|employ\w*)\b.*\bin the past\b", 0.9),
     ("major", r"\bmajor\b|\bdiscipline\b|\bfield of study\b|\barea of study\b", 0.9),
     ("degree", r"^\s*degree( type| level)?\s*\??\s*$|\bhighest degree\b|\b(type|level) of degree\b", 0.95),
     ("degree", r"\bdegree\b", 0.85),
@@ -149,16 +154,28 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("work_location", r"\bwhich (\w+ )?(office|hub|location|city)\b|\b(prefer|preference)\w*\b.*\b(location|office|hub|site"
                       r"|city)\b|\bwork (location|arrangement)\b", 0.95),
     ("address_zip", r"\bzip\b|\bpostal\b", 0.9),
+    ("address_line2", r"\baddress line 2\b|^\s*(apartment|apt|suite|unit)\b", 0.85),
     ("address_street", r"\bstreet\b|\baddress line\b|\bmailing address\b|\bhome address\b|^\s*address\s*$", 0.85),
     ("address_country", r"^\s*country\b", 0.85),
     ("address_state", r"^\s*(state|province)\b", 0.85),
     ("address_city", r"^\s*city\b", 0.85),
+    ("signature_date", r"^\s*(today'?s )?date\s*$|^\s*date signed\s*$|\bsignature date\b", 0.9),
+    ("language", r"^\s*(preferred )?language\s*$", 0.85),
     ("location_city", r"\blocation\b|\bwhere (do you|are you) (live|located|based)\b|\bcurrent city\b", 0.85),
 ]
 FIELD_KEYS = {
     "first_name": "first_name", "last_name": "last_name", "email": "email", "phone": "phone", "resume": "resume",
     "cover_letter": "cover_letter", "location": "location_city", "gender": "eeo_gender", "race": "eeo_race",
     "hispanic_ethnicity": "eeo_hispanic", "veteran_status": "eeo_veteran", "disability_status": "eeo_disability",
+    # Workday's standard fields (the automation id of each question block)
+    "workday:legalName--firstName": "first_name", "workday:legalName--lastName": "last_name",
+    "workday:emailAddress": "email", "workday:phoneNumber": "phone", "workday:phoneType": "phone_type",
+    "workday:countryPhoneCode": "phone_country_code", "workday:extension": "phone_extension",
+    "workday:addressLine1": "address_street", "workday:addressLine2": "address_line2", "workday:city": "address_city",
+    "workday:countryRegion": "address_state", "workday:postalCode": "address_zip", "workday:country": "address_country",
+    "workday:source": "how_did_you_hear", "workday:candidateIsPreviousWorker": "previous_employee",
+    "workday:veteranStatus": "eeo_veteran", "workday:gender": "eeo_gender", "workday:ethnicity": "eeo_race",
+    "workday:acceptTermsAndAgreements": "terms_consent", "workday:linkedInAccount": "linkedin_url",
 }
 SKIP_FIELDS = {"resume_text", "cover_letter_text"}  # typed-in alternatives to an upload
 _US_STATES = {"WA": "Washington", "CA": "California", "NY": "New York", "OR": "Oregon", "TX": "Texas", "MA": "Massachusetts",
@@ -253,6 +270,13 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value(t1.email, "profile email")
     if key == "phone":
         return Value(t1.phone, "profile phone")
+    if key == "phone_type":
+        return Value("Mobile", "your phone is a mobile", aliases=("mobile", "cell", "cell phone", "mobile phone"))
+    if key == "phone_country_code":
+        us = (t1.phone or "").replace(" ", "").startswith("+1")
+        return Value("United States of America (+1)" if us else None, "profile phone", aliases=("+1", "united states"))
+    if key == "phone_extension":
+        return Value(None, "", note="no extension")
     if key == "linkedin_url":
         return Value(t1.linkedin_url, "profile linkedin_url")
     if key == "github_url":
@@ -313,8 +337,13 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value(eeo.race_ethnicity, "profile eeo.race_ethnicity", aliases=(first,) if first else (),
                      confidence=eeo_conf)
     if key == "eeo_veteran":
+        # Some forms split "not a veteran" from "a veteran, just not a protected one"; "Not a protected veteran"
+        # takes the first, never an option that says you are a veteran.
+        negative = re.match(r"\s*(i am )?not\b", eeo.veteran_status or "", re.I)
         return Value(eeo.veteran_status, "profile eeo.veteran_status", confidence=eeo_conf,
-                     aliases=("not a protected veteran", "not a veteran", "i am not"))
+                     aliases=("not a protected veteran", "not a veteran", "i am not"),
+                     candidates=("I am not a veteran", "I am not a protected veteran", eeo.veteran_status or "")
+                     if negative else ())
     if key == "eeo_disability":
         return Value(eeo.disability_status, "profile eeo.disability_status", confidence=eeo_conf)
     if key in ("eeo_hispanic", "eeo_other"):
@@ -323,7 +352,8 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         mentioned = contains_word(q.label, ctx.job.company) or re.search(r"\b(us|this company|our company)\b", q.label, re.I)
         if any(same_company(e, ctx.job.company) for e in ctx.past_employers):
             return Value(None, "master list", note=f"you worked at {ctx.job.company}: answer it yourself")
-        return Value("No", "master list: never worked here", confidence=1.0 if mentioned else 0.8)
+        return Value("No", "master list: never worked here", confidence=1.0 if mentioned else 0.8,
+                     aliases=("i have not", "have not worked", "never worked", "never been employed", "none of the above"))
     if key == "location_city":
         state = _US_STATES.get((t1.address.state or "").upper(), t1.address.state or "")
         parts = [p for p in (t1.address.city, state, t1.address.country) if p]
@@ -331,6 +361,14 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     if key == "address_street":
         street = ", ".join(p for p in (t1.address.street, t1.address.unit) if p)
         return Value(street or None, "profile address")
+    if key == "address_line2":
+        return Value(t1.address.unit, "profile address")
+    if key == "terms_consent":
+        return Value("Yes", "go through to the Review page (Vatsal, 2026-11-14)")
+    if key == "signature_date":
+        return Value(date.today().strftime("%m/%d/%Y"), "today's date")
+    if key == "language":
+        return Value("English", "you apply in English", confidence=0.9)
     if key == "address_city":
         return Value(t1.address.city, "profile address")
     if key == "address_state":
@@ -339,7 +377,9 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     if key == "address_zip":
         return Value(t1.address.postal_code, "profile address")
     if key == "address_country":
-        return Value(t1.address.country, "profile address", aliases=("united states", "usa", "us"))
+        us = _norm(t1.address.country or "") in ("united states", "united states of america", "usa", "us")
+        return Value(t1.address.country, "profile address", aliases=("united states", "usa", "us"),
+                     candidates=("United States of America", "United States", "USA") if us else ())
     return Value(None, "", note="no profile value for this")
 
 
@@ -383,7 +423,8 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
             continue
         if key is None:
             if q.section in ("eeoc", "demographic") and q.options:
-                key, label_conf = "eeo_other", 0.9
+                key, label_conf = _eeo_key_from_options(q.options), 0.9
+                base["key"] = key
             else:
                 kind = "free_text" if q.type == "textarea" and q.required else ("unknown" if q.required else "skip")
                 answers.append(PlannedAnswer(**base, kind=kind, note="no profile value matches this question"))
@@ -391,7 +432,27 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
         value = value_for(key, q, ctx)
         planned = _decide(q, value, label_conf, cfg)
         answers.append(PlannedAnswer(**base, **planned))
+    _split_street(answers, ctx)
     return AnswerPlan(answers=answers)
+
+
+def _eeo_key_from_options(options: list[str]) -> str:
+    """An EEO question without a telling label ("Please check one of the boxes below"), named by its choices."""
+    text = " ".join(options).lower()
+    for key, pattern in (("eeo_disability", r"disabilit"), ("eeo_veteran", r"veteran"), ("eeo_hispanic", r"hispanic|latin"),
+                         ("eeo_gender", r"\b(male|female|man|woman)\b")):
+        if re.search(pattern, text):
+            return key
+    return "eeo_other"
+
+
+def _split_street(answers: list[PlannedAnswer], ctx: AnswerContext) -> None:
+    """With a separate address line 2, line 1 holds the street alone."""
+    if any(a.key == "address_line2" and a.value for a in answers):
+        street = ctx.profile.tier1.address.street
+        for a in answers:
+            if a.key == "address_street" and a.value and street:
+                a.value = street
 
 
 def _decide(q: FormQuestion, value: Value, label_conf: float, cfg: Config) -> dict[str, object]:
@@ -399,6 +460,8 @@ def _decide(q: FormQuestion, value: Value, label_conf: float, cfg: Config) -> di
         return {"kind": "unknown" if q.required else "skip", "note": value.note or "no value in your profile",
                 "source": value.source}
     text, match_conf = value.text, 1.0
+    if q.type == "boolean":  # one checkbox: the value says whether to tick it, its label is not a choice
+        return _finish(q, value, label_conf, text, 1.0, cfg)
     if q.options and q.type == "multi_select":
         picked, scores = [], []
         for part in [p.strip() for p in value.text.split(";") if p.strip()]:

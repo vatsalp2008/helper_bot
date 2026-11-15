@@ -1,0 +1,36 @@
+{
+ "jobPostingInfo": {
+  "id": "cf9e7c6dc4ea1001645ac431211c0000",
+  "title": "2027 University Graduate - Data Scientist",
+  "jobDescription": "<p><b>The Opportunity</b></p><p>Adobe is seeking Data Science Engineers.</p><ul><li>Build models with Python and SQL</li><li>Graduating between December 2026 and June 2027</li></ul>",
+  "location": "San Jose",
+  "postedOn": "Posted 2 Days Ago",
+  "startDate": "2026-11-12",
+  "timeType": "Full time",
+  "jobReqId": "R173462",
+  "jobPostingId": "XMLNAME-2027-University-Graduate---Data-Scientist_R173462",
+  "jobPostingSiteId": "external_experienced",
+  "country": {
+   "descriptor": "United States of America",
+   "id": "bc33aa3152ec42d4995f4791a106ed09"
+  },
+  "canApply": true,
+  "posted": true,
+  "includeResumeParsing": true,
+  "jobRequisitionLocation": {
+   "descriptor": "San Jose",
+   "country": {
+    "descriptor": "United States of America",
+    "id": "bc33aa3152ec42d4995f4791a106ed09",
+    "alpha2Code": "US"
+   }
+  },
+  "externalUrl": "https://adobe.wd5.myworkdayjobs.com/external_experienced/job/San-Jose/XMLNAME-2027-University-Graduate---Data-Scientist_R173462",
+  "questionnaireId": "305a1163be7301e3aac47092b201be8a"
+ },
+ "hiringOrganization": {
+  "name": "ADUS-Adobe Inc.",
+  "url": ""
+ },
+ "userAuthenticated": false
+}

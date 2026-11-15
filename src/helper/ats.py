@@ -10,7 +10,7 @@ _HOSTS: list[tuple[str, str]] = [
     ("greenhouse", r"(^|\.)greenhouse\.io$"),
     ("lever", r"(^|\.)lever\.co$"),
     ("ashby", r"(^|\.)ashbyhq\.com$"),
-    ("workday", r"(^|\.)myworkdayjobs\.com$|(^|\.)workday\.com$"),
+    ("workday", r"(^|\.)myworkdayjobs\.com$|(^|\.)myworkdaysite\.com$|(^|\.)workday\.com$"),
     ("icims", r"(^|\.)icims\.com$"),
     ("smartrecruiters", r"(^|\.)smartrecruiters\.com$"),
     ("taleo", r"(^|\.)taleo\.net$"),
@@ -64,7 +64,8 @@ def normalize_url(url: Optional[str]) -> Optional[str]:
         return None
     parsed = urlparse(url.strip())
     host = (parsed.hostname or "").lower().removeprefix("www.")
-    path = re.sub(r"/(?:apply|application)/?$", "", parsed.path.rstrip("/"), flags=re.I)
+    path = re.sub(r"/(?:apply|application)(?:/(?:applyManually|autofillWithResume|useMyLastApplication))?/?$", "",
+                  parsed.path.rstrip("/"), flags=re.I)
     keep = sorted(f"{k.lower()}={v}" for k, v in parse_qsl(parsed.query) if k.lower() in _ID_QUERY_KEYS)
     return (f"{host}{path}".lower() + (f"?{'&'.join(keep)}" if keep else "")) or None
 
