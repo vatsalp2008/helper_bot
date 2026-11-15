@@ -222,7 +222,10 @@ class Context:
         return None
 
     def swap_natives(self, canonical: str, item: MasterItem) -> list[str]:
-        """Members of approved families that `canonical` may stand in for in this item."""
+        """Members of approved families that `canonical` may stand in for in this item. Projects only: experience
+        entries are real jobs and keep the tools they used (Vatsal, 2026-11-14)."""
+        if item.kind != "project":
+            return []
         return sorted({
             m for f in self.families.approved() if canonical in f.members
             for m in f.members if m != canonical and m in item.allowed_tech

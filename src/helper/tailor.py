@@ -35,8 +35,11 @@ def rules(run: RunOptions) -> list[str]:
         "Numbers: each one must be in that item's allowed_numbers, with its precision marker (~, +, <, >) and unit. "
         "Label simulated data as simulated, PulseTrader data as trade events, borderline results as borderline; never "
         "join separately measured numbers into one claim.",
-        "Technologies in a bullet or tag must be in that item's allowed_tech (framing additions and variants included), "
-        "or an approved family swap, which replaces the member the item used and never adds to it.",
+        "Technologies in a bullet or tag must be in that item's allowed_tech (framing additions and variants included). "
+        "In projects only, an approved family swap may name another member in place of the one the project used; it "
+        "replaces, never adds. Experience entries keep their own tools.",
+        "Prefer the posting's own tool names in project bullets and tags: name the posting's tool when the project "
+        "used it, or swap it in through an approved family (keywords.tech lists the swaps).",
         "Follow every item's wording_rules (some cover the whole entry, like naming one database of a framed pair).",
         f"Experience: Graduate Teaching Assistant always, with its exact title; exactly one Kalini internship by track "
         f"(Software Development Intern for SWE, infra, full-stack, mobile, automation; Machine Learning Intern for ML, "
@@ -53,7 +56,9 @@ def rules(run: RunOptions) -> list[str]:
         "No em dashes, no -- and no en dashes in bullets. No GPA. No summary section.",
         "A bullet with no number gets the flag 'qualitative: <item_id> bullet <n>: <why>'.",
         "Exactly 3 skills lines with labels fitted to the role. Terms from the master Skills section, any item's text, "
-        "or an approved skill synonym.",
+        "or an approved skill synonym. When the posting names a skill the master list has under another name, use the "
+        "posting's name. A new name with clear master-list evidence goes into data/skill_synonyms.yaml (evidence, "
+        "approved: true) and into flags as 'new synonym: <term>'.",
         "Exactly 5 courses, from courses.",
         f"grad_date is {run.grad_date}.",
         "Keyword audit: use the posting's exact wording where true. matched = on the resume verbatim; skills_only = true "

@@ -1,9 +1,12 @@
-# Interchangeable technologies (milestone 4 proposal; Vatsal, 2026-11-14: small tweaks to fit a posting are fine).
+# Interchangeable technologies (Vatsal, 2026-11-14: small tweaks to fit a posting are fine).
 #
-# With a family approved, a project or experience entry may name one member IN PLACE OF another member it actually
-# used. A swap replaces, it never adds: the entry can't name both. Every member must already appear somewhere in the
-# master list, so a swap never introduces a tool Vatsal hasn't used.
-# Nothing here is used until Vatsal sets `approved: true`.
+# With a family approved, a PROJECT may name one member IN PLACE OF another member it actually used. A swap replaces,
+# it never adds: the entry can't name both. Every member must already appear somewhere in the master list, so a swap
+# never introduces a tool Vatsal hasn't used. Experience entries (real jobs) keep the tools they used.
+#
+# Vatsal, 2026-11-14: "use the tools that can stand in for each other mostly in projects, but also try to use the
+# tools listed in the job description in the projects." All families below are approved. Set `approved: false` to
+# turn one off.
 #
 # Already covered by the master list itself, so not repeated here: PostgreSQL <-> MySQL and DynamoDB <-> MongoDB
 # (Database framing), NutriTrack's React / Angular / Vue.js variants, E-commerce on Docker Compose or Kubernetes.
@@ -11,41 +14,41 @@
 families:
   - id: ci_cd
     members: [GitHub Actions, GitLab CI, Buildkite]
-    approved: false
+    approved: true
 
   - id: frontend_frameworks
     members: [React, Vue.js, Angular]
-    approved: false
+    approved: true
 
   - id: python_web_frameworks
     members: [Flask, FastAPI, Django]
-    approved: false
+    approved: true
 
   - id: cloud_providers
     members: [AWS, Google Cloud, Azure]
-    approved: false
+    approved: true
     note: Service names (ECS, RDS, IAM) are AWS-specific and stay as written.
 
   - id: data_warehouses
     members: [Snowflake, BigQuery]
-    approved: false
+    approved: true
 
   - id: ml_frameworks
     members: [PyTorch, TensorFlow]
-    approved: false
+    approved: true
 
   - id: gradient_boosting
     members: [XGBoost, LightGBM]
-    approved: false
+    approved: true
 
   - id: bi_dashboards
     members: [Tableau, Power BI]
-    approved: false
+    approved: true
 
   - id: chart_libraries
     members: [Recharts, D3.js]
-    approved: false
+    approved: true
 
   - id: llm_apis
     members: [Claude API, Gemini API]
-    approved: false
+    approved: true

@@ -145,7 +145,7 @@ def extract_keywords(
     for canonical, entry in found.items():
         items = [i.id for i in master.items() if canonical in i.allowed_tech]
         members = {m for f in families.approved() if canonical in f.members for m in f.members if m != canonical}
-        swaps = sorted(f"{i.id} ({m})" for i in master.items() if i.id not in items for m in members if m in i.allowed_tech)
+        swaps = sorted(f"{i.id} ({m})" for i in master.projects if i.id not in items for m in members if m in i.allowed_tech)
         if items:
             status = "in_items"
         elif canonical in skill_canonicals or canonical in all_tech:

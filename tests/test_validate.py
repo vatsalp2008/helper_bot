@@ -19,6 +19,7 @@ from helper.models import (
     Header,
     ProjectSetsFile,
     ResumeMetaFile,
+    SkillSynonym,
     SkillSynonymsFile,
     TailorOutput,
     TechFamiliesFile,
@@ -48,8 +49,12 @@ def base() -> Context:
         meta=ResumeMetaFile.model_validate(_yaml("resume_meta.yaml")),
         courses=CoursesFile.model_validate(_yaml("courses.yaml")).courses,
         project_sets=ProjectSetsFile.model_validate(_yaml("project_sets.yaml")),
-        synonyms=SkillSynonymsFile.model_validate(_yaml("skill_synonyms.yaml")),
-        families=TechFamiliesFile.model_validate(_yaml("tech_families.yaml")),
+        # Test-local proposals, so these tests don't depend on what Vatsal approved in data/.
+        synonyms=SkillSynonymsFile(synonyms=[
+            SkillSynonym(term="Hypothesis Testing", evidence=["experimentiq: Welch's t-test"], approved=False),
+            SkillSynonym(term="Debugging", evidence=["ta: Debugged complex C implementations"], approved=True),
+        ]),
+        families=TechFamiliesFile(),
         run=RunOptions(projects_per_resume=5, bullets_per_item=2, grad_date="May 2027"),
     )
 
@@ -210,6 +215,24 @@ def test_requested_experience_must_be_present(base: Context) -> None:
     run = base.run.model_copy(update={"include_experience": ["student_proctor"]})
     report = report_for(ctx_with(base, run=run), BACKEND)
     assert any("requested with --include-experience" in i.message for i in report.errors)
+
+
+def test_approved_synonyms_are_allowed_in_skills_lines(base: Context) -> None:
+    data = mutated(lambda d: d["skills_lines"][2]["items"].append("Debugging"))
+    assert report_for(base, data).ok, messages(report_for(base, data))
+
+
+def test_real_proposal_files_load(base: Context) -> None:
+    SkillSynonymsFile.model_validate(_yaml("skill_synonyms.yaml"))
+    TechFamiliesFile.model_validate(_yaml("tech_families.yaml"))
+
+
+def test_swaps_apply_to_projects_only(base: Context) -> None:
+    families = TechFamiliesFile(families=[TechFamily(id="web", members=["Flask", "FastAPI"], approved=True)])
+    data = mutated(set_bullet("kalini_sde", 0, "Built a full-stack dashboard with **React** and a **FastAPI** service "
+                              "serving **5** production lines at sub-second latency."))
+    errors = report_for(ctx_with(base, families=families), data).errors
+    assert any(i.check == "tech" and "FastAPI" in i.message and "kalini_sde" in i.where for i in errors)
 
 
 def test_family_swaps_need_approval_and_replace_rather_than_add(base: Context) -> None:
