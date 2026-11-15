@@ -327,6 +327,7 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
         page.goto(job.apply_url or job.url, wait_until="domcontentloaded")
         flow = adapter.FlowContext(
             company=job.company, plan=plan_page, ask_claude=ask_claude, resume_pdf=pdf, work=work, schools=schools,
+            skills=_resume_skills(folder), certifications=_certifications(paths),
             say=_say, pause=make_pause(cfg), credentials=_workday_credentials(paths),
             has_account=_has_workday_account(paths, cfg, state, job), go_on=go_on, wait_seconds=wait * 60,
             poll_seconds=poll_seconds,
@@ -428,6 +429,18 @@ def _history(paths: Paths, cfg: Config, state: Any, folder: Path, profile: Profi
                            end=parse_month_year(run.grad_date if ed.end == "per_run" else ed.end))
                for ed in profile.education]
     return work, schools
+
+
+def _resume_skills(folder: Path) -> list[str]:
+    """The tailored resume's skills lines, in order, once each."""
+    tailor = read_json(folder / "tailor_output.json") if (folder / "tailor_output.json").is_file() else {}
+    return list(dict.fromkeys(i for line in tailor.get("skills_lines", []) for i in line.get("items", [])))
+
+
+def _certifications(paths: Paths) -> list[dict[str, Any]]:
+    """Vatsal's certificates (data/certifications.yaml, git-ignored), for forms that list certifications."""
+    data = load_yaml(paths.data / "certifications.yaml") if (paths.data / "certifications.yaml").is_file() else None
+    return [c for c in (data or {}).get("certifications", []) if isinstance(c, dict) and c.get("name")]
 
 
 def _workday_credentials(paths: Paths) -> Optional[Any]:

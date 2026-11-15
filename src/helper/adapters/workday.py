@@ -148,6 +148,8 @@ class FlowContext:
     schools: list[wp.SchoolEntry]
     say: Callable[[str], None]
     pause: Callable[[], None]
+    skills: list[str] = field(default_factory=list)  # the resume's skills lines
+    certifications: list[dict[str, Any]] = field(default_factory=list)  # data/certifications.yaml
     credentials: Optional[Credentials] = None
     has_account: bool = False  # an earlier application at this company's Workday
     go_on: Callable[[], bool] = lambda: False  # Vatsal says go on (after verifying the account email)
@@ -329,6 +331,8 @@ def _fill_step(page: Any, kind: str, step: str, ctx: FlowContext, out: FlowResul
     if kind == "experience":
         out.results += wp.fill_work(page, ctx.work, ctx.pause)
         out.results += wp.fill_education(page, ctx.schools, ctx.pause)
+        out.results += wp.fill_skills(page, ctx.skills, ctx.pause)
+        out.results += wp.fill_certifications(page, ctx.certifications, ctx.pause)
         out.results += _upload_resume(page, ctx)
     section = "eeoc" if kind in ("disclosures", "self_identify") else "questions"
     questions, found = wp.discover(page, skip_special=kind == "experience", section=section)

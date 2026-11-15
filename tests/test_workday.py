@@ -396,3 +396,23 @@ def test_helpers_browser_never_offers_to_save_passwords(tmp_path: Path) -> None:
     fresh = tmp_path / "fresh"
     no_password_saving(fresh)
     assert json.loads((fresh / "Default" / "Preferences").read_text())["credentials_enable_service"] is False
+
+
+def test_skills_and_certifications_match_only_the_same_thing(tmp_path: Path) -> None:
+    from helper.apply import _certifications, _resume_skills
+    from helper.config import Paths
+
+    assert wp._skill_score("Python", "Python (Programming Language)") > 0.9 > wp._skill_score("Python", "Python Requests")
+    assert wp._skill_score("Kubernetes", "Kubernetes") == 1.0 and wp._skill_score("Java", "JavaScript") < 0.9
+    assert wp._skill_score("C", "C++") < 0.9 and wp._skill_score("C++", "C++ (Programming Language)") > 0.9
+    assert wp._cert_date("June 26, 2026") == {"Month": "06", "Day": "26", "Year": "2026"} and wp._cert_date(None) == {}
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "tailor_output.json").write_text(json.dumps({"skills_lines": [{"label": "Languages", "items": ["Java", "Go"]},
+                                                                         {"label": "Cloud", "items": ["AWS", "Go"]}]}))
+    assert _resume_skills(run) == ["Java", "Go", "AWS"]
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "certifications.yaml").write_text(
+        "certifications:\n  - name: Example Cert\n    issuer: Example\n  - issuer: no name\n")
+    assert [c["name"] for c in _certifications(Paths(tmp_path))] == ["Example Cert"]
+    assert _certifications(Paths(tmp_path / "nowhere")) == []

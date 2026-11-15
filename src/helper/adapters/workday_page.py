@@ -244,8 +244,11 @@ def choose_dropdown(page: Any, where: Any, value: str) -> tuple[bool, str, str]:
 
 
 def selected_items(where: Any) -> list[str]:
+    """What a search box holds, by each chip's label (its text can still be empty right after a pick)."""
     try:
-        return [" ".join(t.split()) for t in where.locator(SELECTED_ITEMS).all_inner_texts() if t.strip()]
+        labels = where.locator(SELECTED_ITEMS).evaluate_all(
+            "els => els.map(e => e.getAttribute('data-automation-label') || e.innerText || '')")
+        return [" ".join(t.split()) for t in labels if t and t.strip()]
     except Exception:
         return []
 
@@ -262,8 +265,18 @@ def choose_prompt(page: Any, where: Any, terms: list[str], accept: Callable[[str
         box.click()
         box.fill("")
         box.type(term, delay=25)
+        shown_before = page.locator(PROMPT_OPTIONS).all_inner_texts()
         page.keyboard.press("Enter")
-        page.wait_for_timeout(1500)
+        page.wait_for_timeout(800)
+        last: Optional[list[str]] = None
+        for _ in range(12):  # until the results replace the earlier list and stop changing (about 4 seconds at most)
+            if selected_items(where) != existing:
+                break
+            results = page.locator(PROMPT_OPTIONS).all_inner_texts()
+            if results and results != shown_before and results == last:
+                break
+            last = results
+            page.wait_for_timeout(300)
         now = selected_items(where)
         added = [s for s in now if s not in existing]
         if added:
@@ -275,7 +288,7 @@ def choose_prompt(page: Any, where: Any, terms: list[str], accept: Callable[[str
             continue
         options = page.locator(PROMPT_OPTIONS)
         texts = [" ".join(t.split()) for t in options.all_inner_texts()]
-        scored = sorted(((accept(t), i) for i, t in enumerate(texts) if t), reverse=True)
+        scored = sorted(((accept(t), i) for i, t in enumerate(texts) if t), key=lambda x: (-x[0], x[1]))
         if scored and scored[0][0] >= threshold:
             options.nth(scored[0][1]).click()
             page.wait_for_timeout(800)
@@ -578,3 +591,93 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
 
 def _norm_words(text: str) -> set[str]:
     return set(re.sub(r"[^a-z0-9]+", " ", text.lower()).split()) - {"and", "of", "the", "in"}
+
+
+# --------------------------------------------------------------------------- Skills and Certifications
+
+
+def _skill_score(skill: str, option: str) -> float:
+    """The same skill, exactly or with a qualifier ("Python (Programming Language)"); "Python Requests" is another."""
+    norm = lambda t: " ".join(re.sub(r"[^a-z0-9+#]+", " ", t.lower()).split())  # noqa: E731
+    if norm(option) == norm(skill):
+        return 1.0
+    if re.match(rf"^\s*{re.escape(skill)}\s*\(", option, re.I):
+        return 0.97
+    return min(match_option(skill, [option])[1], 0.85)
+
+
+def fill_skills(page: Any, skills: list[str], pause: Callable[[], None]) -> list[FieldResult]:
+    """Add each skill from the resume's skills lines that the company's skill list has (Vatsal, 2026-11-14)."""
+    where = page.locator("[role=group][aria-labelledby='Skills-section'] [data-automation-id^='formField-']").first
+    if not skills or not where.count() or not where.locator("[data-automation-id=multiselectInputContainer]").count():
+        return []
+    added, missing = [], []
+    for skill in skills:
+        if any(_skill_score(skill, s) >= 0.9 for s in selected_items(where)):
+            continue
+        try:
+            ok, shown, _ = choose_prompt(page, where, [skill], lambda t, s=skill: _skill_score(s, t), threshold=0.9,
+                                         keep_existing=False)
+        except Exception:
+            ok, shown = False, skill
+        (added if ok else missing).append((shown or skill) if ok else skill)
+        pause()
+    detail = f"not in this company's list: {', '.join(missing)}" if missing else ""
+    return [FieldResult("workday:skills", "Skills", True, "; ".join(added) or "none added", detail)]
+
+
+def _cert_date(text: Optional[str]) -> dict[str, str]:
+    if not text:
+        return {}
+    return date_digits(text, ["Month", "Day", "Year"])
+
+
+def _delete_entry(page: Any, element_id: str) -> None:
+    panel = _field_of(page, element_id).locator("xpath=ancestor::*[@role='group'][1]")
+    try:
+        panel.get_by_role("button", name=re.compile(r"^Delete", re.I)).first.click()
+        page.wait_for_timeout(600)
+    except Exception:
+        pass
+
+
+def fill_certifications(page: Any, certs: list[dict[str, Any]], pause: Callable[[], None]) -> list[FieldResult]:
+    """Add each certificate the company's certification list has, with its ID and issue date. Workday lists are
+    company-specific: a certificate the list doesn't have is left out (its empty entry is removed again)."""
+    section = "Certifications-section"
+    if not certs or not page.locator(f"[role=group][aria-labelledby={json.dumps(section)}]").count():
+        return []
+    added, missing = [], []
+    for cert in certs:
+        name, issuer = cert.get("name", ""), cert.get("issuer") or ""
+        i = _add_entry(page, section, "certification")
+        if i is None:
+            missing.append(name)
+            continue
+        base = f"certification-{i}--"
+        field = _field_of(page, base + "certification")
+        try:
+            if field.locator("[data-automation-id=multiselectInputContainer], [data-automation-id=searchBox]").count():
+                accept = lambda t: max(match_option(name, [t])[1], match_option(f"{name} {issuer}", [t])[1])  # noqa: E731
+                ok, shown, _ = choose_prompt(page, field, [name], accept, threshold=0.9, keep_existing=False)
+            else:
+                _by_id(page, base + "certification").first.fill(name)
+                ok, shown = True, name
+        except Exception:
+            ok, shown = False, name
+        if not ok:
+            _delete_entry(page, base + "certification")
+            missing.append(name)
+            continue
+        if cert.get("credential_id") and _by_id(page, base + "certificationNumber").count():
+            _by_id(page, base + "certificationNumber").first.fill(str(cert["credential_id"]))
+        digits = _cert_date(cert.get("issued"))
+        for section_name in DATE_SECTIONS:
+            box = _by_id(page, f"{base}issuedDate-dateSection{section_name}-display")
+            if section_name in digits and box.count():
+                box.first.click()
+                page.keyboard.type(digits[section_name], delay=40)
+        added.append(shown)
+        pause()
+    detail = f"not in this company's list: {', '.join(missing)}" if missing else ""
+    return [FieldResult("workday:certifications", "Certifications", True, "; ".join(added) or "none added", detail)]
