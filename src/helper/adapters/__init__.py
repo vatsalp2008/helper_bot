@@ -5,14 +5,16 @@ from __future__ import annotations
 from types import ModuleType
 
 from ..ats import detect_ats
-from ..errors import NeedsUser, NotBuiltYet
+from ..errors import NeedsUser
 
 MANUAL = {"icims": "iCIMS", "smartrecruiters": "SmartRecruiters", "taleo": "Taleo",
           "successfactors": "SuccessFactors"}
 
 
-def adapter_for(url: str) -> ModuleType:
-    from . import ashby, greenhouse, lever, workday
+def adapter_for(url: str, purpose: str = "apply") -> ModuleType:
+    """The adapter for a posting link. `purpose` "resume" only reads the posting (no form), so sites helper never
+    fills can still give their job description for a resume and cover letter."""
+    from . import ashby, generic, greenhouse, lever, workday
 
     ats = detect_ats(url)
     if ats == "greenhouse" or greenhouse.parse_ref(url):
@@ -32,7 +34,10 @@ def adapter_for(url: str) -> ModuleType:
                         "use that link. If you want, I can read the job description from this posting so the resume "
                         "can still be built: `helper resume --jd-file ...`.")
     if ats in MANUAL:
-        raise NeedsUser(f"{MANUAL[ats]} needs manual or assisted handling, and usually an account, which helper never "
-                        "creates (rule 8). `helper resume <url> --jd-file ...` still builds the resume for it.")
-    raise NotBuiltYet("helper can't fill this site yet (a generic adapter arrives in milestone 10). "
-                      "`helper resume <url> --jd-file ...` builds the resume.")
+        if purpose == "resume":
+            return generic  # the posting page is public: read its job description
+        raise NeedsUser(f"helper doesn't fill {MANUAL[ats]} applications: they need an account at each company, and "
+                        "helper never creates one there (rule 8; the account exception covers Workday only). Apply in "
+                        "your own browser. helper still builds the tailored resume and cover letter from this posting: "
+                        f"`helper resume {url}`. After you apply, `helper mark <id> applied` logs it.")
+    return generic  # anything else: the best-effort adapter, which always stops before Submit

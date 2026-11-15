@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 from helper import __version__
 from helper.cli import app
-from helper.errors import EXIT_ERROR, EXIT_NOT_BUILT
+from helper.errors import EXIT_ERROR, HelperError
 
 runner = CliRunner()
 
@@ -28,21 +28,15 @@ def test_version() -> None:
     assert result.output.strip() == f"helper {__version__}"
 
 
-@pytest.mark.parametrize(
-    "args,milestone",
-    [
-        (["apply", "https://careers.example.com/jobs/123"], 10),
-    ],
-)
-def test_unbuilt_commands_exit_5_and_name_their_milestone(repo: Path, args: list[str], milestone: int) -> None:
-    result = runner.invoke(app, args)
-    assert result.exit_code == EXIT_NOT_BUILT
-    assert f"milestone {milestone}" in result.output
+def test_resume_needs_a_readable_link_or_a_jd_file(repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from helper.adapters import generic
 
+    def unreadable(url: str, session: object = None) -> None:
+        raise HelperError(f"couldn't read a job description at {url}. Save it to a file and use `--jd-file`.")
 
-def test_resume_needs_a_readable_link_or_a_jd_file(repo: Path, tmp_path: Path) -> None:
+    monkeypatch.setattr(generic, "fetch_job", unreadable)  # an unfamiliar site with no readable description
     other = runner.invoke(app, ["resume", "https://careers.example.com/jobs/123"])
-    assert other.exit_code == EXIT_NOT_BUILT and "--jd-file" in other.output
+    assert other.exit_code == EXIT_ERROR and "--jd-file" in other.output
     assert runner.invoke(app, ["resume"]).exit_code == EXIT_ERROR
     jd = tmp_path / "jd.txt"
     jd.write_text("We are hiring.", encoding="utf-8")

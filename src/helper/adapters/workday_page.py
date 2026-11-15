@@ -22,7 +22,7 @@ from typing import Any, Callable, Optional
 from ..answers import match_option
 from ..dates import MonthYear, parse_month_year
 from ..models import FormQuestion
-from .common import FieldResult
+from .common import FieldResult, tick
 
 NEXT_BUTTON = "[data-automation-id=pageFooterNextButton], [data-automation-id=bottom-navigation-next-button]"
 LISTBOX_OPTIONS = "ul[role=listbox]:not([data-automation-id=selectedItemList]) li[role=option]"
@@ -357,27 +357,6 @@ def _labels(where: Any, kind: str) -> list[tuple[Any, str]]:
     return out
 
 
-def _tick(el: Any) -> bool:
-    """Tick a radio button or checkbox. Workday updates the box a moment after the click, so wait for it, and
-    click the option's label when the box itself doesn't take the click."""
-    if el.is_checked():
-        return True
-    page = el.page
-    for target in ("input", "label"):
-        try:
-            if target == "input":
-                el.click(force=True)
-            else:
-                el.evaluate("i => { const l = i.labels && i.labels[0]; if (l) l.click(); }")
-        except Exception:
-            continue
-        for _ in range(10):
-            if el.is_checked():
-                return True
-            page.wait_for_timeout(200)
-    return el.is_checked()
-
-
 def check_choices(where: Any, kind: str, wanted: list[str]) -> tuple[bool, str, str]:
     boxes = _labels(where, kind)
     labels = [label for _, label in boxes]
@@ -386,7 +365,7 @@ def check_choices(where: Any, kind: str, wanted: list[str]) -> tuple[bool, str, 
         best, score = match_option(want, labels)
         if best is None or score < 0.8:
             return False, "; ".join(wanted), f"no choice matches '{want}'"
-        if not _tick(boxes[labels.index(best)][0]):
+        if not tick(boxes[labels.index(best)][0]):
             return False, "; ".join(wanted), f"Workday didn't keep the tick on '{best}'"
         chosen.append(best)
     unticked = [label for (el, label) in boxes if label in chosen and not el.is_checked()]

@@ -43,7 +43,7 @@ def test_every_condition_holds() -> None:
 @pytest.mark.parametrize("change,reason", [
     ({"clean_runs": 3}, "greenhouse has 3 clean review-mode run(s) so far; auto-submit needs 5"),
     ({"ats": "workday"}, "Workday runs always stop on Workday's Review page for you"),
-    ({"ats": "unknown"}, "helper doesn't submit on unknown by itself"),
+    ({"ats": "unknown"}, "unfamiliar forms always stop before Submit"),
     ({"answers": [answer("why", status="needs_review")]}, "'Why' still needs your review"),
     ({"answers": [answer("why", kind="confirm")]}, "'Why' wasn't answered from your profile or an approved answer"),
     ({"answers": [answer("gpa", kind="unknown", value=None)]}, "wasn't answered from your profile"),

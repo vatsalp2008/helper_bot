@@ -4,7 +4,7 @@ From one job posting URL, helper builds a tailored one-page PDF resume, fills th
 
 helper never calls an AI API. Judgment steps (tailoring, free-text answers) are done by Claude Code in an interactive session through files in `runs/<run_id>/`. Everything else is plain Python: Playwright, SQLite, the Notion REST API and LaTeX.
 
-> Status: milestone 9 of 11 (Greenhouse, Lever, Ashby and Workday applications, cover letters, auto-submit gate). A full setup guide arrives in milestone 11.
+> Status: milestone 10 of 11 (Greenhouse, Lever, Ashby, Workday and other sites, cover letters, auto-submit gate). A full setup guide arrives in milestone 11.
 
 ## Setup
 
@@ -32,7 +32,7 @@ helper continue <run_id>
 helper list | show <id> | stats | export --csv | mark <id> <status> | sync-notion
 ```
 
-Every command works. `helper apply` fills Greenhouse, Lever, Ashby and Workday forms; other sites arrive in milestone 10.
+Every command works. `helper apply` fills Greenhouse, Lever, Ashby and Workday forms, and other sites through the best-effort generic adapter.
 
 ### Building a resume (milestone 4)
 
@@ -49,7 +49,7 @@ Every command works. `helper apply` fills Greenhouse, Lever, Ashby and Workday f
    - `data/skill_synonyms.yaml`: skills-line terms such as Hypothesis Testing.
    - `data/tech_families.yaml`: same-family tech swaps such as GitHub Actions for GitLab CI, in projects only.
 
-`helper resume <link>` reads Greenhouse, Lever, Ashby and Workday postings directly; other sites need `--jd-file` for now.
+`helper resume <link>` reads the posting directly. Use `--jd-file` when a site blocks helper's browser or the posting is closed.
 
 ### Cover letters
 
@@ -87,6 +87,13 @@ that ask for a cover letter get it. `helper cover-letter <run_id> --redo` writes
 - A failed sign-in is never retried. If Workday wants an email verification, a CAPTCHA, or an answer only you can give, helper says so and waits for you in the window.
 
 LinkedIn Easy Apply and Handshake are refused (rule 7). iCIMS, Taleo and similar sites are left to you, because they need accounts (rule 8). helper can still build the resume for any of them.
+
+### Other sites (milestone 10)
+
+- **A company's own careers page:** helper first looks for a Greenhouse, Lever, Ashby or Workday posting behind it, in an embedded form or the Apply button, and uses that adapter.
+- **Anything else:** helper reads the job description from the page, follows the Apply button to the form, and reads every question by its label. It fills what it can answer from your profile, remembered answers and drafted answers. It always stops before Submit and never auto-submits.
+- **Sign-in walls:** pages that want an account (Amazon, Google, many company portals) are left to you; helper never creates those accounts. Pages that block its browser ask you for `--jd-file`.
+- **Stopped sites:** iCIMS, Taleo, SmartRecruiters and SuccessFactors are never filled. `helper resume <link>` still builds the resume and cover letter from their postings.
 
 ### Auto-submit (milestone 9, off by default)
 

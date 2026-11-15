@@ -42,12 +42,12 @@ ANSWER_RULES = [
 ]
 
 
-def fetch_job(url: str, jd_text: Optional[str] = None) -> Job:
+def fetch_job(url: str, jd_text: Optional[str] = None, purpose: str = "apply") -> Job:
     from .adapters import adapter_for
     from .ats import clean_url
 
     url = clean_url(url)
-    job: Job = adapter_for(url).fetch_job(url)
+    job: Job = adapter_for(url, purpose).fetch_job(url)
     if jd_text:  # rule 12: a job description Vatsal gave is used as is
         job = job.model_copy(update={"description_text": jd_text, "description_html": None})
     return job
@@ -280,8 +280,9 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
         seen["captcha"] = _wait_out_captcha(page, wait, poll_seconds)
         form = adapter.find_form(page)
         if form is None:
-            _say("helper couldn't find the application form on this page, so it filled nothing. Fill it in the "
-                 "browser window yourself; helper still watches for the confirmation and logs it.")
+            reason = getattr(adapter, "no_form_reason", None)
+            _say(reason(page) if reason else "helper couldn't find the application form on this page, so it filled "
+                 "nothing. Fill it in the browser window yourself; helper still watches for the confirmation and logs it.")
             results = []
         else:
             results = adapter.fill_form(form, plan.answers, pdf, country=profile.tier1.address.country,

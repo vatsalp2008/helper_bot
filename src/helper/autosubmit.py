@@ -21,7 +21,8 @@ from typing import Any, Optional
 
 from .tracker.db import now_iso
 
-REVIEW_ONLY = {"workday": "Workday runs always stop on Workday's Review page for you"}
+REVIEW_ONLY = {"workday": "Workday runs always stop on Workday's Review page for you",
+               "generic": "company career sites and other unfamiliar forms always stop before Submit for you"}
 AUTO_CAPABLE = ("greenhouse", "lever", "ashby")
 
 
@@ -44,7 +45,7 @@ def blockers(g: Gate) -> list[str]:
     if g.ats in REVIEW_ONLY:
         return [REVIEW_ONLY[g.ats]]
     if g.ats not in AUTO_CAPABLE:
-        return [f"helper doesn't submit on {g.ats or 'this site'} by itself"]
+        return [REVIEW_ONLY["generic"]]
     if g.clean_runs < g.min_clean_runs:
         reasons.append(f"{g.ats} has {g.clean_runs} clean review-mode run(s) so far; auto-submit needs "
                        f"{g.min_clean_runs}")

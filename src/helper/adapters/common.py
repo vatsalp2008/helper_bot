@@ -47,6 +47,44 @@ def find_form(page: Any, anchors: tuple[str, ...], hosts: tuple[str, ...] = (), 
         page.wait_for_timeout(500)
 
 
+_CHECKED_JS = ("i => i.checked || ((i.closest('[role=radio],[role=checkbox],[role=switch]') || "
+               "{getAttribute: () => null}).getAttribute('aria-checked') === 'true')")
+
+
+def tick(el: Any) -> bool:
+    """Tick a radio button or checkbox. Sites often hide the real box behind a styled wrapper (role=radio with
+    aria-checked) or a label, and update a moment after the click: try the wrapper, the box, then the label, and wait
+    for the tick each time. Each try only happens while the box is still unticked, so a checkbox never flips back."""
+    def ticked() -> bool:
+        try:
+            return bool(el.evaluate(_CHECKED_JS))
+        except Exception:
+            return False
+
+    if ticked():
+        return True
+    page = el.page
+    wrapper = el.locator("xpath=ancestor::*[@role='radio' or @role='checkbox' or @role='switch'][1]")
+    label = el.locator("xpath=ancestor::label[1]")
+    attempts = []
+    if wrapper.count():
+        attempts.append(lambda: wrapper.first.click())
+    attempts.append(lambda: el.click(force=True))
+    if label.count():
+        attempts.append(lambda: label.first.click())
+    attempts.append(lambda: el.evaluate("i => { const l = i.labels && i.labels[0]; if (l) l.click(); }"))
+    for attempt in attempts:
+        try:
+            attempt()
+        except Exception:
+            continue
+        for _ in range(8):
+            if ticked():
+                return True
+            page.wait_for_timeout(200)
+    return ticked()
+
+
 def click_submit(form: Any, selectors: tuple[str, ...]) -> bool:
     """Click the form's Submit button once (auto mode only). Only when exactly one visible, enabled button matches."""
     for selector in selectors:

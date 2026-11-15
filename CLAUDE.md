@@ -83,7 +83,9 @@ Enforce these in code, not only in instructions.
 - **Location data:** experience locations and project display names live in `data/resume_meta.yaml`, because the master list doesn't have them.
 
 ## Applying (milestones 7 and 8)
-Supported sites: Greenhouse, Lever, Ashby and Workday. For any other site, use `helper resume --jd-file` until milestone 10.
+Supported sites: Greenhouse, Lever, Ashby and Workday, plus the generic adapter for any other site (milestone 10).
+- **The generic adapter:** finds a Greenhouse, Lever, Ashby or Workday posting behind a company's own page and hands it over. Otherwise it reads the page's form by its labels, always stops before Submit, and never auto-submits. A sign-in wall or a blocked page is left to Vatsal.
+- **Stopped sites:** iCIMS, Taleo, SmartRecruiters and SuccessFactors are never filled (accounts, rule 8). `helper resume <link>` still builds their resume and cover letter from the posting.
 1. `helper apply <link>` goes through eligibility (exit 4 pauses), then the tailor handoff (exit 3). Then `helper continue <run_id>`.
 2. After the resume is built, the answers handoff starts: read `questions_needed.json` and write `answers_provided.json`, as `{"answers": [{"field", "answer"}]}`.
    - Drafts use master-list facts and the job description only. Dropdown answers must be one of the options.

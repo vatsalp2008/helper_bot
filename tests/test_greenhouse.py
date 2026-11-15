@@ -10,7 +10,7 @@ import pytest
 
 from helper.adapters import adapter_for
 from helper.adapters import greenhouse as gh
-from helper.errors import HelperError, NeedsUser, NotBuiltYet
+from helper.errors import HelperError, NeedsUser
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 FIGMA = json.loads((FIXTURES / "greenhouse_figma_job.json").read_text(encoding="utf-8"))
@@ -93,8 +93,9 @@ def test_which_sites_helper_takes_on() -> None:
     assert adapter_for("https://acme.wd5.myworkdayjobs.com/en-US/Careers/job/Seattle/X_R1") is workday
     with pytest.raises(NeedsUser, match="isn't a job posting"):
         adapter_for("https://acme.wd5.myworkdayjobs.com/en-US/Careers")
-    with pytest.raises(NotBuiltYet, match="milestone 10"):
-        adapter_for("https://careers.example.com/jobs/123")
+    from helper.adapters import generic
+
+    assert adapter_for("https://careers.example.com/jobs/123") is generic  # milestone 10: the best-effort adapter
 
 
 def test_tracking_parameters_are_dropped() -> None:

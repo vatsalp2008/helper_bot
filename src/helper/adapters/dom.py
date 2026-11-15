@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from ..models import FormQuestion
-from .common import FieldResult, keyboard
+from .common import FieldResult, keyboard, tick
 
 # Returns one entry per question block: {key, label, type, required, options, description}.
 DISCOVER_JS = r"""
@@ -188,14 +188,16 @@ def _fill_one(root: Any, block: Any, a: Any, pdf: Path, city: Optional[str],
         if a.type == "boolean":
             if a.value.strip().lower() not in ("yes", "true", "i agree", "agree") and a.value != a.label:
                 return True, None, "left unchecked"
-            boxes[0][0].check(force=True)
+            if not tick(boxes[0][0]):
+                return False, a.value, "the site didn't keep the tick"
             return True, "checked", ""
         chosen = []
         for want in wanted:
             index = _pick(want, [label for _, label in boxes])
             if index is None:
                 return False, a.value, f"no option matches '{want}'"
-            boxes[index][0].check(force=True)
+            if not tick(boxes[index][0]):
+                return False, a.value, f"the site didn't keep the tick on '{boxes[index][1]}'"
             chosen.append(boxes[index][1])
         return True, "; ".join(chosen), ""
     if a.type == "yesno":

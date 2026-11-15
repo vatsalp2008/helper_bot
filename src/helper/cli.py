@@ -11,7 +11,7 @@ import typer
 
 from . import __version__
 from .config import Paths, find_root
-from .errors import EXIT_ERROR, HelperError, NotBuiltYet
+from .errors import EXIT_ERROR, HelperError
 
 app = typer.Typer(
     help="helper: one job URL in; a tailored resume, a filled form, and a tracked application out.",
@@ -40,9 +40,6 @@ def guarded(func: F) -> F:
 def _paths() -> Paths:
     return Paths(find_root())
 
-
-def _not_built(command: str, milestone: int, name: str) -> None:
-    raise NotBuiltYet(f"`helper {command}` arrives in milestone {milestone} ({name}).")
 
 
 class SubmitMode(str, Enum):
@@ -201,7 +198,7 @@ def resume(
         from .apply import fetch_job
         from .pipeline import start_run
 
-        started = start_run(paths, load_config(paths), fetch_job(url), command="resume", projects=projects,
+        started = start_run(paths, load_config(paths), fetch_job(url, purpose="resume"), command="resume", projects=projects,
                             include_experience=include_experience, grad_date=grad_date)
     else:
         if not company or not role:
