@@ -27,6 +27,8 @@ from .models import (
     Profile,
     ProjectSetsFile,
     ResumeMetaFile,
+    SkillSynonymsFile,
+    TechFamiliesFile,
     find_gpa_keys,
 )
 from .tracker.db import init_db
@@ -56,6 +58,8 @@ DATA_MODELS: dict[str, type[BaseModel]] = {
     "project_sets.yaml": ProjectSetsFile,
     "caps.yaml": CapsFile,
     "resume_meta.yaml": ResumeMetaFile,
+    "skill_synonyms.yaml": SkillSynonymsFile,
+    "tech_families.yaml": TechFamiliesFile,
 }
 
 
@@ -194,6 +198,10 @@ def _summary(name: str, model: BaseModel) -> str:
         return f"{len(model.caps)} caps, {len(model.notes)} notes"
     if isinstance(model, ResumeMetaFile):
         return f"{len(model.project_display_names)} project names, {len(model.experience)} experience entries"
+    if isinstance(model, SkillSynonymsFile):
+        return f"{len(model.approved_terms())} of {len(model.synonyms)} synonyms approved"
+    if isinstance(model, TechFamiliesFile):
+        return f"{len(model.approved())} of {len(model.families)} tech families approved"
     return "valid"
 
 

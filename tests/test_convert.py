@@ -106,6 +106,17 @@ def test_wording_rules_are_attached_with_their_master_text(master: MasterData) -
         ("ecommerce_platform", "Built 9 Java microservices", False),
         ("ecommerce_platform", "Built 9 microservices in Java Spring Boot plus one service in Go", True),
         ("ecommerce_platform", "Built 9 microservices in Java Spring Boot", False),
+        # metric precision rules (spec 7.4)
+        ("experimentiq", "Modeled 10M+ simulated events in 12 dbt models", True),
+        ("experimentiq", "Processed 10M+ events in 12 dbt models", False),
+        ("pulsetrader", "Processed 10,000 trade events/sec across 8 symbols", True),
+        ("pulsetrader", "Processed 10,000 events/sec across 8 symbols", False),
+        ("echocoach", "Traded a borderline tone drop (p = 0.06) for actionability", True),
+        ("echocoach", "Kept tone steady while lifting actionability by +1.3", False),
+        ("perceptnet", "Reached ~77% Car mAP@0.7 on KITTI", True),
+        ("perceptnet", "Reached ~77% mAP after TensorRT INT8 quantization", False),
+        ("kalini_ml", "Reached 85% accuracy across 5+ algorithms", True),
+        ("kalini_ml", "Reached 85% accuracy with a 40% inference speedup", False),
     ],
 )
 def test_wording_rules_behave(master: MasterData, item_id: str, text: str, ok: bool) -> None:

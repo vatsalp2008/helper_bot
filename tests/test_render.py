@@ -50,7 +50,7 @@ needs_tex = pytest.mark.skipif(
     [
         ("R&D & 50% of $45K", r"R\&D \& 50\% of \$45K"),
         ("C# and F_1 {x}", r"C\# and F\_1 \{x\}"),
-        ("~800ms to ~40ms", r"\textasciitilde{}800ms to \textasciitilde{}40ms"),
+        ("~800ms to ~40ms", r"$\sim$800ms to $\sim$40ms"),
         ("p<0.01, n>5, a|b", r"p\textless{}0.01, n\textgreater{}5, a\textbar{}b"),
         ("2^10 and back\\slash", r"2\textasciicircum{}10 and back\textbackslash{}slash"),
         ("R squared of 0.82", r"R\textsuperscript{2} of 0.82"),
@@ -101,6 +101,7 @@ def test_bullet_bold() -> None:
     assert bullet("reaching **85%** and **R squared of 0.82**") == (
         r"reaching \textbf{85\%} and \textbf{R\textsuperscript{2} of 0.82}"
     )
+    assert bullet("from **~800ms** to ~40ms") == r"from \textbf{{\boldmath$\sim$}800ms} to $\sim$40ms"
     with pytest.raises(RenderError, match="unbalanced"):
         bullet("a **bold phrase")
 

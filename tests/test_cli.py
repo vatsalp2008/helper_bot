@@ -31,7 +31,6 @@ def test_version() -> None:
 @pytest.mark.parametrize(
     "args,milestone",
     [
-        (["continue", "run-1"], 4),
         (["list"], 6),
         (["show", "1"], 6),
         (["stats"], 6),
@@ -48,12 +47,22 @@ def test_unbuilt_commands_exit_5_and_name_their_milestone(repo: Path, args: list
     assert f"milestone {milestone}" in result.output
 
 
-def test_resume_accepts_a_jd_file(repo: Path, tmp_path: Path) -> None:
+def test_resume_reads_urls_from_milestone_7_and_needs_a_jd_file(repo: Path, tmp_path: Path) -> None:
+    result = runner.invoke(app, ["resume", "https://boards.greenhouse.io/acme/jobs/1"])
+    assert result.exit_code == EXIT_NOT_BUILT
+    assert "milestone 7" in result.output
+    assert runner.invoke(app, ["resume"]).exit_code == EXIT_ERROR
     jd = tmp_path / "jd.txt"
     jd.write_text("We are hiring.", encoding="utf-8")
-    result = runner.invoke(app, ["resume", "--jd-file", str(jd)])
-    assert result.exit_code == EXIT_NOT_BUILT
-    assert "milestone 4" in result.output
+    missing_role = runner.invoke(app, ["resume", "--jd-file", str(jd), "--company", "Acme"])
+    assert missing_role.exit_code == EXIT_ERROR
+    assert "--company and --role" in missing_role.output
+
+
+def test_continue_needs_an_existing_run(repo: Path) -> None:
+    result = runner.invoke(app, ["continue", "20260101-000000-nothing"])
+    assert result.exit_code == EXIT_ERROR
+    assert "no run" in result.output
 
 
 def test_apply_rejects_an_unknown_mode(repo: Path) -> None:

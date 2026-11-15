@@ -1,0 +1,173 @@
+{
+  "role_type": "backend_distributed",
+  "grad_date": "May 2027",
+  "experience": [
+    {
+      "entry_id": "ta",
+      "title": "Graduate Teaching Assistant, Data Structures and Algorithms in C",
+      "bullets": [
+        "Held weekly office hours and lab sessions for **100+ students**, debugging **C** implementations of linked lists, trees, graphs, and hash tables.",
+        "Graded **19+** homework and lab assignments with consistent rubrics, and worked with the instructor to refine assignments."
+      ]
+    },
+    {
+      "entry_id": "kalini_sde",
+      "title": "Software Development Intern",
+      "bullets": [
+        "Built a full-stack dashboard with **React** and a **Flask REST API** serving **5** production lines at sub-second latency.",
+        "Automated **8** workflows with **Python** and **Bash** scripts plus Slack API alerts, saving **3.2 hours** daily."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "project_id": "pulsetrader",
+      "subtitle": "Real-Time Streaming Pipeline",
+      "tech_tags": [
+        "Kafka",
+        "Apache Flink",
+        "TimescaleDB"
+      ],
+      "bullets": [
+        "Built a **Kafka** and **Apache Flink** pipeline processing **10,000 trade events/sec** across **8** symbols, with exactly-once semantics.",
+        "Ran **3** Flink jobs for windowed VWAP, z-scores, and anomaly detection, reaching **p99 <50ms** and serving **sub-100ms** real-time queries."
+      ],
+      "reason": "Streaming and distributed processing, the core of a backend posting."
+    },
+    {
+      "project_id": "ecommerce_platform",
+      "subtitle": "Event-Driven Microservices",
+      "tech_tags": [
+        "Java",
+        "Spring Boot",
+        "Kafka"
+      ],
+      "bullets": [
+        "Architected **9** event-driven microservices, built in **Java Spring Boot** with one in **Go**, coordinating distributed transactions with choreography-based **Sagas**.",
+        "Deployed the services with **Docker** and **Kubernetes**, provisioned **AWS** with **Terraform**, and added Prometheus and Grafana for observability."
+      ],
+      "reason": "Java and Go microservices on Kafka, deployed with Docker and Kubernetes: the posting's core stack."
+    },
+    {
+      "project_id": "spiceai",
+      "subtitle": "Open Source Rust Query Engine",
+      "tech_tags": [
+        "Rust",
+        "DataFusion",
+        "Apache Arrow"
+      ],
+      "bullets": [
+        "**Merged** PR #13507, fixing a silent wrong-results bug where LIMIT on a partitioned dataset returned zero rows instead of 3, with **2** regression tests.",
+        "Filed the bug report (#12747) behind the CEO's **+2,244-line** correctness overhaul, and validated fixes against **2,299** passing tests."
+      ],
+      "reason": "Merged open source work in an unfamiliar codebase."
+    },
+    {
+      "project_id": "experimentiq",
+      "subtitle": "A/B Testing Platform",
+      "tech_tags": [
+        "Python",
+        "FastAPI",
+        "PostgreSQL"
+      ],
+      "bullets": [
+        "Built an **A/B testing** platform over **10M+** simulated events, with a **FastAPI** assignment service using consistent hashing and **12** dbt models.",
+        "Cut an assignment log query from **~800ms to ~40ms** (**20x**) with a composite **PostgreSQL** index, confirmed via EXPLAIN ANALYZE."
+      ],
+      "reason": "API service and SQL performance work."
+    },
+    {
+      "project_id": "chef",
+      "subtitle": "Open Source Bug Fix",
+      "tech_tags": [
+        "Ruby",
+        "RSpec",
+        "Buildkite"
+      ],
+      "bullets": [
+        "**Merged** a fix for an integer umask bug that affected every Chef resource and sat open for **3.5 years**, after triaging **~200** issues.",
+        "Added **4** **RSpec** tests and got CI green across **13** unit-spec jobs with **10,939** examples passing, after winning a contested code review."
+      ],
+      "reason": "Second merged open source contribution, with a contested review."
+    }
+  ],
+  "skills_lines": [
+    {
+      "label": "Languages",
+      "items": [
+        "Java",
+        "Go",
+        "Python",
+        "SQL",
+        "Rust",
+        "Ruby",
+        "TypeScript"
+      ]
+    },
+    {
+      "label": "Backend and Data",
+      "items": [
+        "Spring Boot",
+        "Kafka",
+        "Apache Flink",
+        "Apache Spark",
+        "PostgreSQL",
+        "Redis",
+        "REST APIs"
+      ]
+    },
+    {
+      "label": "Cloud and DevOps",
+      "items": [
+        "AWS",
+        "Docker",
+        "Kubernetes",
+        "Terraform",
+        "GitHub Actions",
+        "CI/CD",
+        "Prometheus",
+        "Grafana"
+      ]
+    }
+  ],
+  "coursework": [
+    "Distributed Systems",
+    "Database Systems",
+    "Algorithms",
+    "Data Structures",
+    "Artificial Intelligence"
+  ],
+  "keyword_audit": {
+    "matched": [
+      "Java",
+      "Go",
+      "Kafka",
+      "Apache Flink",
+      "PostgreSQL",
+      "AWS",
+      "Python",
+      "REST APIs",
+      "Docker",
+      "Kubernetes",
+      "Prometheus",
+      "Grafana",
+      "code reviews",
+      "open source",
+      "distributed systems"
+    ],
+    "skills_only": [
+      "SQL",
+      "GitHub Actions",
+      "CI/CD",
+      "Spark"
+    ],
+    "gaps": [
+      "Scala",
+      "Cassandra"
+    ]
+  },
+  "flags": [
+    "qualitative: ecommerce_platform bullet 2: the master list gives no metric for the deployment and monitoring work"
+  ],
+  "fit_paragraph": "The role centers on streaming backend services in Java or Go with Kafka, PostgreSQL and Kubernetes on AWS. PulseTrader and the E-commerce Platform show that stack end to end, and the merged chef and Spice.ai fixes speak to the posting's code review, debugging and open source points."
+}

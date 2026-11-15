@@ -1,0 +1,25 @@
+Northwind Labs: Software Engineer Intern, Backend (Summer 2027)
+
+About the role
+Northwind Labs builds real-time data infrastructure for logistics companies. As a backend intern you will work on the services that ingest and process millions of shipment events a day.
+
+What you'll do
+- Design and build backend services in Java or Go that process streaming data with Kafka
+- Write and optimize SQL queries against PostgreSQL
+- Containerize services with Docker and deploy them on Kubernetes in AWS
+- Participate in code reviews and help debug production issues
+- Improve the reliability and observability of our pipelines with Prometheus and Grafana
+
+Basic qualifications
+- Currently pursuing a BS or MS in Computer Science or a related field
+- Experience with at least one of Java, Go, or Python
+- Understanding of data structures, algorithms, and distributed systems
+- Familiarity with REST APIs and relational databases
+
+Preferred qualifications
+- Experience with stream processing (Apache Flink or Spark Streaming)
+- Experience with Scala or Cassandra
+- Contributions to open source projects
+- Experience with CI/CD (GitHub Actions)
+
+Location: Seattle, WA (hybrid)

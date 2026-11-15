@@ -527,3 +527,59 @@ class AnswersFile(StrictModel):
     """data/answers.yaml: free-text answers you approved (spec 5.4)."""
 
     answers: list[ApprovedAnswer] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- proposals Vatsal approves (milestone 4)
+
+
+class SkillSynonym(StrictModel):
+    term: str  # how it may appear in a skills line, e.g. "Hypothesis Testing"
+    evidence: list[str]  # the master-list facts behind it, as "<item id>: <fact>"
+    approved: bool = False
+    note: Optional[str] = None
+
+
+class SkillSynonymsFile(StrictModel):
+    """data/skill_synonyms.yaml: skills-line terms the master list supports in other words. Only approved ones count."""
+
+    synonyms: list[SkillSynonym] = Field(default_factory=list)
+
+    @field_validator("synonyms")
+    @classmethod
+    def _unique(cls, v: list[SkillSynonym]) -> list[SkillSynonym]:
+        _unique_nonempty([s.term.lower() for s in v], "synonym terms")
+        return v
+
+    def approved_terms(self) -> list[str]:
+        return [s.term for s in self.synonyms if s.approved]
+
+
+class TechFamily(StrictModel):
+    id: str
+    members: list[str]  # canonical technology names; each must appear somewhere in the master list
+    approved: bool = False
+    note: Optional[str] = None
+
+    @field_validator("members")
+    @classmethod
+    def _members(cls, v: list[str]) -> list[str]:
+        v = _unique_nonempty(v, "family members")
+        if len(v) < 2:
+            raise ValueError("a family needs at least 2 members")
+        return v
+
+
+class TechFamiliesFile(StrictModel):
+    """data/tech_families.yaml: interchangeable technologies. With a family approved, an entry may name one member
+    in place of another member it actually used (a swap replaces, never adds)."""
+
+    families: list[TechFamily] = Field(default_factory=list)
+
+    @field_validator("families")
+    @classmethod
+    def _unique(cls, v: list[TechFamily]) -> list[TechFamily]:
+        _unique_nonempty([f.id for f in v], "family ids")
+        return v
+
+    def approved(self) -> list[TechFamily]:
+        return [f for f in self.families if f.approved]

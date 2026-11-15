@@ -10,7 +10,7 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 import yaml
 
@@ -161,6 +161,62 @@ KNOWN_RULES: dict[str, list[KnownRule]] = {
                 title_prefix="Graduate Teaching Assistant",
             ),
             note_hint=r"Graduate Teaching Assistant",
+        ),
+    ],
+    # Metric precision rules (spec 7.4).
+    "experimentiq": [
+        KnownRule(
+            WordingRule(
+                id="experimentiq_simulated",
+                source="spec 7.4",
+                description="The 10M+ events are simulated, so say so.",
+                require=[RequireRule(when=r"(?i)\b10\s?M\+?|\b10,000,000\b|\bten million\b", must=r"(?i)\bsimulat")],
+            ),
+            note_hint=None,
+        ),
+    ],
+    "pulsetrader": [
+        KnownRule(
+            WordingRule(
+                id="pulsetrader_trade_events",
+                source="spec 7.4",
+                description='PulseTrader\'s data is "trade events".',
+                require=[RequireRule(when=r"(?i)\b10,?000\b|\b10K\b|\bevents?\b", must=r"(?i)\btrade events\b")],
+            ),
+            note_hint=None,
+        ),
+    ],
+    "echocoach": [
+        KnownRule(
+            WordingRule(
+                id="echocoach_tone_borderline",
+                source="spec 7.4",
+                description="The tone result (p = 0.06) is borderline, and is reported as borderline.",
+                require=[RequireRule(when=r"(?i)\btone\b|\b0\.06\b", must=r"(?i)\bborderline\b")],
+            ),
+            note_hint=None,
+        ),
+    ],
+    "perceptnet": [
+        KnownRule(
+            WordingRule(
+                id="perceptnet_map_not_int8",
+                source="spec 7.4",
+                description="The ~77% mAP is not an after-INT8 number; keep it apart from INT8 claims.",
+                forbid=[r"(?i)77\s?%[^.;]{0,100}\bINT8\b|\bINT8\b[^.;]{0,100}77\s?%"],
+            ),
+            note_hint=None,
+        ),
+    ],
+    "kalini_ml": [
+        KnownRule(
+            WordingRule(
+                id="kalini_ml_separate_results",
+                source="spec 7.4",
+                description="The 85% accuracy and the 40% inference speedup were measured separately; don't join them.",
+                forbid=[r"85\s?%[^.;]{0,120}40\s?%|40\s?%[^.;]{0,120}85\s?%"],
+            ),
+            note_hint=None,
         ),
     ],
 }
@@ -633,18 +689,7 @@ def parse_master(markdown: str, lexicon: dict[str, Any], source_name: str) -> tu
 
     skills, framing_text = parse_skills(skills_block, problems) if skills_block else ([], None)
 
-    # Vocabulary: lexicon + every Technologies-line name + name-like skills.
-    master_terms: list[str] = []
-    for draft in drafts:
-        for entry in draft.item.technologies:
-            master_terms.extend(split_tech_item(entry))
-    for group in skills:
-        for item in group.all_items():
-            if is_tech_like(item.name):
-                if "/" not in item.name or item.name in NO_SLASH_SPLIT:
-                    master_terms.append(item.name)
-                master_terms.extend(a for a in item.aliases if is_tech_like(a))
-    vocab = build_vocabulary(lexicon, master_terms)
+    vocab = build_vocabulary(lexicon, master_vocab_terms((d.item.technologies for d in drafts), skills))
 
     resolve = lambda name: vocab.canonical(name) or name  # noqa: E731
     implies = {resolve(str(k)): [resolve(str(v)) for v in targets or []]
@@ -729,6 +774,26 @@ def load_lexicon(paths: Paths) -> dict[str, Any]:
     return load_yaml(paths.data / "tech_lexicon.yaml") or {}
 
 
+def master_vocab_terms(project_technologies: Iterable[list[str]], skills: list[SkillGroup]) -> list[str]:
+    """The master list's own technology names: every Technologies-line name and every name-like skill."""
+    terms: list[str] = []
+    for technologies in project_technologies:
+        for entry in technologies:
+            terms.extend(split_tech_item(entry))
+    for group in skills:
+        for item in group.all_items():
+            if is_tech_like(item.name):
+                if "/" not in item.name or item.name in NO_SLASH_SPLIT:
+                    terms.append(item.name)
+                terms.extend(a for a in item.aliases if is_tech_like(a))
+    return terms
+
+
+def vocabulary_for(master: MasterData, lexicon: dict[str, Any]) -> TechVocabulary:
+    """The same vocabulary `helper convert` used, rebuilt from master.yaml (for keywords and validation)."""
+    return build_vocabulary(lexicon, master_vocab_terms((p.technologies for p in master.projects), master.skills))
+
+
 class _Dumper(yaml.SafeDumper):
     """Short string lists in flow style ([a, b, c]); everything else in block style."""
 
@@ -801,7 +866,7 @@ def format_summary(result: ConvertResult) -> str:
         for rule in item.wording_rules:
             if rule.id.startswith("db_framing_"):
                 continue  # summarized on the Database framing line
-            origin = "master list" if rule.source != "spec 5.1" else "spec 5.1"
+            origin = rule.source if rule.source.startswith("spec ") else "master list"
             out.append(f"  {item.id:<20} {rule.id:<26} from {origin}")
     if result.notes:
         out.append("Notes:")

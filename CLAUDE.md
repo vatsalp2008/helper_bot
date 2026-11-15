@@ -15,6 +15,12 @@ helper is Vatsal's local job-application tool. The full spec is `helper_claude_c
 | `tailor_input.json` | `tailor_output.json` | Schema in spec 7.6. Optional extras: `fit_paragraph`, per-project `reason`. Mark a bullet with no number with a flag `"qualitative: <item_id> bullet <n>: <why>"`. |
 | `questions_needed.json` | `answers_provided.json` | Use only master-list facts and the job description. Every draft is `needs_review` until Vatsal approves it, then offer to save it to `data/answers.yaml`. |
 
+The resume loop:
+1. `helper resume --jd-file F --company C --role R` writes `tailor_input.json`. It holds the rules, the posting's keywords, and each item's allowed tech, numbers and wording rules.
+2. Write `tailor_output.json`, then run `helper continue <run_id>`.
+3. A rejection lists every problem in `validation.json`. Fix the output and continue again.
+Never edit validation results or loosen a check to get a pass.
+
 ## 3. Source of truth
 
 **`data/master_list_v23.md` is the single source of truth about me.** I have confirmed everything in it. That means:
@@ -46,6 +52,7 @@ Enforce these in code, not only in instructions.
 - **Master list beats the reference resume.** Examples: the TA entry says "100+ students", not "around 60". "Linear Regression" can't be claimed.
 - **Technologies in bullets and tech tags must belong to that specific project or experience entry.** That covers the entry's own text, its confirmed variants, and the Database framing rule. The framing rule applies to every project built with PostgreSQL, including through Supabase (`implies` in `data/tech_lexicon.yaml`). An entry names one database of a framed pair, never both. Skills lines may use anything in the master Skills section, any project or experience text, or a synonym marked `approved: true` in `data/skill_synonyms.yaml`.
 - **Small tweaks to fit a posting are fine** (Vatsal, 2026-11-14). Reword a project's details and pick its tech framing to match the job description. A tech swap beyond the master list's own framings is a same-family swap from `data/tech_families.yaml`, proposed in milestone 4. Each family stays `approved: false` until Vatsal approves it, and the swapped-in tool must appear somewhere in the master list. Nothing outside the master list becomes claimable.
+- **`~` prints centered on the line** as `$\sim$` (bold inside bold phrases). Vatsal chose this on 2026-11-14; spec 6's `\textasciitilde{}` prints a raised tilde in this font encoding.
 - **Graduation date** (spec 8 item 4): May 2027 by default. Use December 2027 when the posting's graduation window or a "returning to school" requirement needs it. Use May 2027 when a full-time start date needs it. The run's chosen date also fills the form's expected-graduation field.
 - **Sponsorship answer** is "No", except "Yes" when the question explicitly says sponsorship includes CPT/OPT. If CPT/OPT is mentioned but it's unclear whether it counts, pause.
 - **Profile values:** "ask" means ask Vatsal every time. "per_run" means decided per application. `data/profile.yaml` is git-ignored.

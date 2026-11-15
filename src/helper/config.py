@@ -80,6 +80,18 @@ class Paths:
         return self.data / "resume_meta.yaml"
 
     @property
+    def skill_synonyms(self) -> Path:
+        return self.data / "skill_synonyms.yaml"
+
+    @property
+    def tech_families(self) -> Path:
+        return self.data / "tech_families.yaml"
+
+    @property
+    def tech_lexicon(self) -> Path:
+        return self.data / "tech_lexicon.yaml"
+
+    @property
     def templates(self) -> Path:
         return self.root / "templates"
 

@@ -34,7 +34,9 @@ _SPECIAL = {
     "{": r"\{",
     "}": r"\}",
     "^": r"\textasciicircum{}",
-    "~": r"\textasciitilde{}",  # a bare ~ is a non-breaking space in LaTeX ("~800ms")
+    # A bare ~ is a non-breaking space in LaTeX. Spec 6 asked for \textasciitilde{}, which prints a raised
+    # tilde in this font encoding; Vatsal chose a tilde centered on the line instead (2026-11-14).
+    "~": r"$\sim$",
     "<": r"\textless{}",  # the template's default font encoding prints < > | wrongly
     ">": r"\textgreater{}",
     "|": r"\textbar{}",
@@ -111,9 +113,14 @@ def tex(text: Any) -> str:
     return _escape(text)
 
 
+def _bold(match: re.Match[str]) -> str:
+    # Math symbols ignore \textbf; \boldmath makes the centered tilde bold like the digits next to it.
+    return r"\textbf{" + match.group(1).replace(r"$\sim$", r"{\boldmath$\sim$}") + "}"
+
+
 def bullet(text: Any) -> str:
     """Escape a bullet, then turn **phrase** into \\textbf{phrase}."""
-    escaped = _BOLD_RE.sub(r"\\textbf{\1}", _escape(text, in_bullet=True))
+    escaped = _BOLD_RE.sub(_bold, _escape(text, in_bullet=True))
     if "**" in escaped:
         raise RenderError(f"unbalanced ** in bullet {text!r}")
     return escaped

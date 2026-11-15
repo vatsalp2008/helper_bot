@@ -1,0 +1,109 @@
+# Skills-line terms the master list supports in other words (milestone 4 proposal).
+#
+# A Technical Skills line may use a term from the master Skills section, a term that appears in any project or
+# experience text (hyphens and spaces count as the same), or a term below with `approved: true`.
+# Nothing here is used until Vatsal sets `approved: true`. Synonyms apply to skills lines only, never to bullets.
+#
+# Already claimable without a synonym (found in the master list's text): A/B Testing, Time-series forecasting,
+# Machine Learning, Deep Learning, Computer Vision, Distributed Systems, Data Modeling, Feature Engineering,
+# Code Review, Observability, Concurrency, Statistics, Data Structures, Algorithms, Streaming.
+# Not proposed (no support in the master list): Linear Regression, Linux, Agile, Multithreading.
+
+synonyms:
+  - term: Hypothesis Testing
+    evidence:
+      - "experimentiq: statistical engine with power analysis, Welch's t-test, Mann-Whitney U, sequential testing"
+      - "echocoach: statistical significance testing (p < 0.01, p = 0.06)"
+    approved: false
+
+  - term: Statistical Analysis
+    evidence:
+      - "experimentiq: statistical engine (Welch's t-test, CUPED, DiD/PSM)"
+      - "housing_price: R-based statistical validation"
+      - "echocoach: statistical significance testing"
+    approved: false
+
+  - term: Debugging
+    evidence:
+      - "ta: Debugged complex C implementations (linked lists, trees, graphs, hash tables) with students"
+      - "chef: root-caused 2 compounding defects in a single method"
+      - "spiceai: root-caused a silent wrong-results bug and a process deadlock"
+    approved: false
+
+  - term: Unit Testing
+    evidence:
+      - "chef: added 4 RSpec tests, each verified to fail on main and pass with the fix"
+      - "spiceai: fixed with a one-line change plus 2 regression tests"
+    approved: false
+
+  - term: Infrastructure as Code
+    evidence:
+      - "ecommerce_platform: Terraform modules turning the manually-configured stack into reproducible, declarative infrastructure"
+    approved: false
+
+  - term: Data Visualization
+    evidence:
+      - "traffic_accident: Tableau Public dashboard"
+      - "f1_analytics: Power BI report and React/D3.js dashboard"
+      - "skills: Data Science & Visualization group"
+    approved: false
+
+  - term: Data Analysis
+    evidence:
+      - "experimentiq: analytics platform with a SQL explorer"
+      - "f1_analytics: 500K+ historical data points over 10+ seasons"
+      - "traffic_accident: 7.7M accident records"
+    approved: false
+
+  - term: Data Mining
+    evidence:
+      - "traffic_accident: classification and severity patterns across 7.7M records (the reference resume's subtitle)"
+    approved: false
+
+  - term: Performance Optimization
+    evidence:
+      - "experimentiq: 20x faster assignment log query via a composite index; 45s to 0.8s metric computation"
+      - "investment_prediction: optimized feature engineering pipeline, training time down 60%"
+    approved: false
+
+  - term: System Design
+    evidence:
+      - "ecommerce_platform: 9 microservices, database per service, choreography-based sagas, transactional outbox"
+      - "pulsetrader: end-to-end streaming architecture with exactly-once semantics"
+    approved: false
+
+  - term: API Design
+    evidence:
+      - "kalini_sde: Flask REST API"
+      - "experimentiq: FastAPI assignment service"
+      - "themanager: GraphQL"
+    approved: false
+
+  - term: Object-Oriented Programming
+    evidence:
+      - "ecommerce_platform: Java Spring Boot services"
+      - "chef: Ruby (Chef::Resource class hierarchy)"
+      - "wardrobe: Swift, MVVM + Repository pattern"
+    approved: false
+
+  - term: ETL
+    evidence:
+      - "experimentiq: dbt transformation layer (staging/intermediate/marts)"
+      - "kalini_ml: data pipeline (Pandas, SQL)"
+      - "pulsetrader: normalization and aggregation jobs"
+    approved: false
+    note: dbt is an ELT tool; approve only if "ETL" reads as fair to you.
+
+  - term: Big Data
+    evidence:
+      - "f1_analytics: processed via Apache Spark"
+      - "traffic_accident: 7.7M records"
+      - "pulsetrader: 10,000 trade events/sec through Kafka"
+    approved: false
+
+  - term: NLP
+    evidence:
+      - "investment_prediction: unstructured sentiment data"
+      - "echocoach: speech-to-text, LLM coaching loop, LLM-as-judge evaluation"
+    approved: false
+    note: The evidence is thin; leave unapproved unless you did NLP work beyond these.

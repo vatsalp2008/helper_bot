@@ -1,0 +1,51 @@
+# Interchangeable technologies (milestone 4 proposal; Vatsal, 2026-11-14: small tweaks to fit a posting are fine).
+#
+# With a family approved, a project or experience entry may name one member IN PLACE OF another member it actually
+# used. A swap replaces, it never adds: the entry can't name both. Every member must already appear somewhere in the
+# master list, so a swap never introduces a tool Vatsal hasn't used.
+# Nothing here is used until Vatsal sets `approved: true`.
+#
+# Already covered by the master list itself, so not repeated here: PostgreSQL <-> MySQL and DynamoDB <-> MongoDB
+# (Database framing), NutriTrack's React / Angular / Vue.js variants, E-commerce on Docker Compose or Kubernetes.
+
+families:
+  - id: ci_cd
+    members: [GitHub Actions, GitLab CI, Buildkite]
+    approved: false
+
+  - id: frontend_frameworks
+    members: [React, Vue.js, Angular]
+    approved: false
+
+  - id: python_web_frameworks
+    members: [Flask, FastAPI, Django]
+    approved: false
+
+  - id: cloud_providers
+    members: [AWS, Google Cloud, Azure]
+    approved: false
+    note: Service names (ECS, RDS, IAM) are AWS-specific and stay as written.
+
+  - id: data_warehouses
+    members: [Snowflake, BigQuery]
+    approved: false
+
+  - id: ml_frameworks
+    members: [PyTorch, TensorFlow]
+    approved: false
+
+  - id: gradient_boosting
+    members: [XGBoost, LightGBM]
+    approved: false
+
+  - id: bi_dashboards
+    members: [Tableau, Power BI]
+    approved: false
+
+  - id: chart_libraries
+    members: [Recharts, D3.js]
+    approved: false
+
+  - id: llm_apis
+    members: [Claude API, Gemini API]
+    approved: false

@@ -767,7 +767,17 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
+  wording_rules:
+  - id: pulsetrader_trade_events
+    source: spec 7.4
+    description: PulseTrader's data is "trade events".
+    scope: bullet
+    forbid: []
+    require:
+    - when: (?i)\b10,?000\b|\b10K\b|\bevents?\b
+      must: (?i)\btrade events\b
+    conflicts: []
+    title_prefix: null
   implied_tech: []
   framing_additions: []
   allowed_tech: [Apache Flink, Avro, BigQuery, Confluent Schema Registry, D3.js, Docker, FastAPI, Grafana, Kafka, Prometheus, Python, React, Recharts, Redis, Tailwind CSS, TimescaleDB, TypeScript, WebSocket, Zustand]
@@ -858,7 +868,16 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
+  wording_rules:
+  - id: perceptnet_map_not_int8
+    source: spec 7.4
+    description: The ~77% mAP is not an after-INT8 number; keep it apart from INT8 claims.
+    scope: bullet
+    forbid:
+    - (?i)77\s?%[^.;]{0,100}\bINT8\b|\bINT8\b[^.;]{0,100}77\s?%
+    require: []
+    conflicts: []
+    title_prefix: null
   implied_tech: []
   framing_additions: []
   allowed_tech: [CUDA, Docker, KITTI, MLflow, nuScenes, ONNX, Open3D, OpenCV, PointPillars, Python, PyTorch, ROS 2, TensorRT, YOLO]
@@ -942,6 +961,16 @@ projects:
   variants: []
   wording_notes: []
   wording_rules:
+  - id: experimentiq_simulated
+    source: spec 7.4
+    description: The 10M+ events are simulated, so say so.
+    scope: bullet
+    forbid: []
+    require:
+    - when: (?i)\b10\s?M\+?|\b10,000,000\b|\bten million\b
+      must: (?i)\bsimulat
+    conflicts: []
+    title_prefix: null
   - id: db_framing_mysql
     source: 'master list, Skills section: Database framing'
     description: 'An entry names one database: if it says MySQL, it can''t also name PostgreSQL, Supabase or LISTEN/NOTIFY.'
@@ -1158,7 +1187,17 @@ projects:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
+  wording_rules:
+  - id: echocoach_tone_borderline
+    source: spec 7.4
+    description: The tone result (p = 0.06) is borderline, and is reported as borderline.
+    scope: bullet
+    forbid: []
+    require:
+    - when: (?i)\btone\b|\b0\.06\b
+      must: (?i)\bborderline\b
+    conflicts: []
+    title_prefix: null
   implied_tech: []
   framing_additions: []
   allowed_tech: [Claude API, Cognee, ElevenLabs, FastAPI, LoRA, Next.js, OpenAI Whisper, Prompt Engineering, Python]
@@ -1450,7 +1489,16 @@ experience:
   notes: []
   variants: []
   wording_notes: []
-  wording_rules: []
+  wording_rules:
+  - id: kalini_ml_separate_results
+    source: spec 7.4
+    description: The 85% accuracy and the 40% inference speedup were measured separately; don't join them.
+    scope: bullet
+    forbid:
+    - 85\s?%[^.;]{0,120}40\s?%|40\s?%[^.;]{0,120}85\s?%
+    require: []
+    conflicts: []
+    title_prefix: null
   implied_tech: []
   framing_additions: []
   allowed_tech: [Flask, Pandas, Scikit-learn, SQL, TensorFlow]

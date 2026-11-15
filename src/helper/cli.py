@@ -146,19 +146,39 @@ def apply(
 @app.command()
 @guarded
 def resume(
-    url: Annotated[Optional[str], typer.Argument(help="Job posting URL (optional with --jd-file).")] = None,
+    url: Annotated[Optional[str], typer.Argument(help="Job posting URL (recorded; reading it arrives in milestone 7).")] = None,
     jd_file: Annotated[
-        Optional[Path], typer.Option("--jd-file", exists=True, dir_okay=False, help="Use this job description text.")
+        Optional[Path], typer.Option("--jd-file", exists=True, dir_okay=False, help="The job description as text.")
     ] = None,
-    company: Annotated[Optional[str], typer.Option("--company", help="Company name when there is no URL.")] = None,
-    role: Annotated[Optional[str], typer.Option("--role", help="Role title when there is no URL.")] = None,
-    projects: Annotated[Optional[int], typer.Option("--projects", min=1, help="Projects on the resume.")] = None,
+    company: Annotated[Optional[str], typer.Option("--company", help="Company name.")] = None,
+    role: Annotated[Optional[str], typer.Option("--role", help="Role title, short (it names the PDF).")] = None,
+    location: Annotated[Optional[str], typer.Option("--location", help="Job location, if known.")] = None,
+    projects: Annotated[Optional[int], typer.Option("--projects", min=1, max=8, help="Projects on the resume.")] = None,
     include_experience: Annotated[
         Optional[list[str]], typer.Option("--include-experience", help="Add an off-by-default experience entry.")
     ] = None,
+    grad_date: Annotated[
+        Optional[str], typer.Option("--grad-date", help='"May 2027" (default) or "December 2027" (spec 8 item 4).')
+    ] = None,
 ) -> None:
-    """Intake, tailor and render only: produce the validated one-page PDF."""
-    _not_built("resume", 4, "Tailor pipeline")
+    """Tailor and render only: writes tailor_input.json for Claude, then `helper continue` builds the PDF."""
+    from .config import load_config
+    from .pipeline import format_started, start_resume, waiting
+
+    if jd_file is None:
+        if url:
+            raise NotBuiltYet("Reading a posting from its URL arrives in milestone 7 (Greenhouse). For now save the "
+                              "job description as a text file and pass --jd-file.")
+        raise HelperError("pass --jd-file with the job description saved as text")
+    if not company or not role:
+        raise HelperError("--company and --role are required with --jd-file")
+    paths = _paths()
+    started = start_resume(
+        paths, load_config(paths), jd_text=jd_file.read_text(encoding="utf-8"), company=company, role=role, url=url,
+        location=location, projects=projects, include_experience=include_experience, grad_date=grad_date,
+    )
+    typer.echo(format_started(paths, started))
+    raise waiting(paths, started.state.run_id)
 
 
 @app.command()
@@ -174,8 +194,12 @@ def fill(
 @app.command("continue")
 @guarded
 def continue_(run_id: Annotated[str, typer.Argument(help="Run folder name under runs/.")]) -> None:
-    """Resume a run after Claude wrote the file it was waiting for."""
-    _not_built("continue", 4, "Tailor pipeline")
+    """Resume a run after Claude wrote its output file: validate, render, and check the PDF."""
+    from .config import load_config
+    from .pipeline import continue_run, format_finished
+
+    paths = _paths()
+    typer.echo(format_finished(paths, continue_run(paths, load_config(paths), run_id)))
 
 
 @app.command("list")
