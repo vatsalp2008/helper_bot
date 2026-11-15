@@ -112,6 +112,11 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("ai_consent", r"\bhiredscore\b|\bAI[- ]assisted (recruit|tool|screen)|\binvolving AI\b|"
                    r"\b(consent|opt[- ]?in|agree)\b.{0,80}\b(AI|artificial intelligence)\b|"
                    r"\b(AI|artificial intelligence)\b.{0,80}\b(consent|opt[- ]?in)\b", 0.9),
+    ("terms_consent", r"\b(read and accept|accept the|acknowledge (the|that)|agree to the)\b.{0,100}\b(privacy|terms|notice|"
+                      r"policy|conditions)\b|\b(privacy|data protection) (notice|policy)\b.{0,60}\b(accept|acknowledge|"
+                      r"agree|consent)\b", 0.9),
+    ("employment_restrictions", r"\bnon-?compete\b|\bemployment restrictions?\b|\brestrictive covenants?\b|"
+                                r"\bnon-?solicit", 0.9),
     ("keep_for_other_roles", r"\bretain\w*\b.{0,80}\b(future|other|alternative)\b.{0,40}\b(roles?|opportunit\w*|"
                              r"positions?|openings?)\b|\btalent (pool|community)\b", 0.9),
     ("transcript", r"\btranscripts?\b|\bacademic record\b", 0.95),
@@ -135,13 +140,18 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("sponsorship", r"\bsponsor", 0.95),
     ("us_citizen", r"\bcitizen\b|\bpermanent resident\b|\bgreen card\b", 0.9),
     ("graduation_date", r"\bgraduat\w*\b.*\b(date|when|year|term|semester)\b|\bexpected graduation\b|\bgraduation\b"
-                        r"|\bclass of\b|\bwhen (do|will) you graduate\b", 0.9),
+                        r"|\bclass of\b|\bwhen (do|will) you graduate\b|\b(term|semester|season)\b.*\bgraduat", 0.9),
+    ("enrolled", r"\bcurrently enrolled\b.*\?\s*$|\bare you (currently )?(a )?(student|enrolled)\b", 0.9),
+    ("school_status", r"\bbest describes your (current )?(status|situation)\b|\byear of (school|study)\b|"
+                      r"\bclass standing\b|\bacademic (status|standing)\b", 0.85),
     ("previous_employee", r"\b(ever|previously|before|formerly)\b.*\b(work(ed)?|employ\w*|contractor|consultant)\b"
                           r"|\b(work(ed)?|employ\w*)\b.*\bin the past\b", 0.9),
     ("major", r"\bmajor\b|\bdiscipline\b|\bfield of study\b|\barea of study\b", 0.9),
-    ("degree", r"^\s*degree( type| level)?\s*\??\s*$|\bhighest degree\b|\b(type|level) of degree\b", 0.95),
+    ("degree", r"^\s*degree( type| level)?\s*\??\s*$|\bhighest degree\b|\b(type|level) of degree\b|"
+               r"\bhighest (level of )?education\b|\beducation level\b", 0.95),
     ("degree", r"\bdegree\b", 0.85),
     ("school", r"\bschool\b|\buniversity\b|\bcollege\b|\binstitution\b", 0.85),
+    ("relocate_from", r"\b(moving|relocat\w*|move) from\b|\bcity,? state,? (and )?zip\b", 0.9),
     ("relocate", r"\breloca", 0.9),
     ("start_date", r"\bstart date\b|\bwhen can you (start|begin)\b|\bavailab\w* to (start|begin)\b"
                    r"|\bearliest\b.*\b(start|begin)\b", 0.9),
@@ -162,6 +172,7 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("work_location", r"\bwhich (\w+ )?(office|hub|location|city)\b|\b(prefer|preference)\w*\b.*\b(location|office|hub|site"
                       r"|city)\b|\bwork (location|arrangement)\b", 0.95),
     ("address_zip", r"\bzip\b|\bpostal\b", 0.9),
+    ("address_full", r"\b(mailing|home|current|full|permanent|residential) address\b", 0.9),
     ("address_line2", r"\baddress line 2\b|^\s*(apartment|apt|suite|unit)\b", 0.85),
     ("address_street", r"\bstreet\b|\baddress line\b|\bmailing address\b|\bhome address\b|^\s*address\s*$", 0.85),
     ("address_country", r"^\s*country\b", 0.85),
@@ -217,6 +228,7 @@ class AnswerContext:
     approved: AnswersFile = field(default_factory=AnswersFile)
     past_employers: list[str] = field(default_factory=list)
     documents: dict[str, str] = field(default_factory=dict)  # "transcript" / "undergrad_transcript" -> a file that exists
+    grades: dict[str, str] = field(default_factory=dict)  # school -> GPA, from data/grades.yaml (forms only, rule 3)
 
 
 @dataclass
@@ -303,7 +315,20 @@ def _grad_candidates(grad: str) -> tuple[str, ...]:
     import calendar
 
     return (grad, f"{calendar.month_abbr[my.month]} {my.year}", f"{my.month:02d}/{my.year}", f"{my.month}/{my.year}",
-            f"{my.year}-{my.month:02d}", f"{season} {my.year}", *(("Winter " + str(my.year),) if my.month == 12 else ()))
+            f"{my.year}-{my.month:02d}", f"{season} {my.year}", *(("Winter " + str(my.year),) if my.month == 12 else ()),
+            season)  # a term without the year: "Spring (April - June)"
+
+
+def _school_status(grad: str, today: Optional[date] = None) -> str:
+    """Where Vatsal is in his program, from the run's graduation date."""
+    my = parse_month_year(grad)
+    today = today or date.today()
+    months = (my.year - today.year) * 12 + my.month - today.month if my else 0
+    if months <= 12:
+        return "I'm in my final year of school"
+    if months <= 24:
+        return "I'm in my second to last year of school"
+    return "I'm in an earlier year of school"
 
 
 def _start_date(ctx: AnswerContext) -> Value:
@@ -365,6 +390,13 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value(t1.major, "profile major")
     if key == "graduation_date":
         return Value(ctx.grad_date, "this run's graduation date", candidates=_grad_candidates(ctx.grad_date))
+    current = next((e for e in ctx.profile.education if e.end == "per_run"), None)
+    if key == "enrolled":
+        return Value("Yes" if current else None, "profile education (a program in progress)")
+    if key == "school_status" and current:
+        return Value(_school_status(ctx.grad_date), "this run's graduation date",
+                     aliases=("final year", "last year", "senior") if _school_status(ctx.grad_date).endswith("final year")
+                     else ())
     if key == "work_authorization":
         return tier2(t2.work_authorization, "work_authorization")
     if key == "sponsorship":
@@ -384,6 +416,11 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value("; ".join(q.options), "profile work_location_preferences (open to all)", confidence=0.95)
     if key == "relocate":
         return Value(t1.willing_to_relocate, "profile willing_to_relocate")
+    if key == "relocate_from":  # where he'd move from: home (Vatsal, 2026-11-15: "Seattle, Washington - 98105")
+        a = t1.address
+        state = _US_STATES.get((a.state or "").upper(), a.state or "")
+        place = ", ".join(p for p in (a.city, state) if p)
+        return Value(f"{place} - {a.postal_code}" if place and a.postal_code else place or None, "profile address")
     if key == "work_location":
         return Value(t1.work_location_preferences, "profile work_location_preferences",
                      aliases=("either", "any", "no preference", "open to", "flexible", "all locations", "both"))
@@ -394,6 +431,8 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         if pay is not None:
             return Value(salary_answer(q, pay), "the posting's pay, midpoint rounded (Vatsal, 2026-11-14)")
         return tier2(t2.salary_expectation, "salary_expectation")
+    if key == "employment_restrictions":
+        return tier2(t2.employment_restrictions, "employment_restrictions")
     if key in ("ai_consent", "keep_for_other_roles"):
         item = t2.ai_screening_consent if key == "ai_consent" else t2.keep_for_other_roles
         name = "ai_screening_consent" if key == "ai_consent" else "keep_for_other_roles"
@@ -453,8 +492,17 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value(street or None, "profile address")
     if key == "address_line2":
         return Value(t1.address.unit, "profile address")
-    if key == "terms_consent":
-        return Value("Yes", "go through to the Review page (Vatsal, 2026-11-14)")
+    if key == "address_full":  # one box for the whole address
+        a = t1.address
+        place = " ".join(p for p in (a.state, a.postal_code) if p)
+        parts = [p for p in (a.street, a.unit, a.city, place, a.country) if p]
+        return Value(", ".join(parts) or None, "profile address")
+    if key == "terms_consent":  # privacy notices and terms: accepted (Vatsal, 2026-11-14 and 2026-11-15)
+        if q.options and q.type not in ("boolean", "multi_select"):
+            agree = affirmative_option(q.options)
+            return Value(agree, "you accept privacy notices and terms") if agree else \
+                Value(None, "", note="can't tell which choice accepts")
+        return Value("Yes", "you accept privacy notices and terms")
     if key == "signature_date":
         return Value(date.today().strftime("%m/%d/%Y"), "today's date")
     if key == "language":
@@ -498,9 +546,14 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
             answers.append(PlannedAnswer(**base, kind="file", confidence=1.0, source="the tailored resume PDF"))
             continue
         if key == "gpa":
-            answers.append(PlannedAnswer(**base, kind="unknown" if q.required else "skip",
-                                         note="GPA is never filled (rule 3)" + ("; it's required, so Vatsal decides"
-                                                                                if q.required else "")))
+            gpa = gpa_for(q, ctx)
+            if gpa is None:
+                answers.append(PlannedAnswer(**base, kind="unknown" if q.required else "skip",
+                                             note="no GPA in data/grades.yaml for this (rule 3)"
+                                                  + ("; it's required, so Vatsal decides" if q.required else "")))
+            else:
+                answers.append(PlannedAnswer(**base, **_decide(q, Value(gpa, "data/grades.yaml (Vatsal, 2026-11-15)"),
+                                                               1.0, cfg)))
             continue
         if key == "cover_letter":
             answers.append(_cover_letter(q, base, ctx))
@@ -528,7 +581,62 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
         planned = _decide(q, value, label_conf, cfg)
         answers.append(PlannedAnswer(**base, **planned))
     _split_street(answers, ctx)
+    _apply_remembered(answers, ctx)
     return AnswerPlan(answers=answers)
+
+
+CHOICE_TYPES = ("select", "radio", "multi_select", "yesno", "boolean", "prompt")
+NEVER_REMEMBERED = ("gpa", "resume", "cover_letter", "transcript", "file")
+
+
+def _apply_remembered(answers: list[PlannedAnswer], ctx: AnswerContext) -> None:
+    """A choice question helper had no sure answer for gets the answer remembered from an earlier posting
+    (data/answers.yaml; Vatsal, 2026-11-15). helper's own rules come first, so answers that change over time (like
+    "final year of school") keep following the profile."""
+    for a in answers:
+        if a.type not in CHOICE_TYPES or a.kind not in ("unknown", "confirm", "skip") or (a.key in NEVER_REMEMBERED):
+            continue
+        stored = _approved_answer(FormQuestion(label=a.label, field_name=a.field, type=a.type), ctx.approved)
+        if not stored:
+            continue
+        if a.options:
+            best, score = match_option(stored, a.options)
+            if best is None or score < 0.8:
+                continue
+            stored = best
+        a.kind, a.value, a.status, a.confidence, a.note = "auto", stored, "approved", 1.0, None
+        a.source = "data/answers.yaml (remembered)"
+
+
+def label_pattern(label: str) -> str:
+    """A pattern that matches this question again, on any posting."""
+    words = re.findall(r"[A-Za-z0-9']+", label.replace("\u2019", "'"))
+    return r"^\W*" + r"\W+".join(re.escape(w).replace("'", "['\u2019]") for w in words) + r"\W*$"
+
+
+def gpa_for(q: FormQuestion, ctx: AnswerContext) -> Optional[str]:
+    """The GPA a form asks for: the current program's, or the bachelor's when the question says undergraduate.
+    Forms only; never on a resume or cover letter (rule 3). A question about the scale is left to Vatsal."""
+    text = f"{q.label} {q.description or ''}"
+    if re.search(r"(?i)\bscale\b", text) or not ctx.grades:
+        return None
+    undergrad = re.search(r"(?i)under ?grad|bachelor", text)
+    school = next((e.school for e in ctx.profile.education
+                   if (e.degree.lower().startswith("bachelor") if undergrad else e.end == "per_run")), None)
+    value = ctx.grades.get(school or "")
+    if value and q.options:
+        try:
+            number = float(value)
+        except ValueError:
+            return value
+        for option in q.options:  # "3.5 - 3.79", "3.5-4.0", "3.5 and above", "Above 3.5"
+            m = re.search(r"(\d\.\d+)\s*(?:-|to|\u2013)\s*(\d\.\d+)", option)
+            if m and float(m[1]) <= number <= float(m[2]):
+                return option
+            m = re.search(r"(?i)(?:above|over|at least)\s*(\d\.\d+)|(\d\.\d+)\s*(?:\+|and above|or higher)", option)
+            if m and number >= float(m[1] or m[2]):
+                return option
+    return value
 
 
 NOTE_STYLE = ("a short note in Vatsal's style: 'Hi,' on top, then two short paragraphs, about 60 to 90 words in "
@@ -538,17 +646,16 @@ NOTE_STYLE = ("a short note in Vatsal's style: 'Hi,' on top, then two short para
 
 def _cover_letter(q: FormQuestion, base: dict[str, object], ctx: AnswerContext) -> PlannedAnswer:
     """The run's cover letter (one is written with every resume, Vatsal 2026-11-14): the PDF for an upload, the text
-    for a text box. Vatsal sees it with the other answers before anything is filled."""
+    for a text box. It passed helper's checks, so it needs no separate review and doesn't hold up auto-submit
+    (Vatsal, 2026-11-15)."""
     pdf, text = ctx.documents.get("cover_letter"), ctx.documents.get("cover_letter_text")
     if q.type == "file" and pdf:
-        return PlannedAnswer(**base, kind="file", value=pdf, confidence=1.0, source="this posting's cover letter",
-                             status="needs_review")
+        return PlannedAnswer(**base, kind="file", value=pdf, confidence=1.0, source="this posting's cover letter")
     if q.type in ("textarea", "text") and text:
         if q.max_length and len(text) > q.max_length:
             return PlannedAnswer(**base, kind="unknown" if q.required else "skip",
                                  note=f"the cover letter has {len(text)} characters; this box takes {q.max_length}")
-        return PlannedAnswer(**base, kind="auto", value=text, confidence=1.0, source="this posting's cover letter",
-                             status="needs_review")
+        return PlannedAnswer(**base, kind="auto", value=text, confidence=1.0, source="this posting's cover letter")
     return PlannedAnswer(**base, kind="unknown" if q.required else "skip", note="this run has no cover letter yet")
 
 

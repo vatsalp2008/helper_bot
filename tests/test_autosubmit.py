@@ -97,6 +97,11 @@ def start(repo: Path, clean_runs: int) -> tuple[Paths, str, int]:
     MINI_QUESTIONS, SEATTLE, mini_plan = stand_in.MINI_QUESTIONS, stand_in.SEATTLE, stand_in.mini_plan
 
     (repo / "data" / "profile.yaml").write_text(SEATTLE, encoding="utf-8")
+    import re as _re
+
+    config = repo / "config.yaml"  # the spec's threshold, whatever the local config says
+    config.write_text(_re.sub(r"(?m)^auto_submit_min_clean_runs:.*$", "auto_submit_min_clean_runs: 5",
+                              config.read_text(encoding="utf-8")), encoding="utf-8")
     paths = Paths(repo)
     cfg = load_config(paths)
     run_id = "20261115-100000-acme-swe-intern"

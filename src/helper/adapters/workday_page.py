@@ -433,6 +433,7 @@ class SchoolEntry:
     field_of_study: str
     start: Optional[MonthYear]
     end: Optional[MonthYear]
+    gpa: Optional[str] = None  # forms only (data/grades.yaml); never on a resume
 
 
 def entry_ids(page: Any, kind: str) -> list[str]:
@@ -578,7 +579,8 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
                                            threshold=0.85, keep_existing=False)
                 if not ok:
                     notes.append(f"field of study: {why}")
-            # Overall Result (GPA) is never filled (rule 3).
+            if s.gpa and _by_id(page, base + "gradeAverage").count():  # Vatsal, 2026-11-15: forms may get GPA
+                _by_id(page, base + "gradeAverage").first.fill(s.gpa)
             _date_in(page, base + "firstYearAttended", s.start)
             _date_in(page, base + "lastYearAttended", s.end)
             results.append(FieldResult(f"workday:school:{n}", label, not notes, f"{_span(s.start)} to {_span(s.end)}",
@@ -587,6 +589,17 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
             results.append(FieldResult(f"workday:school:{n}", label, False, None, f"{type(exc).__name__}: {str(exc)[:120]}"))
         pause()
     return results
+
+
+def required_gpa_fields(page: Any) -> list[str]:
+    """Education entries whose GPA box is required and empty. helper never fills GPA (rule 3): Vatsal decides."""
+    found = page.evaluate("""() => [...document.querySelectorAll("[data-automation-id='formField-gradeAverage']")]
+        .filter(f => f.querySelector('abbr[title=required], .requiredAsterisk'))
+        .filter(f => { const i = f.querySelector('input'); return i && !i.value; })
+        .map(f => { const panel = f.closest('[role=group][aria-labelledby]');
+                    return panel ? (document.getElementById(panel.getAttribute('aria-labelledby')) || {}).innerText || '' : ''; })""")
+    return [f"Overall Result (GPA){' in ' + name.strip() if name and name.strip() else ''} (rule 3: helper never fills GPA)"
+            for name in found]
 
 
 def _norm_words(text: str) -> set[str]:
@@ -641,23 +654,43 @@ def _delete_entry(page: Any, element_id: str) -> None:
         pass
 
 
+def _has_any_choices(page: Any, where: Any) -> bool:
+    """Whether a search box offers anything at all when opened."""
+    try:
+        where.locator("input:not([type=hidden])").first.click()
+        page.wait_for_timeout(1200)
+        return page.locator(PROMPT_OPTIONS).count() > 0
+    except Exception:
+        return True  # unsure: search as usual
+    finally:
+        _close_popup(page)
+
+
 def fill_certifications(page: Any, certs: list[dict[str, Any]], pause: Callable[[], None]) -> list[FieldResult]:
     """Add each certificate the company's certification list has, with its ID and issue date. Workday lists are
     company-specific: a certificate the list doesn't have is left out (its empty entry is removed again)."""
     section = "Certifications-section"
     if not certs or not page.locator(f"[role=group][aria-labelledby={json.dumps(section)}]").count():
         return []
-    added, missing = [], []
-    for cert in certs:
+    added, missing, missed_issuers = [], [], set()
+    for n, cert in enumerate(certs):
         name, issuer = cert.get("name", ""), cert.get("issuer") or ""
+        if issuer and issuer in missed_issuers:  # this issuer isn't on the company's list: skip its other certificates
+            missing.append(name)
+            continue
         i = _add_entry(page, section, "certification")
         if i is None:
             missing.append(name)
             continue
         base = f"certification-{i}--"
         field = _field_of(page, base + "certification")
+        prompt = field.locator("[data-automation-id=multiselectInputContainer], [data-automation-id=searchBox]")
+        if n == 0 and prompt.count() and not _has_any_choices(page, field):
+            _delete_entry(page, base + "certification")  # no list at all: nothing can match
+            return [FieldResult("workday:certifications", "Certifications", True, "none added",
+                                "this company's Workday has no certification list to choose from")]
         try:
-            if field.locator("[data-automation-id=multiselectInputContainer], [data-automation-id=searchBox]").count():
+            if prompt.count():
                 accept = lambda t: max(match_option(name, [t])[1], match_option(f"{name} {issuer}", [t])[1])  # noqa: E731
                 ok, shown, _ = choose_prompt(page, field, [name], accept, threshold=0.9, keep_existing=False)
             else:
@@ -668,6 +701,8 @@ def fill_certifications(page: Any, certs: list[dict[str, Any]], pause: Callable[
         if not ok:
             _delete_entry(page, base + "certification")
             missing.append(name)
+            if issuer:
+                missed_issuers.add(issuer)
             continue
         if cert.get("credential_id") and _by_id(page, base + "certificationNumber").count():
             _by_id(page, base + "certificationNumber").first.fill(str(cert["credential_id"]))
@@ -681,3 +716,38 @@ def fill_certifications(page: Any, certs: list[dict[str, Any]], pause: Callable[
         pause()
     detail = f"not in this company's list: {', '.join(missing)}" if missing else ""
     return [FieldResult("workday:certifications", "Certifications", True, "; ".join(added) or "none added", detail)]
+
+
+_URL_INPUTS = "input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=file])"
+
+
+def fill_websites(page: Any, urls: list[str], pause: Callable[[], None]) -> list[FieldResult]:
+    """Workday's Websites section: one Add per link (LinkedIn, GitHub, Portfolio; Vatsal, 2026-11-15). Links already
+    listed are left alone, so a second pass over the page adds nothing twice."""
+    group = page.locator("[role=group][aria-labelledby='Websites-section']")
+    urls = [u for u in urls if u]
+    if not urls or not group.count():
+        return []
+    norm = lambda u: u.strip().rstrip("/").lower()  # noqa: E731
+    present = {norm(v) for v in group.locator(_URL_INPUTS).evaluate_all("els => els.map(e => e.value)") if v}
+    added, failed = [], []
+    for url in urls:
+        if norm(url) in present:
+            continue
+        before = group.locator(_URL_INPUTS).count()
+        button = group.locator("button[data-automation-id=add-button]")
+        if not button.count():
+            failed.append(url)
+            continue
+        button.first.click()
+        page.wait_for_timeout(900)
+        boxes = group.locator(_URL_INPUTS)
+        if boxes.count() <= before:
+            failed.append(url)
+            continue
+        boxes.nth(boxes.count() - 1).fill(url)
+        present.add(norm(url))
+        added.append(url)
+        pause()
+    detail = f"couldn't add: {', '.join(failed)}" if failed else ""
+    return [FieldResult("workday:websites", "Websites", not failed, "; ".join(added) or "already listed", detail)]

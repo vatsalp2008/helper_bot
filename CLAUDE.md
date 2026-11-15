@@ -39,7 +39,7 @@ Enforce these in code, not only in instructions.
 
 1. **No invented facts.** Every resume bullet, skill, title, date, and number must trace to the master list.
 2. **Metrics are real.** Every metric comes from the master list. If a bullet has no real metric, describe the result qualitatively or with a real count, and flag it to me. Never estimate or invent.
-3. **No GPA on resumes.** There is no GPA field in the template or any data file used for resumes. If an application form has a required GPA field, pause and ask me.
+3. **No GPA on resumes** or cover letters. There is no GPA field in the template or any data file used for resumes. Application forms that ask for GPA get it from `data/grades.yaml` (git-ignored, forms only; Vatsal, 2026-11-15). Without a value there, pause and ask me.
 4. **No em dashes** anywhere in resumes, answers, or generated text. Use commas or periods.
 5. **No summary section** on resumes.
 6. **Never solve or bypass CAPTCHAs.** Stop and hand control to me in the open browser window.
@@ -66,11 +66,13 @@ Enforce these in code, not only in instructions.
   - **AI screening and keeping the application for other roles** (for example HiredScore): yes, the choice that opts in (`tier2.ai_screening_consent`, `tier2.keep_for_other_roles`).
   - **Hispanic or Latino:** No (`tier2.eeo.hispanic_latino`). Other extra EEO questions, such as pronouns, keep the decline default.
   - **Transcripts:** `documents.transcript` (master's) and `documents.undergrad_transcript` are uploaded only when a form requires a transcript; the undergraduate one when the question asks for it. They're PDFs in the repo's top folder, which git ignores.
-- **Cover letters** (Vatsal, 2026-11-14): one with every resume, saved as `<Name>_CoverLetter.pdf` next to the resume, and uploaded wherever a form has a cover letter field (a text box gets the plain text).
+- **Cover letters** (Vatsal, 2026-11-14): one with every resume, saved as `<Name>_CoverLetter.pdf` next to the resume, and uploaded wherever a form has a cover letter field (a text box gets the plain text). Once it passes helper's checks it needs no separate review, so it never holds up auto-submit (Vatsal, 2026-11-15).
   - **Format:** his template (`templates/cover_letter.tex.j2`): resume header, thin cyan line, 14pt paragraph spacing. Bold key words. Always "Dear Hiring Team,"; Northeastern campus jobs get "Dear Career Team," and his NUID after the name (`tier1.nuid`, profile only).
   - **Writing:** paragraph 1 why this role (a quoted posting phrase when it truly fits), 2 main proof, 3 rigor (often the open-source merges), 4 close (Master's student in Computer Science at Northeastern University, thanks). His approved examples are in `data/cover_letter_examples.md` (git-ignored).
   - **"Note to Hiring Manager" boxes:** a short note, "Hi," then two short paragraphs (about 60 to 90 words: one story, one honest line about fit), then "Thank you," and "Vatsal Patel".
-- **Workday Skills and Certifications** (Vatsal, 2026-11-14):
+- **Remembered answers** (Vatsal, 2026-11-15): answers to choice questions (dropdowns, radios, checkboxes) that Claude provided or Vatsal approved are saved to `data/answers.yaml` (git-ignored) and reused when another posting asks the same question. helper's own rules come first, so answers that change over time keep following the profile. Free-text answers are saved only when Vatsal asks.
+- **Workday Websites** (Vatsal, 2026-11-15): the Websites section gets LinkedIn, GitHub and Portfolio from the profile.
+- **Workday Skills and Certifications** (Vatsal, 2026-11-14; certifications off since 2026-11-15, `fill_certifications: false`):
   - **Skills:** each skill on the tailored resume's skills lines is added when the company's list has the same skill (exactly, or with a qualifier such as "Python (Programming Language)").
   - **Certifications:** `data/certifications.yaml` (git-ignored, read from his certificate images) lists his 13 certificates. Each is added with its ID and issue date only when the company's preset list has it; the rest are reported as not on that company's list.
 - **Company limits never block** (Vatsal, 2026-11-14). `data/caps.yaml` limits are flagged first, then helper still builds the resume and applies. `enforced: true` (Google, TikTok) means the company's site may refuse it; `enforced: false` (Salesforce) is a recommendation.

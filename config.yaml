@@ -19,3 +19,4 @@ match_auto_threshold: 0.85      # field matcher: fill automatically at or above 
 match_ask_threshold: 0.60       # between the two thresholds: ask you. Below: unknown (pauses if required)
 fill_wait_timeout_minutes: 30   # how long a fill run keeps the browser open waiting for answers or your submit
 pause_ms: [150, 600]            # small human-like pauses between form actions (min, max)
+fill_certifications: false        # Workday's Certifications section (Vatsal, 2026-11-15: off for now)

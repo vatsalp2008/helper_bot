@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -107,7 +108,7 @@ def test_start_date_by_season() -> None:
 
 def test_gpa_and_cover_letters_are_never_filled() -> None:
     gpa = one(q("Cumulative GPA"))
-    assert gpa.kind == "unknown" and gpa.value is None and "rule 3" in (gpa.note or "")
+    assert gpa.kind == "unknown" and gpa.value is None and "rule 3" in (gpa.note or "")  # no grades file
     assert one(q("GPA (optional)", required=False)).kind == "skip"
     assert one(q("Cover Letter", "file", name="cover_letter")).kind == "unknown"
 
@@ -236,7 +237,7 @@ def test_hispanic_or_latino_follows_the_profile() -> None:
 def test_the_runs_cover_letter_goes_wherever_a_form_asks_for_one() -> None:
     docs = {"cover_letter": "/runs/x/AlexExample_CoverLetter.pdf", "cover_letter_text": "Dear Hiring Team,\n\nHello."}
     upload = one(q("Cover Letter", "file", required=False, name="cover_letter"), documents=docs)
-    assert (upload.kind, upload.value, upload.status) == ("file", docs["cover_letter"], "needs_review")
+    assert (upload.kind, upload.value, upload.status) == ("file", docs["cover_letter"], "ready")  # no review needed
     typed = one(q("Cover letter", "textarea", required=False, name="letter_box"), documents=docs)
     assert (typed.kind, typed.value) == ("auto", docs["cover_letter_text"])
     short_box = one(q("Cover letter", "textarea", name="letter_box"), documents={**docs, "cover_letter_text": "x" * 900})
@@ -257,3 +258,91 @@ def test_a_note_to_the_hiring_manager_is_drafted_short() -> None:
             "behind a second error that pointed elsewhere.\n\nYour platform team is where I want to grow.\n\n"
             "Thank you,\nVatsal Patel")
     assert _merge(plan, {"answers": [{"field": "note", "answer": good}]}) == []
+
+
+def test_privacy_notices_and_terms_are_accepted() -> None:
+    notice = one(q("Candidate Notice: Please read and accept the Global Personal Data Privacy Notice for Candidates.",
+                   "select", ["Acknowledge/Confirm"]))
+    assert (notice.key, notice.kind, notice.value) == ("terms_consent", "auto", "Acknowledge/Confirm")
+    box = one(q("I acknowledge that I have read the privacy policy", "boolean", ["I acknowledge"]))
+    assert box.value == "Yes"
+    assert one(q("Do you have any employment restrictions such as a non-compete?", "select", ["Yes", "No"])).kind == "unknown"
+
+
+def test_a_non_compete_question_follows_the_profile() -> None:
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.employment_restrictions.auto_answer, profile.tier2.employment_restrictions.value = True, "No"
+    question = q("Do you have any employment restrictions such as a non-compete?", "select", ["Yes", "No"])
+    assert (one(question, profile=profile).kind, one(question, profile=profile).value) == ("auto", "No")
+
+
+def test_a_mailing_address_box_gets_the_whole_address() -> None:
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier1.address.unit = "Apt 1"
+    full = one(q("Current Mailing Address"), profile=profile)
+    assert full.value == "1 Example Way, Apt 1, Springfield, ST 00000, United States"
+    assert one(q("Address Line 1"), profile=profile).key == "address_street"
+
+
+def test_school_questions_follow_the_profile_and_the_graduation_date() -> None:
+    from helper.answers import _school_status
+
+    enrolled = one(q("Are you currently enrolled in a degree program?", "select", ["Yes", "No"]))
+    assert (enrolled.kind, enrolled.value) == ("auto", "Yes")
+    highest = one(q("What is the highest level of education you are pursuing or have completed?", "select",
+                    ["Bachelor's degree", "Master's degree (non-MBA)", "Master's in Business Administration (MBA)"]))
+    assert highest.value == "Master's degree (non-MBA)"
+    term = one(q("What term did you (or will you) graduate in?", "select",
+                 ["Winter (January - March)", "Spring (April - June)", "Summer (July - September)"]))
+    assert term.value == "Spring (April - June)"
+    status = one(q("Which best describes your status?", "select",
+                   ["I’m in my final year of school", "I’m in my second to last year of school"]))
+    assert status.value in ("I’m in my final year of school", "I’m in my second to last year of school")
+    assert _school_status("May 2027", date(2026, 11, 15)) == "I'm in my final year of school"
+    assert _school_status("May 2027", date(2025, 9, 1)) == "I'm in my second to last year of school"
+
+
+def test_gpa_goes_on_forms_only_from_the_grades_file() -> None:
+    grades = {"Example University": "3.6"}
+    gpa = one(q("Cumulative GPA"), grades=grades)
+    assert (gpa.kind, gpa.value) == ("auto", "3.6")
+    ranged = one(q("What is your GPA?", "select", ["Below 3.0", "3.0 - 3.49", "3.5 - 3.79", "3.8 - 4.0"]), grades=grades)
+    assert ranged.value == "3.5 - 3.79"
+    assert one(q("What scale is your GPA on?"), grades=grades).kind == "unknown"  # Vatsal answers the scale
+    assert one(q("Undergraduate GPA"), grades=grades).kind == "unknown"  # no bachelor's entry in the sample profile
+
+
+def test_choice_answers_are_remembered_for_later_postings(repo: Path) -> None:
+    from helper.answers import PlannedAnswer
+    from helper.apply import remember
+    from helper.config import Paths, load_yaml
+
+    paths = Paths(repo)
+    asked = PlannedAnswer(field="q1", label="Do you have experience with semiconductor equipment?", type="select",
+                          required=True, kind="auto", value="No", options=["Yes", "No"], status="needs_review")
+    assert remember(paths, [asked]) == 1 and remember(paths, [asked]) == 0  # saved once
+    essay = PlannedAnswer(field="q2", label="Why us?", type="textarea", required=True, kind="auto", value="Because.")
+    assert remember(paths, [essay]) == 0  # written answers are saved only when Vatsal asks
+    approved = AnswersFile.model_validate(load_yaml(paths.answers))
+    later = one(q("Do you have experience with semiconductor equipment?", "radio", ["Yes", "No"]), approved=approved)
+    assert (later.kind, later.value, later.source) == ("auto", "No", "data/answers.yaml (remembered)")
+    unrelated = one(q("Do you have experience with lithography?", "radio", ["Yes", "No"]), approved=approved)
+    assert unrelated.kind == "unknown"
+    status = PlannedAnswer(field="q3", label="Which best describes your status?", type="select", required=True,
+                           kind="auto", value="I’m in an earlier year of school",
+                           options=["I’m in my final year of school", "I’m in an earlier year of school"])
+    remember(paths, [status])
+    approved = AnswersFile.model_validate(load_yaml(paths.answers))
+    again = one(q("Which best describes your status?", "select", ["I’m in my final year of school",
+                                                                 "I’m in an earlier year of school"]), approved=approved)
+    assert again.source != "data/answers.yaml (remembered)"  # helper's own rule (the graduation date) comes first
+
+
+def test_where_he_would_move_from_is_home() -> None:
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier1.address.city, profile.tier1.address.state, profile.tier1.address.postal_code = "Seattle", "WA", "98105"
+    question = q("Relocation assistance may be available for this role. If you would need to relocate, please tell us "
+                 "the city, state, and zip code you’d be moving from")
+    answer = one(question, profile=profile)
+    assert (answer.key, answer.value) == ("relocate_from", "Seattle, Washington - 98105")
+    assert one(q("Are you willing to relocate?", "select", ["Yes", "No"]), profile=profile).key == "relocate"

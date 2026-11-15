@@ -87,6 +87,7 @@ def test_numbers_read_the_way_people_write_them() -> None:
     assert prose_numbers("a bug that sat for three and a half years") == "a bug that sat for 3.5 years"
     assert prose_numbers("p99 latency under 50ms") == "p99 latency <50ms"
     assert prose_numbers("more than 100 students and about 200 issues") == "100+ students and ~200 issues"
+    assert prose_numbers("a pipeline over 5 sources") == "a pipeline over 5 sources"  # "over" here means "across"
 
 
 def test_northeastern_campus_letters() -> None:

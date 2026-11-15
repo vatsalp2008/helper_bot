@@ -98,6 +98,9 @@ tier2:                        # auto-filled only when auto_answer is true and a 
   keep_for_other_roles:                # keep the application on file for other openings
     auto_answer: false
     value: null
+  employment_restrictions:            # a non-compete or similar restriction
+    auto_answer: false
+    value: null
 
 # Files helper uploads when a form requires them (paths from the repo folder; git ignores top-level PDFs)
 documents:

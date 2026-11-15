@@ -292,12 +292,15 @@ def validate_letter(out: CoverLetterOutput, ctx: Context, items: list[MasterItem
         r.error("length", "letter", f"{words} words; write about {TARGET_WORDS[0]} to {TARGET_WORDS[1]}")
     elif not TARGET_WORDS[0] <= words <= TARGET_WORDS[1]:
         r.warn("length", "letter", f"{words} words; the target is {TARGET_WORDS[0]} to {TARGET_WORDS[1]}")
-    extra = " ".join([job.company, job.role_title, profile.header.location, *(f"{e.school} {e.degree} {e.major} "
-                      f"{e.location}" for e in profile.education)])
+    # Names the posting itself uses (its team, products, places) aren't claims; tools are still checked as tools.
+    extra = " ".join([job.company, job.role_title, job.description_text, profile.header.location,
+                      *(f"{e.school} {e.degree} {e.major} {e.location}" for e in profile.education)])
     others = _other_item_names(ctx, ids)
     on_resume = _resume_tech(tailor, ctx)
+    # The role title's own numbers ("Summer 2027") and the graduation date may be named; they aren't claims.
+    given = [number_key(m) for m in find_numbers(f"{job.role_title} {tailor.grad_date}")]
     for n, paragraph in enumerate(paragraphs, 1):
-        _check_paragraph(paragraph, n, items, ctx, job, tailor, extra, posting, others, on_resume, r)
+        _check_paragraph(paragraph, n, items, ctx, job, tailor, extra, posting, others, on_resume, r, given)
     if len(paragraphs) == 4:
         core = re.sub(r"\s*[\(\[].*?[\)\]]", "", job.role_title).strip().lower()
         if core and core not in paragraphs[0].replace("**", "").lower():
@@ -331,7 +334,8 @@ def _resume_tech(tailor: TailorOutput, ctx: Context) -> set[str]:
 
 
 def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Context, job: Job, tailor: TailorOutput,
-                     extra: str, posting: str, others: dict[str, str], on_resume: set[str], r: Report) -> None:
+                     extra: str, posting: str, others: dict[str, str], on_resume: set[str], r: Report,
+                     given: Optional[list[Any]] = None) -> None:
     where = f"paragraph {n}"
     if _EM_DASH_RE.search(paragraph) or _EN_DASH_RE.search(paragraph):
         r.error("dashes", where, "no em dashes, en dashes or --; use a comma or a period")
@@ -359,7 +363,7 @@ def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Conte
         current = named or current
         about = current or items
         label = ", ".join(i.id for i in about) if len(about) < len(items) else "this resume's items"
-        _check_numbers(sentence, about, ctx, where, r, label)
+        _check_numbers(sentence, about, ctx, where, r, label, given or [])
         for token in sorted(find_identifier_tokens(sentence)):
             if ctx.vocab.canonical(token) or any(token.lower() in {t.lower() for t in i.allowed_tokens}
                                                  or in_text(token, ctx.item_text(i)) for i in about):
@@ -407,7 +411,11 @@ _ALIASES = {"chef": ["chef/chef", "Chef Infra"], "spiceai": ["spiceai", "Spice.a
 
 
 def _mentions(item: MasterItem, text: str, ctx: Context) -> bool:
-    names = [ctx.meta.project_display_names.get(item.id), item.name, item.organization, *_ALIASES.get(item.id, [])]
+    display = ctx.meta.project_display_names.get(item.id) or ""
+    names = [display, item.name, item.organization, *_ALIASES.get(item.id, [])]
+    first = display.split()[0] if display else ""
+    if len(first) >= 5 and any(c.isupper() for c in first[1:]):  # a distinctive short name: PNWER, EchoCoach, theManager
+        names.append(first)
     return any(name and len(name) > 3 and name.lower() in text.lower() for name in names)
 
 
@@ -420,13 +428,13 @@ def prose_numbers(text: str) -> str:
     text = re.sub(r"(?i)\b(one|two|three|four|five|six|seven|eight|nine|ten) and a half\b",
                   lambda m: f"{_WORD_NUMBERS[m.group(1).lower()]}.5", text)
     text = re.sub(r"(?i)\b(?:under|below|less than|fewer than)\s+(?=\$?\d)", "<", text)
-    text = re.sub(r"(?i)\b(?:more than|over|above)\s+(\$?\d[\d,]*(?:\.\d+)?)", r"\1+", text)
+    text = re.sub(r"(?i)\bmore than\s+(\$?\d[\d,]*(?:\.\d+)?)", r"\1+", text)  # not "over": "a pipeline over 5 sources"
     return re.sub(r"(?i)\b(?:about|around|roughly|approximately|nearly)\s+(?=\$?\d)", "~", text)
 
 
 def _check_numbers(text: str, items: list[MasterItem], ctx: Context, where: str, r: Report,
-                   label: str = "this resume's items") -> None:
-    allowed = [a for item in items for a in ctx.number_keys(item)]
+                   label: str = "this resume's items", given: Optional[list[Any]] = None) -> None:
+    allowed = [a for item in items for a in ctx.number_keys(item)] + list(given or [])
     for mention in find_numbers(prose_numbers(text)):
         key = number_key(mention)
         same = [a for a in allowed if same_value(a.value, key.value) and a.unit == key.unit]

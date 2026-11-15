@@ -89,6 +89,9 @@ tier2:
   keep_for_other_roles:
     auto_answer: false
     value: null
+  employment_restrictions:
+    auto_answer: false
+    value: null
 
 documents:
   transcript: null

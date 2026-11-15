@@ -1,4 +1,5 @@
-# Approved free-text answers (spec 5.4). Only answers Vatsal approved go here.
+# Copy to data/answers.yaml (git-ignored). Approved answers: free text Vatsal approved, and dropdown answers
+# helper remembers so the same question gets the same answer on later postings (Vatsal, 2026-11-15).
 # helper checks this file before drafting anything new. Entry format:
 #
 #   - id: why_this_company

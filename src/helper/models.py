@@ -57,6 +57,7 @@ class Config(StrictModel):
     match_auto_threshold: float = Field(0.85, gt=0, le=1)
     match_ask_threshold: float = Field(0.60, gt=0, le=1)
     fill_wait_timeout_minutes: int = Field(30, ge=1)
+    fill_certifications: bool = False  # Workday's Certifications section (Vatsal, 2026-11-15: off for now)
     pause_ms: tuple[int, int] = (150, 600)
 
     @field_validator("default_grad_date", "alt_grad_date", "immediate_start_target")
@@ -177,6 +178,7 @@ class Tier2(StrictModel):
     salary_from_posting: bool = False  # answer with the posting's own pay (midpoint, rounded) when it states one
     ai_screening_consent: Tier2Item = Field(default_factory=Tier2Item)  # e.g. HiredScore: let AI review the application
     keep_for_other_roles: Tier2Item = Field(default_factory=Tier2Item)  # keep the application for other openings
+    employment_restrictions: Tier2Item = Field(default_factory=Tier2Item)  # a non-compete or similar restriction
     eeo: EEO = Field(default_factory=EEO)
     background_check_consent: Tier2Item = Field(default_factory=Tier2Item)
     age_18_or_older: Tier2Item = Field(default_factory=Tier2Item)

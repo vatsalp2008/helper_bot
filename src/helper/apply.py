@@ -17,7 +17,7 @@ from typing import Any, Optional
 
 from pydantic import ValidationError
 
-from .adapters.common import visible_errors
+from .adapters.common import asks_for_emailed_code, visible_errors
 from .answers import NOTE_STYLE, AnswerContext, AnswerPlan, PlannedAnswer, format_plan, match_option, plan_answers
 from .autosubmit import REVIEW_ONLY, Gate, blockers, clean_review_runs, record_fill_run, run_problems
 from .browser import browser_session, captcha_visible, make_pause
@@ -72,7 +72,15 @@ def _context(paths: Paths, cfg: Config, run_id: str, job: Job) -> AnswerContext:
         season_year=eligibility.get("season_year"), approved=AnswersFile.model_validate(load_yaml(paths.answers) or {}),
         past_employers=[e.organization for e in master.experience if e.organization],
         documents={**documents(paths, profile), **_letter_documents(paths, state.options)},
+        grades=grades(paths),
     )
+
+
+def grades(paths: Paths) -> dict[str, str]:
+    """GPA by school, for forms that ask (data/grades.yaml, git-ignored). Never on a resume (rule 3)."""
+    path = paths.data / "grades.yaml"
+    data = load_yaml(path) if path.is_file() else None
+    return {str(k): str(v) for k, v in ((data or {}).get("gpa") or {}).items()}
 
 
 def _letter_documents(paths: Paths, options: dict[str, Any]) -> dict[str, str]:
@@ -206,6 +214,7 @@ def answers_step(paths: Paths, cfg: Config, run_id: str, approve: bool = False) 
         raise NeedsUser("These required questions still have no answer:\n" + "\n".join(f"  {a.label}" for a in missing))
     for a in review:
         a.status = "approved"
+    remember(paths, review)  # choice answers Vatsal approved are reused on later postings
     write_json(folder / PLAN, plan.model_dump(mode="json"))
     set_step(state, "answers", "done", f"{len(review)} answer(s) approved")
     save_state(paths, state)
@@ -373,7 +382,8 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
         page.goto(job.apply_url or job.url, wait_until="domcontentloaded")
         flow = adapter.FlowContext(
             company=job.company, plan=plan_page, ask_claude=ask_claude, resume_pdf=pdf, work=work, schools=schools,
-            skills=_resume_skills(folder), certifications=_certifications(paths),
+            skills=_resume_skills(folder), certifications=_certifications(paths) if cfg.fill_certifications else [],
+            websites=[profile.tier1.linkedin_url, profile.tier1.github_url, profile.tier1.portfolio_url],
             say=say, pause=make_pause(cfg), credentials=_workday_credentials(paths),
             has_account=_has_workday_account(paths, cfg, state, job), go_on=go_on, wait_seconds=wait * 60,
             poll_seconds=poll_seconds,
@@ -436,13 +446,49 @@ def _ask_claude_midfill(paths: Paths, state: Any, job: Job, answers: list[Planne
                         if merged is not None and merged.value is not None and a.value != merged.value:
                             for name in ("value", "kind", "status", "confidence", "source"):
                                 setattr(a, name, getattr(merged, name))
-                    _say("Claude's answers are in; filling them.")
+                    saved = remember(paths, [a for a in answers if a.status == "needs_review"])
+                    _say("Claude's answers are in; filling them." + (f" Remembered {saved} for later postings."
+                                                                     if saved else ""))
                     return
                 _say("waiting for Claude: fix these answers in " + rel(paths, provided) + ":\n"
                      + "\n".join(f"  {p}" for p in problems))
                 plan = AnswerPlan(answers=[a.model_copy() for a in answers])
         time.sleep(poll)
     _say("No answers from Claude in time; those questions are left for you in the window.")
+
+
+def remember(paths: Paths, answers: list[PlannedAnswer]) -> int:
+    """Save answers to choice questions (dropdowns, radios, checkboxes) in data/answers.yaml, so the same question
+    is answered the same way on later postings (Vatsal, 2026-11-15). Returns how many were added or changed."""
+    import yaml
+
+    from .answers import CHOICE_TYPES, NEVER_REMEMBERED, label_pattern
+    from .models import ApprovedAnswer
+
+    path = paths.answers
+    current = AnswersFile.model_validate(load_yaml(path) or {}) if path.is_file() else AnswersFile()
+    changed = 0
+    for a in answers:
+        if a.type not in CHOICE_TYPES or not a.value or a.key in NEVER_REMEMBERED:
+            continue
+        hit = next((e for e in current.answers if any(re.search(p, a.label, re.IGNORECASE)
+                                                       for p in e.question_patterns)), None)
+        if hit is not None:
+            if hit.answer != a.value:
+                hit.answer, hit.approved_on = a.value, date.today().isoformat()
+                changed += 1
+            continue
+        slug = "_".join(re.findall(r"[a-z0-9]+", a.label.lower()))[:60]
+        current.answers.append(ApprovedAnswer(id=f"remembered_{slug}", question_patterns=[label_pattern(a.label)],
+                                              answer=a.value, approved_on=date.today().isoformat()))
+        changed += 1
+    if changed:
+        header = ("# Approved answers (git-ignored): free text Vatsal approved, and dropdown answers helper remembers so\n"
+                  "# the same question gets the same answer on later postings (Vatsal, 2026-11-15).\n")
+        body = yaml.safe_dump({"answers": [e.model_dump(exclude_none=True) for e in current.answers]}, sort_keys=False,
+                              allow_unicode=True, width=120)
+        path.write_text(header + body, encoding="utf-8")
+    return changed
 
 
 def _plain(bullet: str) -> str:
@@ -473,8 +519,10 @@ def _history(paths: Paths, cfg: Config, state: Any, folder: Path, profile: Profi
             current=bool(dates and (dates.end or "").lower() == "present"),
             description="\n".join(f"- {_plain(b)}" for b in e["bullets"]),
         ))
+    gpa = grades(paths)
     schools = [SchoolEntry(school=ed.school, degree=ed.degree, field_of_study=ed.major, start=parse_month_year(ed.start),
-                           end=parse_month_year(run.grad_date if ed.end == "per_run" else ed.end))
+                           end=parse_month_year(run.grad_date if ed.end == "per_run" else ed.end),
+                           gpa=gpa.get(ed.school))
                for ed in profile.education]
     return work, schools
 
@@ -589,7 +637,7 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
                      form: Optional[Any] = None, seen: Optional[dict[str, bool]] = None) -> str:
     deadline = time.monotonic() + wait * 60
     since_submit: Optional[float] = None
-    warned_captcha = False
+    warned_captcha = warned_code = False
     clicked = getattr(adapter, "submit_clicked", None)
     while time.monotonic() < deadline:
         if page.is_closed():
@@ -607,6 +655,12 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
             warned_captcha = True
             if seen is not None:
                 seen["captcha"] = True
+        if not warned_code and asks_for_emailed_code(page, form):
+            _say("The site emailed you a verification code: enter it in the browser window and submit. helper never "
+                 "does that step, and it keeps watching for the confirmation.")
+            warned_code = True
+            if seen is not None:
+                seen["captcha"] = True  # a verification step: the run isn't hands-off
         try:
             page.wait_for_timeout(poll * 1000)
         except Exception:
@@ -690,7 +744,7 @@ def preview(paths: Paths, cfg: Config, job: Job) -> str:
         season=eligibility.season, season_year=eligibility.season_year,
         approved=AnswersFile.model_validate(load_yaml(paths.answers) or {}),
         past_employers=[e.organization for e in ctx.master.experience if e.organization],
-        documents=documents(paths, profile),
+        documents=documents(paths, profile), grades=grades(paths),
     )
     gaps = [t.canonical for t in keywords.tech if t.status == "not_in_master"]
     return "\n".join([

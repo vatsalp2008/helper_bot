@@ -2,6 +2,8 @@
 .env
 data/profile.yaml
 data/certifications.yaml
+data/grades.yaml
+data/answers.yaml
 data/cover_letter_examples.md
 # Personal documents kept next to the repo (transcripts, certificates: any PDF or image in the top folder)
 /*.pdf

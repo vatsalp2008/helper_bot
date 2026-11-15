@@ -150,6 +150,7 @@ class FlowContext:
     pause: Callable[[], None]
     skills: list[str] = field(default_factory=list)  # the resume's skills lines
     certifications: list[dict[str, Any]] = field(default_factory=list)  # data/certifications.yaml
+    websites: list[str] = field(default_factory=list)  # LinkedIn, GitHub, Portfolio
     credentials: Optional[Credentials] = None
     has_account: bool = False  # an earlier application at this company's Workday
     go_on: Callable[[], bool] = lambda: False  # Vatsal says go on (after verifying the account email)
@@ -164,6 +165,7 @@ class FlowResult:
     reached_review: bool = False
     account: Optional[str] = None  # "signed in" | "created" | "by Vatsal"
     notes: list[str] = field(default_factory=list)
+    done: set[str] = field(default_factory=set)  # slow sections already filled (skills, certifications)
 
 
 def find_form(page: Any, timeout_ms: int = 20000) -> Optional[Any]:
@@ -245,7 +247,8 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
             continue
         errors = wp.errors_shown(page)
         if filled_steps[step] < 2:  # fields Workday redrew or loaded late: fill the page once more
-            ctx.say(f"Workday flagged {len(errors) or 'some'} field(s) on '{step}'; helper fills the page again.")
+            ctx.say(f"Workday flagged {len(errors) or 'some'} field(s) on '{step}'"
+                    + (": " + "; ".join(e[:80] for e in errors[:3]) if errors else "") + ". helper fills the page again.")
             continue
         ctx.say(f"Workday didn't accept '{step}'" + (":\n" + "\n".join(f"  - {e}" for e in errors) if errors else ".")
                 + "\nFix it in the window and click Next; helper continues on the next page.")
@@ -328,16 +331,22 @@ def _wait_for_fields(page: Any, seconds: float = 20) -> int:
 def _fill_step(page: Any, kind: str, step: str, ctx: FlowContext, out: FlowResult) -> list[str]:
     """Fill the page. Returns the required questions only Vatsal can answer."""
     _wait_for_fields(page)
+    vatsals: list[str] = []
     if kind == "experience":
         out.results += wp.fill_work(page, ctx.work, ctx.pause)
         out.results += wp.fill_education(page, ctx.schools, ctx.pause)
-        out.results += wp.fill_skills(page, ctx.skills, ctx.pause)
-        out.results += wp.fill_certifications(page, ctx.certifications, ctx.pause)
+        for name, filler, items in (("skills", wp.fill_skills, ctx.skills),
+                                    ("certifications", wp.fill_certifications, ctx.certifications)):
+            if name not in out.done:  # a second pass over the page doesn't search them again
+                out.results += filler(page, items, ctx.pause)
+                out.done.add(name)
+        out.results += wp.fill_websites(page, ctx.websites, ctx.pause)
         out.results += _upload_resume(page, ctx)
+        vatsals += wp.required_gpa_fields(page)
     section = "eeoc" if kind in ("disclosures", "self_identify") else "questions"
     questions, found = wp.discover(page, skip_special=kind == "experience", section=section)
     if not questions:
-        return []
+        return vatsals
     ctx.say(f"{step}: filling {len(questions)} question(s).")
     answers = ctx.plan(questions)
     out.answers += answers
@@ -361,7 +370,7 @@ def _fill_step(page: Any, kind: str, step: str, ctx: FlowContext, out: FlowResul
         if not result.ok and a.required:
             missing.append(f"{a.label} ({result.detail})")
         ctx.pause()
-    return missing
+    return vatsals + missing
 
 
 def _upload_resume(page: Any, ctx: FlowContext) -> list[FieldResult]:

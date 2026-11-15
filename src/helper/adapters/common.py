@@ -74,6 +74,20 @@ VISIBLE_ERRORS_JS = r"""
 """
 
 
+_CODE_PROMPT_RE = re.compile(r"(?i)\b(verification|security|confirmation) code\b|\benter the code\b|\bcode (was|we) sent\b")
+
+
+def asks_for_emailed_code(page: Any, form: Optional[Any] = None) -> bool:
+    """The site wants a code it emailed (Greenhouse does this after Submit sometimes). Only Vatsal can enter it."""
+    for frame in [page.main_frame] + ([form] if form is not None and form is not page.main_frame else []):
+        try:
+            if _CODE_PROMPT_RE.search(frame.locator("body").inner_text(timeout=2000)):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def visible_errors(form: Any) -> list[str]:
     """Error messages the form shows right now (checked before an auto-submit)."""
     try:

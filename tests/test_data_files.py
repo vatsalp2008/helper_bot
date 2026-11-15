@@ -88,5 +88,7 @@ def test_answers_file_loads() -> None:
 
 
 def test_no_data_file_has_a_gpa_key() -> None:
+    # data/grades.yaml is the one exception: forms only, never read for a resume (rule 3; Vatsal, 2026-11-15)
     for path in sorted((REPO / "data").glob("*.yaml")):
-        assert not find_gpa_keys(yaml.safe_load(path.read_text(encoding="utf-8"))), path.name
+        if path.name != "grades.yaml":
+            assert not find_gpa_keys(yaml.safe_load(path.read_text(encoding="utf-8"))), path.name
