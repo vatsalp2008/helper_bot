@@ -152,3 +152,17 @@ def test_no_letter_before_the_resume(ready: Path) -> None:
 def test_northeastern_is_never_the_nonprofit(ready: Path) -> None:
     report = check(ready, [P[0], P[1], P[2] + " At Northeastern, a nonprofit university, I learned a lot.", P[3]])
     assert any("never described as a nonprofit" in str(e) for e in report.errors)
+
+
+def test_the_company_name_is_never_a_gap(ready: Path) -> None:  # ServiceNow, 2026-11-16
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="May 2027"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    tailor = TAILOR.model_copy(deep=True)
+    tailor.keyword_audit.gaps.append("Cassandra Labs")  # the company's name also shows up as a technology gap
+    letter = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [P[0].replace("Northwind Labs", "Cassandra Labs"),
+                                                                         *P[1:]]})
+    report = validate_letter(letter, ctx, items, job("Cassandra Labs"), tailor, profile)
+    assert not any("is a gap" in str(e) and "Cassandra Labs" in str(e) for e in report.errors), report.errors

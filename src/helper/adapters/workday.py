@@ -157,7 +157,8 @@ class FlowContext:
     certifications: list[dict[str, Any]] = field(default_factory=list)  # data/certifications.yaml
     websites: list[str] = field(default_factory=list)  # LinkedIn, GitHub, Portfolio
     credentials: Optional[Credentials] = None
-    has_account: bool = False  # an earlier application at this company's Workday
+    has_account: bool = False  # an earlier application or account at this company's Workday
+    on_account: Callable[[str], None] = lambda kind: None  # records an account helper created or signed in to
     go_on: Callable[[], bool] = lambda: False  # Vatsal says go on (after verifying the account email)
     wait_seconds: float = 1800
     poll_seconds: float = 2.0
@@ -253,6 +254,20 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
         if _wait_for_new_step(page, ctx, step, quiet=True, seconds=20):
             continue
         errors = wp.errors_shown(page)
+        if any(re.search(r"(?i)school or university", e) for e in errors) and "education removed" not in out.done:
+            out.done.add("education removed")
+            gone = wp.delete_education(page)
+            ctx.say(f"Workday wouldn't take the school, so helper removed {gone} education entr"
+                    f"{'y' if gone == 1 else 'ies'} and goes on (Vatsal, 2026-11-16).")
+            out.results = [r for r in out.results if not r.field.startswith("workday:school:")]
+            try:
+                wp.click_next(page)
+            except RuntimeError:
+                out.reached_review = True
+                return out
+            if _wait_for_new_step(page, ctx, step, quiet=True, seconds=20):
+                continue
+            errors = wp.errors_shown(page)
         if filled_steps[step] < 2:  # fields Workday redrew or loaded late: fill the page once more
             ctx.say(f"Workday flagged {len(errors) or 'some'} field(s) on '{step}'"
                     + (": " + "; ".join(e[:80] for e in errors[:3]) if errors else "") + ". helper fills the page again.")
@@ -341,7 +356,8 @@ def _fill_step(page: Any, kind: str, step: str, ctx: FlowContext, out: FlowResul
     vatsals: list[str] = []
     if kind == "experience":
         out.results += wp.fill_work(page, ctx.work, ctx.pause)
-        out.results += wp.fill_education(page, ctx.schools, ctx.pause)
+        if "education removed" not in out.done:  # not again once Workday refused the school field
+            out.results += wp.fill_education(page, ctx.schools, ctx.pause)
         for name, filler, items in (("skills", wp.fill_skills, ctx.skills),
                                     ("certifications", wp.fill_certifications, ctx.certifications)):
             if name not in out.done:  # a second pass over the page doesn't search them again
@@ -422,6 +438,9 @@ def fill_answer(page: Any, a: PlannedAnswer, found: wp.Found, ctx: FlowContext) 
                 terms = [value]
                 accept = lambda t: match_option(value, [t])[1]  # noqa: E731
             ok, shown, detail = wp.choose_prompt(page, where, terms, accept)
+            if not ok and a.key == "how_did_you_hear":  # Vatsal, 2026-11-16: social media or any option, and move on
+                ok, shown, detail = wp.choose_prompt(page, where, ["Social Media", "LinkedIn", "Internet", "Job Board",
+                                                                   "Other"], lambda t: 1.0 if t.strip() else 0.0)
         elif a.type == "radio":
             ok, shown, detail = wp.check_choices(where, "radio", [value])
         elif a.type == "multi_select":
@@ -578,7 +597,10 @@ def handle_account(page: Any, ctx: FlowContext, out: FlowResult) -> bool:
         ctx.say("This company's Workday asks for an account, and WORKDAY_EMAIL / WORKDAY_PASSWORD aren't in .env. "
                 "Sign in or create the account in the browser window; helper continues after that.")
         return _wait_for_account(page, ctx, out)
-    order = ["sign_in", "create"] if ctx.has_account else ["create", "sign_in"]
+    if out.account == "created":  # created earlier in this fill and Workday asks to sign in: never create again
+        order = ["sign_in"]
+    else:
+        order = ["sign_in", "create"] if ctx.has_account else ["create", "sign_in"]
     outcome, message = "unknown", ""
     for action in order:
         _show(page, action)
@@ -588,6 +610,7 @@ def handle_account(page: Any, ctx: FlowContext, out: FlowResult) -> bool:
         outcome, message = _account_outcome(page, ctx)
         if outcome == "done":
             out.account = "created" if action == "create" else "signed in"
+            ctx.on_account(out.account)  # next time, sign in first (Bloomberg, Postman, 2026-11-16)
             ctx.say(f"Workday account: {out.account} ({creds.email}).")
             return True
         if (action, outcome) in (("create", "exists"), ("sign_in", "bad_login")):

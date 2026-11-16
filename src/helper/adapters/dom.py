@@ -197,7 +197,8 @@ def _fill_one(root: Any, block: Any, a: Any, pdf: Path, city: Optional[str],
         boxes = _labels(block, kind)
         wanted = [v.strip() for v in a.value.split(";")] if a.type == "multi_select" else [a.value]
         if a.type == "boolean":
-            if a.value.strip().lower() not in ("yes", "true", "i agree", "agree") and a.value != a.label:
+            same = " ".join(a.value.strip(" *").split()).lower() == " ".join(a.label.strip(" *").split()).lower()
+            if a.value.strip().lower() not in ("yes", "true", "i agree", "agree") and not same:  # "…NDA*" (Shopify)
                 return True, None, "left unchecked"
             if not tick(boxes[0][0]):
                 return False, a.value, "the site didn't keep the tick"

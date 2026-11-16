@@ -83,6 +83,7 @@ def _context(paths: Paths, cfg: Config, run_id: str, job: Job) -> AnswerContext:
         employment=eligibility.get("employment", "unknown"), season=eligibility.get("season"),
         season_year=eligibility.get("season_year"), approved=AnswersFile.model_validate((load_yaml(paths.answers) if paths.answers.is_file() else None) or {}),
         past_employers=[e.organization for e in master.experience if e.organization],
+        internships_done=sum(1 for e in master.experience if re.search(r"(?i)\bintern(ship)?\b", e.name or "")),
         documents={**documents(paths, profile), **_letter_documents(paths, state.options)},
         grades=grades(paths),
     )
@@ -379,6 +380,19 @@ def _auto_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, plan: Answ
     """Spec 10.5: the reasons helper must not submit this run by itself (none means it may)."""
     from .tracker.commands import open_db
 
+    if job.ats == "generic":  # Vatsal, 2026-11-16: company sites submit once everything is filled
+        reasons = []
+        empty = [a.label[:60] for a in plan.answers if a.required and a.kind in ("unknown", "skip")]
+        empty += [r.label[:60] for r in results if not r.ok and _required(plan, r.field)]
+        if empty:
+            reasons.append("required fields still empty: " + "; ".join(dict.fromkeys(empty)))
+        errors = visible_errors(form) if form is not None else ["helper couldn't find the form"]
+        if errors:
+            reasons.append("the form shows errors: " + "; ".join(e[:80] for e in errors[:3]))
+        if form is None or len(adapter.submit_buttons(form)) != 1:
+            reasons.append("helper couldn't find exactly one Submit button")
+        return reasons
+
     conn = open_db(paths, cfg)
     try:
         clean = clean_review_runs(conn, job.ats)
@@ -451,6 +465,7 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
             websites=[profile.tier1.linkedin_url, profile.tier1.github_url, profile.tier1.portfolio_url],
             say=say, pause=make_pause(cfg), credentials=_credentials(paths, job.ats, job),
             has_account=job.ats == "workday" and _has_workday_account(paths, cfg, state, job), go_on=go_on,
+            on_account=lambda kind: _note_account(paths, job),
             wait_seconds=wait * 60,
             poll_seconds=poll_seconds,
         )
@@ -676,29 +691,52 @@ def _workday_credentials(paths: Paths, job: Optional[Job] = None) -> Optional[An
 
 def _long_password_accounts(paths: Paths) -> set[str]:
     """Accounts made with the long password (data/accounts.yaml, git-ignored; it holds no secrets)."""
-    path = paths.data / "accounts.yaml"
-    data = load_yaml(path) if path.is_file() else None
-    return set((data or {}).get("long_password", []))
+    return set(_accounts_file(paths).get("long_password", []))
 
 
 def _note_long_password(paths: Paths, key: str) -> None:
+    data = _accounts_file(paths)
+    data["long_password"] = sorted(_long_password_accounts(paths) | {key})
+    _write_accounts_file(paths, data)
+
+
+def _accounts_file(paths: Paths) -> dict[str, Any]:
+    path = paths.data / "accounts.yaml"
+    return (load_yaml(path) if path.is_file() else None) or {}
+
+
+def _write_accounts_file(paths: Paths, data: dict[str, Any]) -> None:
     import yaml
 
-    keys = sorted(_long_password_accounts(paths) | {key})
     (paths.data / "accounts.yaml").write_text(
-        "# Application accounts created with APPLICATION_PASSWORD_LONG because the usual password was too short\n"
-        "# (Vatsal, 2026-11-16). No secrets here: helper signs in to these with the long password.\n"
-        + yaml.safe_dump({"long_password": keys}, sort_keys=False), encoding="utf-8")
+        "# Application accounts helper knows about (git-ignored, no secrets). long_password: made with\n"
+        "# APPLICATION_PASSWORD_LONG; workday: accounts that exist, so helper signs in first.\n"
+        + yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
+def _note_account(paths: Paths, job: Job) -> None:
+    from .adapters.workday import parse_ref
+
+    ref = parse_ref(job.url or "") or parse_ref(job.apply_url or "")
+    if ref is None:
+        return
+    data = _accounts_file(paths)
+    known = set(data.get("workday", []))
+    if ref.account_key not in known:
+        data["workday"] = sorted(known | {ref.account_key})
+        _write_accounts_file(paths, data)
 
 
 def _has_workday_account(paths: Paths, cfg: Config, state: Any, job: Job) -> bool:
-    """An earlier application at this company's Workday means the account exists: sign in first."""
+    """An earlier application or a known account at this company's Workday means the account exists: sign in first."""
     from .adapters.workday import parse_ref
     from .tracker.commands import open_db
 
     ref = parse_ref(job.url or "") or parse_ref(job.apply_url or "")
     if ref is None:
         return False
+    if ref.account_key in _accounts_file(paths).get("workday", []):
+        return True
     conn = open_db(paths, cfg)
     try:
         row = conn.execute("SELECT 1 FROM applications WHERE job_url LIKE ? AND id != ? LIMIT 1",

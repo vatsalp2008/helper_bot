@@ -36,6 +36,10 @@ def adapter_for(url: str, purpose: str = "apply") -> ModuleType:
                         "can still be built: `helper resume --jd-file ...`.")
     if ats in MANUAL:
         if purpose == "resume":
+            from . import smartrecruiters
+
+            if smartrecruiters.parse_ref(url):  # its pages turn helper's browser away; its public API doesn't
+                return smartrecruiters
             return generic  # the posting page is public: read its job description
         raise manual_stop(MANUAL[ats], url)
     return generic  # anything else: the best-effort adapter, which always stops before Submit

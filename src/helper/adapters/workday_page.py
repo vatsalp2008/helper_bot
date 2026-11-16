@@ -597,6 +597,14 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
         except Exception as exc:
             results.append(FieldResult(f"workday:school:{n}", label, False, None, f"{type(exc).__name__}: {str(exc)[:120]}"))
         pause()
+    if DEBUG_DIR is not None:  # the whole section as filled, to diagnose "School or University is required" later
+        try:
+            group = page.locator("[role=group][aria-labelledby='Education-section']")
+            if group.count():
+                (DEBUG_DIR / "education_section.html").write_text(group.first.evaluate("e => e.outerHTML")[:200000],
+                                                                  encoding="utf-8")
+        except Exception:
+            pass
     return results
 
 
@@ -661,6 +669,18 @@ def _delete_entry(page: Any, element_id: str) -> None:
         page.wait_for_timeout(600)
     except Exception:
         pass
+
+
+def delete_education(page: Any) -> int:
+    """Remove every education entry (Vatsal, 2026-11-16: when Workday wants a school it won't let anyone pick, delete
+    the section and move on; Dexcom and Rocket accepted the page then). Returns how many went."""
+    gone = 0
+    for i in entry_ids(page, "education")[::-1]:
+        before = len(entry_ids(page, "education"))
+        _delete_entry(page, f"education-{i}--schoolName")
+        if len(entry_ids(page, "education")) < before:
+            gone += 1
+    return gone
 
 
 def _has_any_choices(page: Any, where: Any) -> bool:

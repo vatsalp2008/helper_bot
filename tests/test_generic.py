@@ -182,15 +182,15 @@ def start(repo: Path, apply_url: str, mode: str = "review") -> tuple[Any, str]:
     return paths, run_id
 
 
-def test_fill_run_on_an_unfamiliar_site_waits_for_vatsal(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_company_site_auto_submits_once_everything_is_filled(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from helper.apply import fill_run
     from helper.config import load_config
 
-    paths, run_id = start(repo, FORM + "#autosubmit", mode="auto")
+    paths, run_id = start(repo, FORM, mode="auto")  # Vatsal, 2026-11-16: company sites auto-submit too
     outcome = fill_run(paths, load_config(paths), run_id, headless=True, wait_minutes=0.5, poll_seconds=0.3)
     printed = capsys.readouterr().out
-    assert "company career sites and other unfamiliar forms always stop before Submit for you" in printed
-    assert outcome.status == "applied", outcome.message  # "the person" submitted; helper saw the thank-you page
+    assert "helper clicked Submit once" in printed, printed
+    assert outcome.status == "applied", outcome.message  # helper saw the thank-you page
     saved = json.loads((paths.runs / run_id / "fill_log.json").read_text(encoding="utf-8"))
     assert all(r["ok"] for r in saved) and len(saved) == 11
 

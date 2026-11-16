@@ -43,7 +43,7 @@ def test_every_condition_holds() -> None:
 @pytest.mark.parametrize("change,reason", [
     ({"clean_runs": 3}, "greenhouse has 3 clean review-mode run(s) so far; auto-submit needs 5"),
     ({"ats": "icims"}, "iCIMS runs always stop before Submit for you"),
-    ({"ats": "unknown"}, "unfamiliar forms always stop before Submit"),
+    ({"ats": "unknown"}, "unknown runs stop before Submit for you"),
     ({"answers": [answer("why", status="needs_review")]}, "'Why' still needs your review"),
     ({"answers": [answer("why", kind="confirm")]}, "'Why' wasn't answered from your profile or an approved answer"),
     ({"answers": [answer("gpa", kind="unknown", value=None)]}, "wasn't answered from your profile"),
@@ -77,9 +77,9 @@ def test_clean_runs_are_counted_per_site(repo: Path) -> None:
         assert record_fill_run(conn, "r5", "lever", "review", "applied", [])
         assert (clean_review_runs(conn, "greenhouse"), clean_review_runs(conn, "lever"),
                 clean_review_runs(conn, "ashby")) == (1, 1, 0)
-        assert readiness(conn, 5, {"workday": 0}) == (
+        assert readiness(conn, 5, {"workday": 0, "generic": 0}) == (
             "Auto-submit readiness (clean review-mode runs): greenhouse 1/5, lever 1/5, ashby 0/5, workday ready "
-            "(no count needed); iCIMS and unfamiliar sites: review only")
+            "(no count needed), generic ready (no count needed); iCIMS and unfamiliar sites: review only")
     finally:
         conn.close()
     assert run_problems([FieldResult("a", "Phone", False, None)], True, ["Answer these yourself"]) == [

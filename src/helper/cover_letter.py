@@ -402,6 +402,8 @@ def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Conte
     if _MATERIALS_RE.search(plain):
         r.error("wording", where, "the TA work never mentions creating materials")
     for term in tailor.keyword_audit.gaps:
+        if term.strip().lower() == job.company.strip().lower():
+            continue  # the company's own name is never a gap (ServiceNow, 2026-11-16)
         if in_text(term, plain):
             r.error("gaps", where, f"'{term}' is a gap in the keyword audit; leave it out")
     for name, item_id in others.items():

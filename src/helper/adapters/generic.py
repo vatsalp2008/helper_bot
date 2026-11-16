@@ -247,7 +247,8 @@ _ROBOT = (r"are you a (human|robot)|verify you are (a )?human|(you are|you're|i'
           r"checking (if the site connection is secure|your browser)|just a moment\.\.\.|"
           r"press (&|and) hold|security check to (continue|access)")
 _ROBOT_RE = re.compile(_ROBOT, re.I)
-_UNREADABLE_RE = re.compile(r"access denied|403 forbidden|page not found|\b404\b|no longer (available|accepting|open)|"
+_UNREADABLE_RE = re.compile(r"access denied|403 forbidden|page not found|\b404\b|no longer (available|accepting|open|supported)|"
+                            r"browser (is )?not supported|unsupported browser|"
                             r"(job|position|posting) (has been |is )?(closed|filled|expired|removed)|"
                             r"(enable|requires) javascript|" + _ROBOT, re.I)
 
@@ -536,6 +537,36 @@ def no_form_reason(page: Any) -> str:
                 "confirmation and logs it.")
     return ("helper couldn't find an application form on this page, so it filled nothing. Fill it in the window "
             "yourself; helper watches for the confirmation and logs it.")
+
+
+_SUBMIT_TEXT = re.compile(r"(?i)^\s*(submit( (my |your )?application)?|apply( now)?|send( (my )?application)?|"
+                          r"complete application|finish)\s*$")
+
+
+def submit_buttons(form: Any) -> list[Any]:
+    """The form's final Submit buttons: visible, enabled, saying Submit / Apply / Send application."""
+    found = []
+    buttons = form.locator("button, input[type=submit], [role=button]")
+    for i in range(min(buttons.count(), 200)):
+        b = buttons.nth(i)
+        try:
+            if not (b.is_visible() and b.is_enabled()):
+                continue
+            text = (b.inner_text(timeout=500) or b.get_attribute("value") or "").strip()
+        except Exception:
+            continue
+        if _SUBMIT_TEXT.match(text):
+            found.append(b)
+    return found
+
+
+def submit(form: Any) -> bool:
+    """Auto-submit (Vatsal, 2026-11-16): click the final Submit once, only when exactly one such button is there."""
+    found = submit_buttons(form)
+    if len(found) != 1:
+        return False
+    found[0].click()
+    return True
 
 
 def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:

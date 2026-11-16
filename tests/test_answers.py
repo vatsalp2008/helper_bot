@@ -57,8 +57,8 @@ def test_the_figma_form() -> None:
     assert by_label["Are you Hispanic/Latino?"].value == "Decline To Self Identify"
     assert by_label["Pronouns"].kind == "skip"  # optional, and no option says "decline"
     connect = by_label["How did you connect with us?"]
-    assert (connect.kind, connect.value) == ("confirm", "Other")  # the default "Career site" isn't offered
-    assert {a.label for a in plan.open_items()} >= {"Why do you want to join Figma?", "How did you connect with us?"}
+    assert (connect.kind, connect.value) == ("auto", "Other")  # "Career site" isn't offered: any source (Vatsal, 2026-11-16)
+    assert "Why do you want to join Figma?" in {a.label for a in plan.open_items()}  # the source is picked by the rule
 
 
 @pytest.mark.parametrize(
@@ -491,3 +491,27 @@ def test_military_service_questions_are_no() -> None:  # Vatsal, 2026-11-16
     assert tmobile.value.startswith("No, I have never served")
     assert one(q("Veteran Status", "select", ["I am not a protected veteran", "I identify as a protected veteran"]),
                ).key == "eeo_veteran"
+
+
+def test_confirm_you_have_read_notices_are_accepted() -> None:  # Shopify, 2026-11-16
+    for label in ("Please confirm you've read and agree with our candidate NDA",
+                  "Please confirm you've read our applicant privacy notice"):
+        answer = one(q(label, "boolean", [label]))
+        assert (answer.key, answer.kind) == ("terms_consent", "auto"), label
+
+
+def test_internship_counts_full_time_starts_and_unlisted_sources() -> None:  # Shopify, 2026-11-16
+    count = one(q("How many paid Data (or Data related) internships will you have completed after high school and "
+                  "prior to May 31, 2027 *", "radio", ["0", "1", "2", "3", "4+"]), internships_done=2)
+    assert (count.key, count.value) == ("internship_count", "2")
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.earliest_start_date.full_time = "May 2027"
+    later = one(q("Would you be able to begin full time permanent employment in September 2027?", "radio",
+                  ["Yes", "No"]), profile=profile)
+    assert (later.key, later.value) == ("full_time_start", "Yes")
+    earlier = one(q("Could you start full-time work in January 2027?", "select", ["Yes", "No"]), profile=profile)
+    assert earlier.value == "No"
+    social = one(q("How did you hear about us?", "select", ["Select...", "Referral", "Social Media", "University event"]))
+    assert social.value == "Social Media"
+    anything = one(q("How did you hear about us?", "select", ["Employee Referral", "University event"]))
+    assert anything.value == "University event"  # never claims a referral

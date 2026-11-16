@@ -122,14 +122,16 @@ def match_option(value: str, options: list[str], aliases: tuple[str, ...] | list
 # (key, pattern, confidence that the label means this). First match wins, so order matters.
 LABEL_RULES: list[tuple[str, str, float]] = [
     ("gpa", r"\bgpa\b|grade point", 1.0),
+    ("internship_count", r"\bhow many\b.{0,100}\binternships?\b|\bnumber of\b.{0,60}\binternships?\b", 0.9),
     ("ai_consent", r"\bhiredscore\b|\bAI[- ]assisted (recruit|tool|screen)|\binvolving AI\b|"
                    r"\b(consent|opt[- ]?in|agree)\b.{0,80}\b(AI|artificial intelligence)\b|"
                    r"\b(AI|artificial intelligence)\b.{0,80}\b(consent|opt[- ]?in)\b", 0.9),
     ("terms_consent", r"\b(read and accept|accept the|acknowledge (the|that)|agree to the)\b.{0,100}\b(privacy|terms|notice|"
                       r"policy|conditions)\b|\b(privacy|data protection) (notice|policy)\b.{0,60}\b(accept|acknowledge|"
-                      r"agree|consent)\b", 0.9),
-    ("relatives_at_company", r"\b(relatives?|family members?|immediate family|related to (anyone|someone|a person))\b"
-                             r".{0,120}\b(employ\w*|work\w*|board)\b", 0.95),
+                      r"agree|consent)\b|\bconfirm\b.{0,40}\b(read|agree)\b.{0,60}\b(privacy|notice|nda|"
+                      r"non-?disclosure|terms|policy)\b", 0.9),  # Shopify: "confirm you've read our applicant privacy notice"
+    ("relatives_at_company", r"\b(relatives?|family members?|immediate family|related to|close personal relationship)\b"
+                             r".{0,120}\b(employ\w*|work\w*|board|trustee)\b", 0.95),
     ("employment_restrictions", r"\bnon-?compete\b|\bemployment restrictions?\b|\brestrictive covenants?\b|"
                                 r"\bnon-?solicit", 0.9),
     ("keep_for_other_roles", r"\bretain\w*\b.{0,80}\b(future|other|alternative)\b.{0,40}\b(roles?|opportunit\w*|"
@@ -166,7 +168,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     # commuting to the office, on-site or hybrid attendance: always yes (Vatsal, 2026-11-15)
     ("onsite_ok", r"\b(willing|able|can you|comfortable|confirm|meet this requirement)\b.{0,120}\b(commut\w*|on-?site|"
                   r"in[- ]office|in the office|in person|in-person|hybrid)\b|\b(commut\w*|on-?site|in[- ]office|"
-                  r"in person|in-person|hybrid)\b.{0,160}\b(willing|able to|can you|meet this requirement|comfortable)\b",
+                  r"in person|in-person|hybrid)\b.{0,160}\b(willing|able to|can you|meet this requirement|comfortable)\b|"
+                  r"\backnowledge\b.{0,80}\b(days? (a week |per week )?in the office|in the office \d|on-?site)\b",
      0.9),
     ("graduation_date", r"\bgraduat\w*\b.*\b(date|when|year|term|semester)\b|\bexpected graduation\b|\bgraduation\b"
                         r"|\bclass of\b|\bwhen (do|will) you graduate\b|\b(term|semester|season)\b.*\bgraduat", 0.9),
@@ -184,6 +187,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("school", r"\bschool\b|\buniversity\b|\bcollege\b|\binstitution\b", 0.85),
     ("relocate_from", r"\b(moving|relocat\w*|move) from\b|\bcity,? state,? (and )?zip\b", 0.9),
     ("relocate", r"\breloca", 0.9),
+    # Vatsal, 2026-11-16: counted from the master list; and full-time from May 2027 on (graduating then)
+    ("full_time_start", r"\b(able to|available to|can you|could you)\b.{0,30}\b(begin|start)\b.{0,40}\bfull[- ]time\b", 0.9),
     ("start_date", r"\bstart date\b|\bwhen (can|could|would|will) you (be able to |be available to )?(start|begin)\b"
                    r"|\bavailab\w* to (start|begin)\b"
                    r"|\bearliest\b.*\b(start|begin)\b", 0.9),
@@ -271,6 +276,7 @@ class AnswerContext:
     season_year: Optional[int] = None
     approved: AnswersFile = field(default_factory=AnswersFile)
     past_employers: list[str] = field(default_factory=list)
+    internships_done: Optional[int] = None  # internship entries in the master list (Vatsal, 2026-11-16)
     documents: dict[str, str] = field(default_factory=dict)  # "transcript" / "undergrad_transcript" -> a file that exists
     grades: dict[str, str] = field(default_factory=dict)  # school -> GPA, from data/grades.yaml (forms only, rule 3)
 
@@ -510,6 +516,20 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
             if len(never) == 1:
                 return Value(never[0], "rule: military service questions are No (Vatsal, 2026-11-16)")
         return Value("No", "rule: military service questions are No (Vatsal, 2026-11-16)")
+    if key == "internship_count":
+        if ctx.internships_done is None:
+            return Value(None, "master list")
+        n = ctx.internships_done
+        return Value(str(n), "master list: internships", candidates=(str(n), f"{n}+", "4+" if n >= 4 else str(n)))
+    if key == "full_time_start":
+        asked = re.search(r"(?i)\b(january|february|march|april|may|june|july|august|september|october|november|"
+                          r"december|spring|summer|fall|winter)\s+(\d{4})\b", q.label)
+        ready = parse_month_year(ctx.profile.tier2.earliest_start_date.full_time or "")
+        when = parse_month_year(" ".join(asked.groups())) if asked else None
+        if when and ready:
+            ok = (when.year, when.month) >= (ready.year, ready.month)
+            return Value("Yes" if ok else "No", "profile full-time start (graduating May 2027)")
+        return Value(None, "profile full-time start", note="no date in the question")
     if key == "relatives_at_company":  # Vatsal, 2026-11-15: none, always ("N/A" where a written answer is asked)
         given = tier2(t2.relatives_at_company, "relatives_at_company",
                       aliases=("no", "none", "n/a", "not applicable", "i do not", "no relatives"))
@@ -527,9 +547,17 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
                 Value(None, given.source, note="can't tell which choice opts in")
         return given
     if key == "how_did_you_hear":
-        return Value(t1.how_did_you_hear, "profile how_did_you_hear", fallback_other=True,
-                     aliases=("career site", "careers site", "company website", "careers page", "career page",
-                              "company career", "careers website", "website"))
+        aliases = ("career site", "careers site", "company website", "careers page", "career page", "company career",
+                   "careers website", "website")
+        if q.options and t1.how_did_you_hear:
+            best, score = match_option(t1.how_did_you_hear, q.options, aliases)
+            if best is None or score < 0.8:  # not offered: social media, else Other, else any (Vatsal, 2026-11-16)
+                real = [o for o in q.options if not re.match(r"(?i)^\W*(select|choose|--)", o)
+                        and not re.search(r"(?i)referr|employee|recruiter|friend", o)]  # never claims a referral
+                pick = next((o for o in real if re.search(r"(?i)social media", o)), None) \
+                    or next((o for o in real if re.match(r"(?i)^\W*other\b", o)), None) or (real[0] if real else None)
+                return Value(pick, "rule: any source when the usual one isn't listed (Vatsal, 2026-11-16)")
+        return Value(t1.how_did_you_hear, "profile how_did_you_hear", fallback_other=True, aliases=aliases)
     if key == "age_18":
         return tier2(t2.age_18_or_older, "age_18_or_older")
     if key == "background_check":

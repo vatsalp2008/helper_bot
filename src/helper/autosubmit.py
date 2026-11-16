@@ -22,8 +22,8 @@ from typing import Any, Optional
 from .tracker.db import now_iso
 
 REVIEW_ONLY = {"icims": "iCIMS runs always stop before Submit for you",
-               "generic": "company career sites and other unfamiliar forms always stop before Submit for you"}
-AUTO_CAPABLE = ("greenhouse", "lever", "ashby", "workday")  # Workday from 2026-11-16 (Vatsal)
+}
+AUTO_CAPABLE = ("greenhouse", "lever", "ashby", "workday", "generic")  # Workday and company sites from 2026-11-16
 
 
 @dataclass
@@ -46,7 +46,7 @@ def blockers(g: Gate) -> list[str]:
     if g.ats in REVIEW_ONLY:
         return [REVIEW_ONLY[g.ats]]
     if g.ats not in AUTO_CAPABLE:
-        return [REVIEW_ONLY["generic"]]
+        return [f"{g.ats} runs stop before Submit for you"]
     if g.clean_runs < g.min_clean_runs:
         reasons.append(f"{g.ats} has {g.clean_runs} clean review-mode run(s) so far; auto-submit needs "
                        f"{g.min_clean_runs}")

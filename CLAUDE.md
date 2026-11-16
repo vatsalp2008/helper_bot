@@ -92,7 +92,7 @@ Enforce these in code, not only in instructions.
 
 ## Applying
 Supported sites: Greenhouse, Lever, Ashby, Workday and iCIMS, plus the generic adapter for any other site.
-- **The generic adapter:** finds a Greenhouse, Lever, Ashby or Workday posting behind a company's own page and hands it over. Otherwise it reads the page's form by its labels, always stops before Submit, and never auto-submits. A sign-in wall or a blocked page is left to Vatsal.
+- **The generic adapter:** finds a Greenhouse, Lever, Ashby or Workday posting behind a company's own page and hands it over. Otherwise it reads the page's form by its labels, fills it, and auto-submits when everything is filled (see Auto-submit). A sign-in wall or a blocked page is left to Vatsal.
 - **Stopped sites:** Taleo, SmartRecruiters and SuccessFactors are never filled (accounts, rule 8). `helper resume <link>` still builds their resume and cover letter from the posting. A company page whose Apply button leads to one of them gets the same stop message; one that leads to iCIMS (Jibe pages do) becomes an iCIMS run.
 - **Employment sections** on Greenhouse forms get the jobs on the tailored resume (company, title, months and years, current role), the same entries Workday's My Experience gets (Vatsal, 2026-11-15).
 - **Bot filters:** helper identifies itself honestly. Never disguise its browser or requests (user agent, stealth tricks) to get past a site that turns it away. A robot check, a blocked page or a sign-in wall goes to Vatsal, or use `--jd-file`.
@@ -101,6 +101,7 @@ Supported sites: Greenhouse, Lever, Ashby, Workday and iCIMS, plus the generic a
 2. After the resume is built, the answers handoff starts: read `questions_needed.json` and write `answers_provided.json`, as `{"answers": [{"field", "answer"}]}`.
    - Drafts use master-list facts and the job description only. Dropdown answers must be one of the options.
    - Leave out anything only Vatsal can answer.
+   - **What Claude answers vs. leaves to Vatsal** (Vatsal, 2026-11-16): answer everything the master list, profile and his rules support. Preference and fit questions (which team or area, what excites you) get the closest match to the master list; counts (internships) come from the master list; full-time start dates on or after May 2027 are Yes. Leave to Vatsal only facts that can't be derived. "How did you hear": the profile's answer, else Social Media, else any option except referrals.
 3. **Reviewing drafts in the form** (Vatsal, 2026-11-15; `answer_review: in_form` in config.yaml): `helper continue` puts Claude's drafts straight into the plan and lists them, with the questions only Vatsal can answer (left blank in the window). There is no approval pause; he checks everything in the window before Submit. With `drafts_need_review: false` (Vatsal, 2026-11-15) Claude's drafts count as approved, so auto-submit may send them; helper's own unsure matches (kind `confirm`) still block it. With `answer_review: before_fill` (spec 10.4), `helper continue` pauses (exit 4): show him every draft and run `--approve-answers` only after he approves.
 4. Then run `helper fill <run_id>` in the background (run_in_background). It opens a visible Chromium window on Vatsal's screen, fills the form, and never clicks Submit. It waits up to `fill_wait_timeout_minutes` for him to submit, then logs to SQLite, Notion and CSV. Report the result when the task exits.
 - **Workday and iCIMS runs** differ: `helper continue` ends right after the resume, because these sites show their questions page by page.
@@ -120,7 +121,8 @@ Supported sites: Greenhouse, Lever, Ashby, Workday and iCIMS, plus the generic a
   - no CAPTCHA or verification step appeared, and the form shows no errors.
   Otherwise the run falls back to review mode and says why.
 - **Clean runs:** every fill is logged in SQLite (`fill_runs`). A review run is clean when the submit was confirmed and helper filled every field with nothing for Vatsal to fix. `helper stats` shows each site's count.
-- **Workday auto-submits on its Review page** (Vatsal, 2026-11-16, `submit_mode: auto`): whether or not Vatsal stepped in along the way, since Workday shows Review only when every required field is filled. It still stops if the Review page shows errors or there isn't exactly one Submit button. iCIMS and the generic adapter never auto-submit.
+- **Workday auto-submits on its Review page** (Vatsal, 2026-11-16, `submit_mode: auto`): whether or not Vatsal stepped in along the way, since Workday shows Review only when every required field is filled. It still stops if the Review page shows errors or there isn't exactly one Submit button. Company-site forms (the generic adapter) auto-submit too (Vatsal, 2026-11-16) once every required field is filled, however it got filled, the form shows no errors, and there is exactly one final Submit button. iCIMS never auto-submits.
+- **Workday school field** (Vatsal, 2026-11-16): when Workday rejects My Experience because "School or University" is empty, helper deletes the education entries and goes on (Dexcom and Rocket accepted that). If an entry can't be deleted, it hands over.
 
 ## Tracker and Notion
 - `helper.db` (SQLite) is the system of record, and it holds Vatsal's imported Notion history.
