@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -64,7 +65,13 @@ def make_pause(cfg: Config, sleep: Callable[[float], None] = time.sleep) -> Call
     return lambda: sleep(random.uniform(lo, hi) / 1000)
 
 
+_CHALLENGE_URL_RE = re.compile(r"recaptcha/(api2|enterprise)/bframe|hcaptcha\.com/captcha/.*frame=challenge|"
+                                r"challenges\.cloudflare\.com", re.I)
+
+
 def captcha_visible(page: Any) -> bool:
+    """A CAPTCHA challenge showing anywhere on the page, including inside an embedded application frame (iCIMS puts
+    its hCaptcha inside its own frame)."""
     for selector in CAPTCHA_SELECTORS:
         frames = page.locator(selector)
         for i in range(frames.count()):
@@ -75,4 +82,14 @@ def captcha_visible(page: Any) -> bool:
                     return True
             except Exception:
                 continue
+    for frame in getattr(page, "frames", []):
+        if frame is page.main_frame or not _CHALLENGE_URL_RE.search(frame.url or ""):
+            continue
+        try:
+            element = frame.frame_element()
+            box = element.bounding_box()
+            if box and box["width"] > 60 and box["height"] > 60 and element.is_visible():
+                return True
+        except Exception:
+            continue
     return False

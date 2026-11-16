@@ -1,0 +1,74 @@
+<!doctype html>
+<!-- iCIMS's application inside its iframe (in_iframe=1), as a small state machine: email, then create the account
+     (or sign in for known@mockmail.test, under the same heading, as
+     City National's site does), resume, questions, and a review page with "Submit Application". Everything
+     typed is recorded on window.top.recorded for the tests. -->
+<html>
+<head><meta charset="utf-8"><title>Apply</title></head>
+<body>
+<div id="app"></div>
+<script>
+  const rec = (window.top.recorded = window.top.recorded || {submitted: false});
+  const app = document.getElementById('app');
+  const val = id => document.getElementById(id).value;
+  const error = text => { const e = document.createElement('div'); e.className = 'error'; e.setAttribute('role', 'alert');
+    e.textContent = text; app.appendChild(e); };
+  function show(html, onNext) {
+    app.innerHTML = html;
+    const next = app.querySelector('[data-next]');
+    if (next) next.addEventListener('click', e => { e.preventDefault(); onNext(); });
+  }
+  function email() {
+    show(`<h2>Sign in</h2><label for="email">Email</label>
+          <input type="email" id="email" name="css_loginName">
+          <input type="submit" id="enterEmailSubmitButton" value="Next" data-next>`, () => {
+      rec.email = val('email');
+      if (!rec.email) return error('Enter your email');
+      rec.email === 'known@mockmail.test' ? password() : create();
+    });
+  }
+  function create() {
+    show(`<h2>Create your account</h2>
+          <label for="fn">First Name</label><input id="fn" required>
+          <label for="ln">Last Name</label><input id="ln" required>
+          <label for="un">Username</label><input id="un" required>
+          <label for="pw1">Password</label><input id="pw1" type="password">
+          <label for="pw2">Confirm Password</label><input id="pw2" type="password">
+          <button id="create" data-next>Create Account</button>`, () => {
+      if (!val('pw1') || val('pw1') !== val('pw2')) return error('Passwords must match');
+      Object.assign(rec, {first: val('fn'), last: val('ln'), username: val('un'), password: val('pw1'), created: true});
+      resume();
+    });
+  }
+  function password() {
+    show(`<h2>Sign in</h2><label for="pw">Password</label><input id="pw" type="password">
+          <button data-next>Log In</button>`, () => { rec.password = val('pw'); rec.signedIn = true; resume(); });
+  }
+  function resume() {
+    show(`<h2>Resume</h2><label for="cv">Upload your resume</label><input type="file" id="cv" required>
+          <button data-next>Next</button>`, () => {
+      const f = document.getElementById('cv').files[0];
+      if (!f) return error('A resume is required');
+      rec.resume = f.name; questions();
+    });
+  }
+  function questions() {
+    show(`<h2>Questions</h2>
+          <label for="auth">Are you legally authorized to work in the United States?</label>
+          <select id="auth" required><option value="">Select</option><option>Yes</option><option>No</option></select>
+          <label for="why">Why do you want to work at Mockco?</label><textarea id="why" required></textarea>
+          <button data-next>Next</button>`, () => {
+      if (!val('auth') || !val('why')) return error('This field is required');
+      rec.auth = val('auth'); rec.why = val('why'); review();
+    });
+  }
+  function review() {
+    show(`<h2>Review</h2><p>Check your application before you send it.</p>
+          <button id="submitApp" data-next>Submit Application</button>`, () => {
+      rec.submitted = true; app.innerHTML = '<h2>Thank you for applying</h2><p>Your application was received.</p>';
+    });
+  }
+  email();
+</script>
+</body>
+</html>

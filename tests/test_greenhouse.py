@@ -87,7 +87,7 @@ def test_which_sites_helper_takes_on() -> None:
     with pytest.raises(NeedsUser, match="Handshake"):
         adapter_for("https://app.joinhandshake.com/jobs/123")
     with pytest.raises(NeedsUser, match="never creates"):
-        adapter_for("https://careers-acme.icims.com/jobs/1234/software-engineer/job")
+        adapter_for("https://acme.taleo.net/careersection/2/jobdetail.ftl?job=1234")
     from helper.adapters import workday
 
     assert adapter_for("https://acme.wd5.myworkdayjobs.com/en-US/Careers/job/Seattle/X_R1") is workday
@@ -131,3 +131,49 @@ def test_a_company_page_names_its_own_board() -> None:
     assert [u.split("/boards/")[-1] for u in session.asked] == [
         "current/jobs/6178851004", "https://current.com/careers/open-positions/?id=6178851004&gh_jid=6178851004",
         "current81/jobs/6178851004"]
+
+
+# --------------------------------------------------------------------------- the Employment section (a live form)
+
+
+playwright_api = pytest.importorskip("playwright.sync_api")
+
+
+@pytest.fixture
+def browser() -> Any:
+    with playwright_api.sync_playwright() as pw:
+        try:
+            b = pw.chromium.launch(headless=True)
+        except Exception as exc:
+            pytest.skip(f"Chromium isn't installed: {exc}")
+        yield b
+        b.close()
+
+
+def test_the_jobs_on_the_resume_fill_the_employment_section(browser: Any) -> None:
+    from helper.adapters.workday_page import WorkEntry
+    from helper.dates import MonthYear
+
+    work = [WorkEntry(title="Teaching Assistant", company="Example University", location="Seattle, WA",
+                      start=MonthYear(2026, 1), end=MonthYear(2026, 5), current=False, description=""),
+            WorkEntry(title="Data Intern", company="Mockco", location=None, start=MonthYear(2024, 12), end=None,
+                      current=True, description="")]
+    page = browser.new_page()
+    page.goto(f"file://{(FIXTURES / 'greenhouse_employment.html').resolve()}")
+    ok, chosen = gh.choose_option(page, "country", "United States", search="United St")  # ignores the first try
+    assert (ok, chosen) == (True, "United States +1")
+    results = gh.fill_employment(page, work, lambda: None)
+    assert [(r.ok, r.value) for r in results] == [(True, "Jan. 2026 to May 2026"), (True, "Dec. 2024 to present")]
+    filled = page.evaluate("""() => [0, 1].map(i => [
+        document.getElementById('company-name-' + i).value, document.getElementById('title-' + i).value,
+        document.getElementById('start-date-month-' + i).dataset.selected || '',
+        document.getElementById('start-date-year-' + i).value,
+        document.getElementById('end-date-month-' + i).dataset.selected || '',
+        document.getElementById('end-date-year-' + i).value,
+        document.getElementById('current-role-' + i + '_1').checked])""")
+    assert filled == [["Example University", "Teaching Assistant", "January", "2026", "May", "2026", False],
+                      ["Mockco", "Data Intern", "December", "2024", "", "", True]]
+    assert page.evaluate("() => window.schoolsAdded") == 0  # Education's "Add another" was left alone
+    assert page.evaluate("() => window.submitted") is False
+    assert gh.fill_employment(page, [], lambda: None) == []
+    page.close()

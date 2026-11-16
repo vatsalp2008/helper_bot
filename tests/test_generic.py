@@ -26,10 +26,11 @@ PROFILE.tier2.eeo.auto_answer, PROFILE.tier2.eeo.gender = True, "Male"
 def test_which_adapter_takes_a_link() -> None:
     assert adapter_for("https://careers.mockco.com/jobs/123") is generic
     assert adapter_for("https://apply.workable.com/mockco/j/ABC123/") is generic
-    with pytest.raises(NeedsUser, match="helper doesn't fill iCIMS") as stop:
-        adapter_for("https://careers-acme.icims.com/jobs/1234/software-engineer/job")
-    assert "helper resume https://careers-acme.icims.com/jobs/1234/software-engineer/job" in str(stop.value)
-    assert adapter_for("https://careers-acme.icims.com/jobs/1234/software-engineer/job", purpose="resume") is generic
+    taleo = "https://acme.taleo.net/careersection/2/jobdetail.ftl?job=1234"
+    with pytest.raises(NeedsUser, match="helper doesn't fill Taleo") as stop:
+        adapter_for(taleo)
+    assert f"helper resume {taleo}" in str(stop.value)
+    assert adapter_for(taleo, purpose="resume") is generic
     with pytest.raises(NeedsUser, match="never automates LinkedIn"):
         adapter_for("https://www.linkedin.com/jobs/view/123", purpose="resume")
 
@@ -236,6 +237,9 @@ def test_a_page_s_jobposting_data_gives_the_employer_and_description() -> None:
                                                             "Coral Gables, Florida")
     assert "- Experience building retrieval services" in found.description and "UNAVAILABLE" not in found.description
     assert generic.job_posting_ld(['{"@type": "Organization", "name": "Mockco"}', "not json"]) is None
+    remote = generic.job_posting_ld(['{"@type": "JobPosting", "title": "Intern", "jobLocation": {"address": '
+                                     '{"addressLocality": "Remote", "addressRegion": "UNAVAILABLE"}}}'])
+    assert remote.location == "Remote"  # iCIMS's placeholder isn't a place
 
 
 def test_when_the_browser_is_turned_away_the_page_itself_is_read() -> None:
@@ -247,16 +251,22 @@ def test_when_the_browser_is_turned_away_the_page_itself_is_read() -> None:
     assert job.apply_url == "https://careers-mockbank.icims.com/jobs/6233/login" and session.asked == [JIBE_URL]
 
 
-def test_a_company_page_that_applies_on_icims_gets_the_stop_message(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_company_page_that_applies_on_a_stopped_site_gets_the_stop_message(monkeypatch: pytest.MonkeyPatch) -> None:
     from helper import apply
 
-    session, real = FakeSession({JIBE_URL: FakePage(200, JIBE_PAGE)}), generic.fetch_job
+    taleo_page = JIBE_PAGE.replace("https:\\/\\/careers-mockbank.icims.com\\/jobs\\/6233\\/login",
+                                   "https:\\/\\/mockbank.taleo.net\\/careersection\\/2\\/jobapply.ftl?job=6233")
+    assert taleo_page != JIBE_PAGE
+    session, real = FakeSession({JIBE_URL: FakePage(200, taleo_page)}), generic.fetch_job
     turned_away = generic.Scan(description="403 Forbidden")
     monkeypatch.setattr(generic, "fetch_job", lambda url: real(url, session, scan=lambda u: turned_away))
-    with pytest.raises(NeedsUser, match="helper doesn't fill iCIMS") as stop:
+    with pytest.raises(NeedsUser, match="helper doesn't fill Taleo") as stop:
         apply.fetch_job(JIBE_URL + "?jr_id=6adb96c6389e06bb41ad2d1f")
     assert f"helper resume {JIBE_URL}`" in str(stop.value)  # the tracking tag is gone
     assert apply.fetch_job(JIBE_URL, purpose="resume").company == "Mockbank of Florida"
+    # the same page applying on iCIMS is an iCIMS run (helper signs in there; Vatsal, 2026-11-15)
+    session.pages[JIBE_URL] = FakePage(200, JIBE_PAGE)
+    assert apply.fetch_job(JIBE_URL).ats == "icims"
 
 
 def test_an_apply_link_that_ends_at_a_robot_check_is_left_to_vatsal() -> None:

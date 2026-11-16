@@ -302,8 +302,11 @@ def validate_letter(out: CoverLetterOutput, ctx: Context, items: list[MasterItem
     for n, paragraph in enumerate(paragraphs, 1):
         _check_paragraph(paragraph, n, items, ctx, job, tailor, extra, posting, others, on_resume, r, given)
     if len(paragraphs) == 4:
-        core = re.sub(r"\s*[\(\[].*?[\)\]]", "", job.role_title).strip().lower()
-        if core and core not in paragraphs[0].replace("**", "").lower():
+        def words(text: str) -> str:  # dashes and commas as word breaks: a title's en dash can't be in a letter (rule 4)
+            return " ".join(re.sub(r"[\u2010-\u2015,\-]", " ", text).lower().split())
+
+        core = words(re.sub(r"\s*[\(\[].*?[\)\]]", "", job.role_title))
+        if core and core not in words(paragraphs[0].replace("**", "")):
             r.warn("structure", "paragraph 1", f"name the role ('{job.role_title}')")
         close = paragraphs[3].replace("**", "")
         if not (re.search(r"\bMaster", close) and "Northeastern" in close):

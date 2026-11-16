@@ -164,17 +164,28 @@ def fill_dom_form(root: Any, answers: list[Any], resume_pdf: Path, *, city: Opti
     return results
 
 
+def _inside(block: Any, css: str) -> Any:
+    """The control in a question's block, or the block itself when the reader tagged the control directly (fields with
+    no wrapper of their own)."""
+    try:
+        if block.evaluate("(e, css) => e.matches(css)", css):
+            return block
+    except Exception:
+        pass
+    return block.locator(css).first
+
+
 def _fill_one(root: Any, block: Any, a: Any, pdf: Path, city: Optional[str],
               date_text: Callable[[str], str]) -> tuple[bool, Optional[str], str]:
     if a.type == "file":
         upload = Path(a.value) if a.key in ("transcript", "cover_letter") and a.value else pdf
-        block.locator("input[type=file]").first.set_input_files(str(upload))
+        _inside(block, "input[type=file]").set_input_files(str(upload))
         return True, upload.name, ""
     if a.type == "textarea":
-        block.locator("textarea").first.fill(a.value)
+        _inside(block, "textarea").fill(a.value)
         return True, a.value, ""
     if a.type == "select":
-        select = block.locator("select").first
+        select = _inside(block, "select")
         options = [o.strip() for o in select.locator("option").all_inner_texts()]
         index = _pick(a.value, options)
         if index is None:
@@ -208,17 +219,17 @@ def _fill_one(root: Any, block: Any, a: Any, pdf: Path, city: Optional[str],
         button.first.click()
         return True, a.value, ""
     if a.type == "combobox":
-        field = block.locator(_ANSWER_INPUTS).first
+        field = _inside(block, _ANSWER_INPUTS)
         typed = city if (city and a.key == "location_city") else a.value.split(",")[0]
         ok, shown = _choose_suggestion(root, field, typed, a.value)
         return ok, shown if ok else a.value, "" if ok else shown
     if a.type == "date":
-        field = block.locator(_ANSWER_INPUTS).first
+        field = _inside(block, _ANSWER_INPUTS)
         field.click()
         field.fill(date_text(a.value))
         keyboard(root).press("Enter")
         return True, date_text(a.value), ""
-    block.locator(_ANSWER_INPUTS).first.fill(a.value)
+    _inside(block, _ANSWER_INPUTS).fill(a.value)
     return True, a.value, ""
 
 

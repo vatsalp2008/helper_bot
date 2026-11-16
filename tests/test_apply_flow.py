@@ -80,11 +80,19 @@ def test_apply_until_the_answers_are_approved(ready: Path) -> None:
     rejected = runner.invoke(app, ["continue", run_id])
     assert rejected.exit_code == EXIT_WAITING_FOR_CLAUDE and "no em dashes" in rejected.output
 
-    (folder / "answers_provided.json").write_text(json.dumps(answer_everything(needed)), encoding="utf-8")
+    everything = answer_everything(needed)  # one required question only Vatsal can answer is left out at first
+    own = next(q for q in needed["questions"] if q["required"] and q["options"])
+    first = {"answers": [a for a in everything["answers"] if a["field"] != own["field"]]}
+    (folder / "answers_provided.json").write_text(json.dumps(first), encoding="utf-8")
     review = runner.invoke(app, ["continue", run_id])
     assert review.exit_code == EXIT_NEEDS_USER, review.output
     assert "review the form answers" in review.output and "--approve-answers" in review.output
     assert "I use Figma every day" in review.output
+    assert "only you can answer" in review.output and own["label"] in review.output.split("only you can answer")[1]
+
+    (folder / "answers_provided.json").write_text(json.dumps(everything), encoding="utf-8")  # his answer, added
+    review = runner.invoke(app, ["continue", run_id])
+    assert review.exit_code == EXIT_NEEDS_USER and "only you can answer" not in review.output, review.output
 
     approved = runner.invoke(app, ["continue", run_id, "--approve-answers"])
     assert approved.exit_code == 0, approved.output

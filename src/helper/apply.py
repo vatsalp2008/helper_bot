@@ -42,19 +42,24 @@ ANSWER_RULES = [
 ]
 
 
+MULTI_PAGE = {"workday": "Workday", "icims": "iCIMS"}  # sites whose questions appear page by page
+
+
 def fetch_job(url: str, jd_text: Optional[str] = None, purpose: str = "apply") -> Job:
     from .adapters import adapter_for
     from .ats import clean_url
 
     url = clean_url(url)
     job: Job = adapter_for(url, purpose).fetch_job(url)
-    if purpose == "apply" and job.apply_url:  # a company page whose Apply button leads to iCIMS, Taleo...
-        from .adapters import MANUAL, manual_stop
+    if job.apply_url and job.ats != "icims":  # a company page whose Apply button leads to iCIMS, Taleo...
+        from .adapters import MANUAL, icims, manual_stop
         from .ats import detect_ats
 
         site = MANUAL.get(detect_ats(job.apply_url))
-        if site:
+        if site and purpose == "apply":
             raise manual_stop(site, url)
+        if icims.parse_ref(job.apply_url):  # Jibe pages apply on iCIMS: that's the form helper fills
+            job = job.model_copy(update={"ats": "icims"})
     if jd_text:  # rule 12: a job description Vatsal gave is used as is
         job = job.model_copy(update={"description_text": jd_text, "description_html": None})
     return job
@@ -175,13 +180,14 @@ def answers_step(paths: Paths, cfg: Config, run_id: str, approve: bool = False) 
     step = state.steps.get("answers")
     if step and step.status == "done":
         return f"Answers are approved. Fill the form with `helper fill {run_id}`."
-    if job.ats == "workday" and not job.questions:
+    if job.ats in MULTI_PAGE and not job.questions:
+        site = MULTI_PAGE[job.ats]
         write_json(folder / PLAN, AnswerPlan(answers=[]).model_dump(mode="json"))
-        set_step(state, "answers", "done", "Workday: questions are answered page by page during the fill")
+        set_step(state, "answers", "done", f"{site}: questions are answered page by page during the fill")
         save_state(paths, state)
-        return (f"Workday shows its questions page by page, so `helper fill {run_id}` answers them as it goes. Claude "
-                "drafts any written answers while it runs, and you review everything on Workday's Review page "
-                "before you submit.")
+        stop = "on Workday's Review page" if job.ats == "workday" else "at the Submit button"
+        return (f"{site} shows its questions page by page, so `helper fill {run_id}` answers them as it goes. Claude "
+                f"drafts any written answers while it runs, and you review everything {stop} before you submit.")
     if not (folder / PLAN).is_file():
         plan = plan_answers(job.questions, _context(paths, cfg, run_id, job))
         write_json(folder / PLAN, plan.model_dump(mode="json"))
@@ -204,6 +210,16 @@ def answers_step(paths: Paths, cfg: Config, run_id: str, approve: bool = False) 
         write_json(folder / PLAN, plan.model_dump(mode="json"))
         set_step(state, "answers", "waiting_for_user", "Vatsal reviews the drafted answers")
         save_state(paths, state)
+    elif step and step.status == "waiting_for_user" and (folder / PROVIDED).is_file():
+        # answers only Vatsal could give, added to answers_provided.json after the review pause
+        still_open = {a.field for a in plan.answers if a.kind == "unknown"}
+        late = [x for x in read_json(folder / PROVIDED).get("answers", []) if x.get("field") in still_open]
+        if late:
+            problems = _merge(plan, {"answers": late})
+            if problems:
+                raise WaitingForClaude(run_id, rel(paths, folder / NEEDED), rel(paths, folder / PROVIDED),
+                                       "Fix these answers:\n" + "\n".join(f"  {p}" for p in problems))
+            write_json(folder / PLAN, plan.model_dump(mode="json"))
     missing = [a for a in plan.answers if a.kind == "unknown" and a.required]
     review = plan.needs_review()
     if (missing or review) and not approve:
@@ -264,10 +280,13 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
             return FillOutcome("dry_run", f"Would fill {job.apply_url or job.url} page by page: the account step, "
                                           "My Information, My Experience (from the resume and your profile), the "
                                           "company's questions and the disclosures, stopping on the Review page.")
+        if job.ats == "icims":
+            return FillOutcome("dry_run", f"Would fill {job.apply_url or job.url} page by page: sign in or create the "
+                                          "iCIMS account, then every application page, stopping at the Submit button.")
         return FillOutcome("dry_run", f"Would fill {job.apply_url or job.url} with:\n{format_plan(plan)}")
     if not pdf.is_file():
         raise HelperError(f"the resume PDF is missing: {rel(paths, pdf)}")
-    adapter = adapter_for(job.url or job.apply_url or "")
+    adapter = adapter_for(job.apply_url if job.ats == "icims" and job.apply_url else job.url or job.apply_url or "")
     profile = Profile.model_validate(load_yaml(paths.profile))
     wait = cfg.fill_wait_timeout_minutes if wait_minutes is None else wait_minutes
     mode = state.options.get("submit_mode") or cfg.submit_mode
@@ -294,6 +313,9 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
         else:
             results = adapter.fill_form(form, plan.answers, pdf, country=profile.tier1.address.country,
                                         city=profile.tier1.address.city, pause=make_pause(cfg))
+            if hasattr(adapter, "fill_employment"):  # the jobs on the resume, for forms with an Employment section
+                results += adapter.fill_employment(form, lambda: _history(paths, cfg, state, folder, profile)[0],
+                                                   make_pause(cfg))
         _snapshot(page, form, folder / "filled.png")
         write_json(folder / "fill_log.json", [vars(r) for r in results])
         failed_required = [r for r in results if not r.ok and _required(plan, r.field)]
@@ -392,8 +414,9 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
             company=job.company, plan=plan_page, ask_claude=ask_claude, resume_pdf=pdf, work=work, schools=schools,
             skills=_resume_skills(folder), certifications=_certifications(paths) if cfg.fill_certifications else [],
             websites=[profile.tier1.linkedin_url, profile.tier1.github_url, profile.tier1.portfolio_url],
-            say=say, pause=make_pause(cfg), credentials=_workday_credentials(paths),
-            has_account=_has_workday_account(paths, cfg, state, job), go_on=go_on, wait_seconds=wait * 60,
+            say=say, pause=make_pause(cfg), credentials=_credentials(paths, job.ats),
+            has_account=job.ats == "workday" and _has_workday_account(paths, cfg, state, job), go_on=go_on,
+            wait_seconds=wait * 60,
             poll_seconds=poll_seconds,
         )
         result = adapter.run_flow(page, flow)
@@ -545,6 +568,16 @@ def _certifications(paths: Paths) -> list[dict[str, Any]]:
     """Vatsal's certificates (data/certifications.yaml, git-ignored), for forms that list certifications."""
     data = load_yaml(paths.data / "certifications.yaml") if (paths.data / "certifications.yaml").is_file() else None
     return [c for c in (data or {}).get("certifications", []) if isinstance(c, dict) and c.get("name")]
+
+
+def _credentials(paths: Paths, ats: str) -> Optional[Any]:
+    """The application login from .env for sites where helper signs in (rule 8's exceptions). Never printed."""
+    if ats == "icims":
+        from .adapters.icims import Credentials
+
+        email, password = env_value(paths, "ICIMS_EMAIL"), env_value(paths, "ICIMS_PASSWORD")
+        return Credentials(email, password, env_value(paths, "ICIMS_USERNAME")) if email and password else None
+    return _workday_credentials(paths)
 
 
 def _workday_credentials(paths: Paths) -> Optional[Any]:

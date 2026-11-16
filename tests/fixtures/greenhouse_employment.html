@@ -1,0 +1,75 @@
+<!doctype html>
+<!-- A Greenhouse job-boards form's Employment section, as on Lyft's form (2026-11-15): company, title, month dropdowns
+     (role=combobox with react-select-<id>-option-<n> options), year boxes, a Current role box and "Add another",
+     which adds the next numbered entry. The Education section has its own "Add another" that must not be used for
+     jobs. The phone country dropdown ignores clicks for the first moment after the page loads, as Lyft's did. -->
+<html>
+<head><meta charset="utf-8"><title>Apply</title></head>
+<body>
+<form id="application-form">
+  <label for="first_name">First Name*</label><input id="first_name">
+  <label id="country-label" for="country">Country</label>
+  <input id="country" role="combobox" data-options='["United States +1","Afghanistan +93","Canada +1"]' data-late="1">
+  <div class="education">
+    <h3>Education</h3>
+    <div id="schools"><label for="school--0">School</label><input id="school--0"></div>
+    <button type="button" id="add-school">Add another</button>
+  </div>
+  <div class="employment">
+    <h3>Employment</h3>
+    <div id="jobs"></div>
+    <button type="button" id="add-job">Add another</button>
+  </div>
+  <button type="submit" id="submit">Submit application</button>
+</form>
+<script>
+  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const loadedAt = Date.now();
+  window.submitted = false;
+  window.schoolsAdded = 0;
+  function closeAll() { document.querySelectorAll('[role=listbox]').forEach(l => l.remove()); }
+  function open(input) {
+    closeAll();
+    if (input.dataset.late && Date.now() - loadedAt < 1500) return;  // not ready yet: the first try does nothing
+    const opts = JSON.parse(input.dataset.options || '[]');
+    const term = (input.value || '').toLowerCase();
+    const list = document.createElement('div');
+    list.setAttribute('role', 'listbox');
+    opts.filter(o => o.toLowerCase().includes(term)).forEach((o, i) => {
+      const el = document.createElement('div');
+      el.setAttribute('role', 'option');
+      el.id = 'react-select-' + input.id + '-option-' + i;
+      el.textContent = o;
+      el.addEventListener('click', () => { input.value = ''; input.dataset.selected = o; closeAll(); });
+      list.appendChild(el);
+    });
+    input.insertAdjacentElement('afterend', list);
+  }
+  function wire(input) {
+    input.addEventListener('click', () => open(input));
+    input.addEventListener('input', () => open(input));
+    input.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+  }
+  function addJob() {
+    const i = document.querySelectorAll('#jobs .job').length;
+    const div = document.createElement('div');
+    div.className = 'job';
+    div.innerHTML = `
+      <label for="company-name-${i}">Company name</label><input id="company-name-${i}">
+      <label for="title-${i}">Title</label><input id="title-${i}">
+      <label for="start-date-month-${i}">Start date month</label><input id="start-date-month-${i}" role="combobox">
+      <label for="start-date-year-${i}">Start date year</label><input id="start-date-year-${i}">
+      <label for="end-date-month-${i}">End date month</label><input id="end-date-month-${i}" role="combobox">
+      <label for="end-date-year-${i}">End date year</label><input id="end-date-year-${i}">
+      <label><input type="checkbox" id="current-role-${i}_1"> Current role</label>`;
+    document.getElementById('jobs').appendChild(div);
+    div.querySelectorAll('[role=combobox]').forEach(c => { c.dataset.options = JSON.stringify(MONTHS); wire(c); });
+  }
+  addJob();
+  wire(document.getElementById('country'));
+  document.getElementById('add-job').addEventListener('click', addJob);
+  document.getElementById('add-school').addEventListener('click', () => { window.schoolsAdded += 1; });
+  document.getElementById('application-form').addEventListener('submit', e => { e.preventDefault(); window.submitted = true; });
+</script>
+</body>
+</html>

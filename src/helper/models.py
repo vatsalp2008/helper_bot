@@ -178,6 +178,7 @@ class Tier2(StrictModel):
     salary_from_posting: bool = False  # answer with the posting's own pay (midpoint, rounded) when it states one
     ai_screening_consent: Tier2Item = Field(default_factory=Tier2Item)  # e.g. HiredScore: let AI review the application
     keep_for_other_roles: Tier2Item = Field(default_factory=Tier2Item)  # keep the application for other openings
+    relatives_at_company: Tier2Item = Field(default_factory=Tier2Item)  # relatives who work or worked there
     employment_restrictions: Tier2Item = Field(default_factory=Tier2Item)  # a non-compete or similar restriction
     eeo: EEO = Field(default_factory=EEO)
     background_check_consent: Tier2Item = Field(default_factory=Tier2Item)

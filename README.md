@@ -78,8 +78,9 @@ The other private files are optional and git-ignored:
   compares your tracker's columns with `data/notion_mapping.yaml` without writing anything. `helper sync-notion` then
   imports your existing rows, so the duplicate check sees them. Without Notion, applications are tracked in
   `helper.db` and `exports/applications.csv` only.
-- **Workday:** put the login you use for Workday applications in `.env` as `WORKDAY_EMAIL` and `WORKDAY_PASSWORD`.
-  helper types it only on Workday's own sites, never prints or logs it, and never retries a failed sign-in.
+- **Workday and iCIMS:** put the login you use for applications in `.env` as `WORKDAY_EMAIL` / `WORKDAY_PASSWORD`
+  and `ICIMS_EMAIL` / `ICIMS_PASSWORD` (plus `ICIMS_USERNAME` for iCIMS sites that ask for a username). helper types
+  them only on those sites' own pages, never prints or logs them, and never retries a failed sign-in.
 
 ### 6. Check that it works (about 3 minutes)
 
@@ -124,7 +125,8 @@ To get only the resume and cover letter, use `helper resume <link>`. For a posti
 | Greenhouse, Lever, Ashby | Fills the form and stops before Submit. Auto-submit is possible after 5 clean runs (below). |
 | Workday | Signs in or creates the account with your `.env` login, fills every page and stops on the Review page. Questions are drafted as the pages open, with no separate approval step; you review them all on the Review page. |
 | A company's own careers page | Looks for a Greenhouse, Lever, Ashby or Workday posting behind it and uses that adapter. Otherwise it reads the form by its labels, fills what it can and stops before Submit. |
-| iCIMS, Taleo, SmartRecruiters, SuccessFactors | Never filled, because they need an account at each company. `helper resume <link>` still builds the resume and cover letter. |
+| iCIMS | Signs in or creates the account with your `.env` login, fills every page and stops at the Submit button. A CAPTCHA or an emailed code is yours. Company pages that apply on iCIMS (Jibe) work the same way. |
+| Taleo, SmartRecruiters, SuccessFactors | Never filled, because they need an account at each company. `helper resume <link>` still builds the resume and cover letter. |
 | LinkedIn Easy Apply, Handshake | Refused. Find the job on the company's own site; helper can still read the description for a resume. |
 | Sign-in pages, robot checks | Left to you. helper never solves a CAPTCHA, never gets around a site's bot filter, and never creates accounts outside Workday. |
 
@@ -137,7 +139,7 @@ every condition holds:
 - there are no eligibility warnings or duplicates;
 - no CAPTCHA or form errors appeared.
 
-Otherwise the run stays in review mode and says why. `helper stats` shows each site's count. Workday and other
+Otherwise the run stays in review mode and says why. `helper stats` shows each site's count. Workday, iCIMS and other
 company sites are always review-only.
 
 ## Commands
@@ -202,5 +204,5 @@ Exit codes:
 - No invented facts: every bullet, skill, title, date and number traces to the master list.
 - Metrics are real; a bullet without one says so instead of estimating.
 - No GPA on resumes or cover letters, no em dashes, no summary section.
-- Never solves CAPTCHAs, never automates LinkedIn Easy Apply or Handshake, never creates accounts (Workday excepted).
+- Never solves CAPTCHAs, never automates LinkedIn Easy Apply or Handshake, never creates accounts (Workday and iCIMS excepted).
 - Stops when unsure, never retries a submit, and checks eligibility before building anything.

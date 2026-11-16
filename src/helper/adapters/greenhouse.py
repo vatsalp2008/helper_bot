@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -231,16 +231,20 @@ def choose_option(root: Any, dom: str, wanted: str, *, search: Optional[str] = N
     from ..answers import match_option
 
     box = root.locator(css_id(dom))
-    box.click()
-    if search:
-        box.fill("")
-        box.type(search, delay=40)
     options = root.locator(f"[id^='react-select-{dom}-option-']")
-    try:
-        options.first.wait_for(state="visible", timeout=timeout_ms)
-    except Exception:
-        _keyboard(root).press("Escape")
-        return False, "no options appeared"
+    for attempt in (1, 2):  # right after the page loads, a dropdown can ignore the first try (Lyft's phone country)
+        box.click()
+        if search:
+            box.fill("")
+            box.type(search, delay=40)
+        try:
+            options.first.wait_for(state="visible", timeout=min(3000, timeout_ms) if attempt == 1 else timeout_ms)
+            break
+        except Exception:
+            _keyboard(root).press("Escape")
+            if attempt == 2:
+                return False, "no options appeared"
+            root.wait_for_timeout(800)
     texts = [t.strip() for t in options.all_inner_texts()]
     best, score = match_option(wanted, texts)
     if best is None or score < 0.8:
@@ -293,6 +297,72 @@ def fill_form(page: Any, answers: list[Any], resume_pdf: Path, *, country: Optio
         except Exception as exc:  # a field that won't take input is reported, not fatal
             results.append(FieldResult(a.field, a.label, False, a.value, f"{type(exc).__name__}: {str(exc)[:120]}"))
         pause()
+    return results
+
+
+_MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+           "November", "December")
+
+
+def fill_employment(root: Any, work: Union[list[Any], Callable[[], list[Any]]],
+                    pause: Callable[[], None]) -> list[FieldResult]:
+    """The form's Employment section: one entry per job on the tailored resume (company, title, start and end month
+    and year, current role), the same entries Workday's My Experience page gets. "Add another" opens each next entry.
+    Forms without the section are left alone. `work` can be a function, called only when the section is there."""
+    if not root.locator("#company-name-0").count():
+        return []
+    try:
+        work = work() if callable(work) else work
+    except HelperError as exc:
+        return [FieldResult("employment-0", "Employment", False, None, f"couldn't list the resume's jobs: {exc}")]
+    if not work:
+        return []
+    section = root.locator("#company-name-0").locator("xpath=ancestor::*[.//button[normalize-space()='Add another']][1]")
+    results: list[FieldResult] = []
+    for i, job in enumerate(work):
+        field, label = f"employment-{i}", f"Employment {i + 1}: {job.title}, {job.company}"
+        if not root.locator(f"#company-name-{i}").count():
+            add = section.locator("button", has_text="Add another")
+            if not add.count():
+                results.append(FieldResult(field, label, False, None, "the form has no 'Add another' for more jobs"))
+                break
+            add.last.click()
+            try:
+                root.locator(f"#company-name-{i}").wait_for(timeout=5000)
+            except Exception:
+                results.append(FieldResult(field, label, False, None, "the next employment entry didn't appear"))
+                break
+        problems: list[str] = []
+        try:
+            root.locator(f"#company-name-{i}").fill(job.company)
+            if root.locator(f"#title-{i}").count():
+                root.locator(f"#title-{i}").fill(job.title)
+            for which, when in (("start", job.start), ("end", None if job.current else job.end)):
+                if when is None:
+                    continue
+                if root.locator(f"#{which}-date-month-{i}").count():
+                    ok, chosen = choose_option(root, f"{which}-date-month-{i}", _MONTHS[when.month - 1])
+                    if not ok:
+                        problems.append(f"{which} month: {chosen}")
+                if root.locator(f"#{which}-date-year-{i}").count():
+                    root.locator(f"#{which}-date-year-{i}").fill(str(when.year))
+            if job.current and root.locator(f"#current-role-{i}_1").count():
+                if not common.tick(root.locator(f"#current-role-{i}_1")):
+                    problems.append("couldn't tick Current role")
+        except Exception as exc:
+            problems.append(f"{type(exc).__name__}: {str(exc)[:120]}")
+        span = " to ".join(w.display() for w in (job.start, None if job.current else job.end) if w) + (
+            " to present" if job.current else "")
+        results.append(FieldResult(field, label, not problems, span, "; ".join(problems)))
+        pause()
+    for i, job in enumerate(work[:len(results)]):  # text typed while the form was still loading can be wiped
+        for box_id, text in ((f"company-name-{i}", job.company), (f"title-{i}", job.title)):
+            box = root.locator(f"#{box_id}")
+            if box.count() and box.input_value() != text:
+                box.fill(text)
+                if box.input_value() != text and results[i].ok:
+                    results[i] = FieldResult(results[i].field, results[i].label, False, results[i].value,
+                                             f"{box_id} didn't keep its text")
     return results
 
 

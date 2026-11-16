@@ -22,6 +22,7 @@ from typing import Any, Optional
 from .tracker.db import now_iso
 
 REVIEW_ONLY = {"workday": "Workday runs always stop on Workday's Review page for you",
+               "icims": "iCIMS runs always stop before Submit for you",
                "generic": "company career sites and other unfamiliar forms always stop before Submit for you"}
 AUTO_CAPABLE = ("greenhouse", "lever", "ashby")
 

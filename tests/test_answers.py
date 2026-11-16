@@ -201,7 +201,9 @@ def test_salary_comes_from_the_posting_when_vatsal_says_so() -> None:
     profile = PROFILE.model_copy(deep=True)
     profile.tier2.salary_from_posting = True
     assert one(q("What are your annual salary expectations?", "number"), job=job, profile=profile).value == "71000"
-    assert one(q("What are your annual salary expectations?"), job=job, profile=profile).value == "$71,000"
+    assert one(q("What are your annual salary expectations?"), job=job, profile=profile).value == "71000"
+    # text boxes get the plain number too: iCIMS rejected "$36 per hour" (Cotiviti, 2026-11-15)
+    assert one(q("What are your hourly rate expectations for this position?"), job=job, profile=profile).value == "34"
     assert one(q("Expected hourly pay?", "number"), job=job, profile=profile).value == "34"
     unposted = one(q("What are your annual salary expectations?", "number"), profile=profile)
     assert unposted.kind == "unknown"  # no pay in the posting and the box takes numbers: Vatsal decides
@@ -346,3 +348,36 @@ def test_where_he_would_move_from_is_home() -> None:
     answer = one(question, profile=profile)
     assert (answer.key, answer.value) == ("relocate_from", "Seattle, Washington - 98105")
     assert one(q("Are you willing to relocate?", "select", ["Yes", "No"]), profile=profile).key == "relocate"
+
+
+def test_relatives_at_the_company_is_none_always() -> None:  # Vatsal, 2026-11-15
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.relatives_at_company.auto_answer, profile.tier2.relatives_at_company.value = True, "No"
+    written = one(q("Do you have any relatives who are currently or were previously employed by Cotiviti? If yes, "
+                    "please provide their names. If NO, please put N/A:", "textarea"), profile=profile)
+    assert (written.key, written.kind, written.value) == ("relatives_at_company", "auto", "N/A")
+    assert one(q("Are you related to anyone who currently works at Figma?", "select", ["Yes", "No"]),
+               profile=profile).value == "No"
+    assert one(q("Do you have family members employed by Figma?", "radio", ["Yes", "None"]), profile=profile).value == "None"
+    assert one(q("Have you previously been employed by Figma?", "select", ["Yes", "No"]),
+               profile=profile).key != "relatives_at_company"
+    assert one(q("Are you related to anyone who currently works at Figma?", "select", ["Yes", "No"])).kind == "unknown"
+
+
+def test_start_questions_with_choices_follow_the_role() -> None:  # Vatsal, 2026-11-15
+    options = ["— Make a Selection —", "I'm available to start now", "I'm looking for an internship that starts in "
+               "the summer", "I'm looking for an internship that starts in the fall"]
+    question = q("We are looking to fill this internship role immediately. When would you be able to start?", "select",
+                 options)
+    assert one(question).value == "I'm available to start now"  # an internship: free from January
+    full_time = one(q("When could you start?", "select", ["Immediately", "Summer 2027 (May)", "Fall 2027"]),
+                    employment="full_time")
+    assert full_time.value == "Summer 2027 (May)"
+
+
+def test_icims_address_2_gets_the_unit_and_line_1_the_street() -> None:  # Cotiviti kept a stale "Address 2"
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier1.address.unit = "Apt 1"
+    answers = plan_answers([q("Address", name="a1"), q("Address 2", required=False, name="a2")], ctx(profile=profile)).answers
+    assert [(a.key, a.value) for a in answers] == [("address_street", profile.tier1.address.street),
+                                                   ("address_line2", "Apt 1")]

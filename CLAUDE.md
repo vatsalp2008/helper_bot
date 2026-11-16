@@ -45,7 +45,7 @@ Enforce these in code, not only in instructions.
 5. **No summary section** on resumes.
 6. **Never solve or bypass CAPTCHAs.** Stop and hand control to me in the open browser window.
 7. **Never automate LinkedIn Easy Apply or Handshake.** Tell me to find the company's own careers page, and offer to extract the job description only.
-8. **Never create accounts** on employer portals (iCIMS, Taleo, etc.). Stop and tell me. The one exception is Workday (Vatsal, 2026-11-14): helper signs in or creates the account with the application login in `.env`.
+8. **Never create accounts** on employer portals (Taleo, SmartRecruiters, etc.). Stop and tell me. The exceptions are Workday (Vatsal, 2026-11-14) and iCIMS (Vatsal, 2026-11-15): helper signs in or creates the account with the application login in `.env` (`WORKDAY_*`, `ICIMS_*`; iCIMS sites that ask for a username get `ICIMS_USERNAME`).
 9. **Stop when unsure.** A required field helper cannot fill with high confidence pauses the run.
 10. **Never retry a submit.** An ambiguous result is logged as `submitted_unverified`.
 11. **Eligibility is checked before building** (section 8).
@@ -66,6 +66,9 @@ Enforce these in code, not only in instructions.
   - **Salary:** with `tier2.salary_from_posting`, a salary question gets the posting's own pay: the midpoint of its range, annual unless the question asks hourly or monthly, rounded (nearest $1,000 a year). With no pay in the posting, a text box gets `salary_expectation` ("Negotiable") and a numbers-only box goes to Vatsal.
   - **AI screening and keeping the application for other roles** (for example HiredScore): yes, the choice that opts in (`tier2.ai_screening_consent`, `tier2.keep_for_other_roles`).
   - **Hispanic or Latino:** No (`tier2.eeo.hispanic_latino`). Other extra EEO questions, such as pronouns, keep the decline default.
+  - **Relatives at the company:** none, always (Vatsal, 2026-11-15; `tier2.relatives_at_company`): "N/A" in a written box, "No" or "None" in a choice question.
+  - **Start dates** (Vatsal, 2026-11-15): internships can start now (he is free from January), so a "start now / immediately" choice is right and an immediate-start internship is only a note; full-time roles start in May (the summer option; `immediate_start_target: "May 2027"`).
+  - **Salary boxes** get the plain number ("36", "71000"): iCIMS rejects "$36 per hour".
   - **Transcripts:** `documents.transcript` (master's) and `documents.undergrad_transcript` are uploaded only when a form requires a transcript; the undergraduate one when the question asks for it. They're PDFs in the repo's top folder, which git ignores.
 - **Cover letters** (Vatsal, 2026-11-14): one with every resume, saved as `<Name>_CoverLetter.pdf` next to the resume, and uploaded wherever a form has a cover letter field (a text box gets the plain text). Once it passes helper's checks it needs no separate review, so it never holds up auto-submit (Vatsal, 2026-11-15).
   - **Format:** his template (`templates/cover_letter.tex.j2`): resume header, thin cyan line, 14pt paragraph spacing. Bold key words. Always "Dear Hiring Team,"; Northeastern campus jobs get "Dear Career Team," and his NUID after the name (`tier1.nuid`, profile only).
@@ -84,9 +87,10 @@ Enforce these in code, not only in instructions.
 - **Location data:** experience locations and project display names live in `data/resume_meta.yaml`, because the master list doesn't have them.
 
 ## Applying
-Supported sites: Greenhouse, Lever, Ashby and Workday, plus the generic adapter for any other site.
+Supported sites: Greenhouse, Lever, Ashby, Workday and iCIMS, plus the generic adapter for any other site.
 - **The generic adapter:** finds a Greenhouse, Lever, Ashby or Workday posting behind a company's own page and hands it over. Otherwise it reads the page's form by its labels, always stops before Submit, and never auto-submits. A sign-in wall or a blocked page is left to Vatsal.
-- **Stopped sites:** iCIMS, Taleo, SmartRecruiters and SuccessFactors are never filled (accounts, rule 8). `helper resume <link>` still builds their resume and cover letter from the posting. A company page whose Apply button leads to one of them (Jibe pages lead to iCIMS) gets the same stop message.
+- **Stopped sites:** Taleo, SmartRecruiters and SuccessFactors are never filled (accounts, rule 8). `helper resume <link>` still builds their resume and cover letter from the posting. A company page whose Apply button leads to one of them gets the same stop message; one that leads to iCIMS (Jibe pages do) becomes an iCIMS run.
+- **Employment sections** on Greenhouse forms get the jobs on the tailored resume (company, title, months and years, current role), the same entries Workday's My Experience gets (Vatsal, 2026-11-15).
 - **Bot filters:** helper identifies itself honestly. Never disguise its browser or requests (user agent, stealth tricks) to get past a site that turns it away. A robot check, a blocked page or a sign-in wall goes to Vatsal, or use `--jd-file`.
 - **Job boards that relay postings** (divulgavagas, thebigjobsite and the like) aren't the employer's posting. Before tailoring, check that the company helper read is the real employer; if it isn't, ask Vatsal for the employer's own link.
 1. `helper apply <link>` goes through eligibility (exit 4 pauses), then the tailor handoff (exit 3). Then `helper continue <run_id>`.
@@ -95,7 +99,8 @@ Supported sites: Greenhouse, Lever, Ashby and Workday, plus the generic adapter 
    - Leave out anything only Vatsal can answer.
 3. `helper continue` then pauses (exit 4) so Vatsal can review. Show him every draft. Run `helper continue <run_id> --approve-answers` only after he approves. When every answer came from the profile or a rule, helper approves the plan itself and there is no pause.
 4. Then run `helper fill <run_id>` in the background (run_in_background). It opens a visible Chromium window on Vatsal's screen, fills the form, and never clicks Submit. It waits up to `fill_wait_timeout_minutes` for him to submit, then logs to SQLite, Notion and CSV. Report the result when the task exits.
-- **Workday runs** differ: `helper continue` ends right after the resume, because Workday shows its questions page by page.
+- **Workday and iCIMS runs** differ: `helper continue` ends right after the resume, because these sites show their questions page by page.
+  - **iCIMS** (Vatsal, 2026-11-15): helper enters `ICIMS_EMAIL`, then signs in or creates the account (`ICIMS_USERNAME` where a username is asked). It types the login only inside iCIMS's own frame (`in_iframe=1`), never on the company's page around it (City National's has an online-banking login). It fills each page by its labels and stops at any button that says Submit; Vatsal clicks it, and helper carries on if more pages follow. hCaptcha checks and emailed codes are Vatsal's: every iCIMS sign-in has hCaptcha. Some sites (City National) kept re-asking in helper's window; Cotiviti went through. The veteran and disability self-identification forms (IForms) open as a whole page at `.../form?form=...`; helper reads and fills those, but types the login only inside the in_iframe=1 frame.
   1. Run `helper fill <run_id>` in the background, and watch its output for "waiting for Claude" (a background until-loop that greps the output file).
   2. When it asks, read `questions_needed.json` and write `answers_provided.json` (same format and rules as above). helper fills them and moves on by itself; there is no approval step.
   3. If it says Workday sent a verification email, tell Vatsal. When he says he verified, create the empty file `runs/<run_id>/go_on` and helper signs in.
@@ -116,7 +121,7 @@ Supported sites: Greenhouse, Lever, Ashby and Workday, plus the generic adapter 
 ## Tracker and Notion
 - `helper.db` (SQLite) is the system of record, and it holds Vatsal's imported Notion history.
 - Notion receives only sent applications (status applied or later), in the seven columns of `data/notion_mapping.yaml`. Never create Notion columns, never touch Deadline/Referral/Referral name, and never write test rows without asking.
-- When Vatsal applies outside helper (iCIMS and the other stopped sites, or by hand), run `helper mark <id> applied` once he says he submitted.
+- When Vatsal applies outside helper (the stopped sites, or by hand), run `helper mark <id> applied` once he says he submitted.
 
 ## Working conventions
 - Python 3.12 venv at `.venv`. Run `.venv/bin/helper ...` and `.venv/bin/pytest`.

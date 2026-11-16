@@ -7,14 +7,13 @@ from types import ModuleType
 from ..ats import detect_ats
 from ..errors import NeedsUser
 
-MANUAL = {"icims": "iCIMS", "smartrecruiters": "SmartRecruiters", "taleo": "Taleo",
-          "successfactors": "SuccessFactors"}
+MANUAL = {"smartrecruiters": "SmartRecruiters", "taleo": "Taleo", "successfactors": "SuccessFactors"}
 
 
 def adapter_for(url: str, purpose: str = "apply") -> ModuleType:
     """The adapter for a posting link. `purpose` "resume" only reads the posting (no form), so sites helper never
     fills can still give their job description for a resume and cover letter."""
-    from . import ashby, generic, greenhouse, lever, workday
+    from . import ashby, generic, greenhouse, icims, lever, workday
 
     ats = detect_ats(url)
     if ats == "greenhouse" or greenhouse.parse_ref(url):
@@ -25,6 +24,8 @@ def adapter_for(url: str, purpose: str = "apply") -> ModuleType:
         return ashby
     if workday.parse_ref(url):
         return workday
+    if icims.parse_ref(url):
+        return icims
     if ats == "workday":
         raise NeedsUser("This Workday link isn't a job posting (it should contain /job/<location>/<title>_<id>). Open "
                         "the posting on Workday and use that link.")
@@ -42,6 +43,7 @@ def adapter_for(url: str, purpose: str = "apply") -> ModuleType:
 
 def manual_stop(site: str, url: str) -> NeedsUser:
     return NeedsUser(f"helper doesn't fill {site} applications: they need an account at each company, and helper never "
-                     "creates one there (rule 8; the account exception covers Workday only). Apply in your own browser. "
+                     "creates one there (rule 8; the account exceptions cover Workday and iCIMS only). Apply in your "
+                     "own browser. "
                      f"helper still builds the tailored resume and cover letter from this posting: `helper resume {url}`. "
                      "After you apply, `helper mark <id> applied` logs it.")

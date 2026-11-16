@@ -14,7 +14,7 @@ headless: false
 master_list: null               # null = newest data/master_list_v*.md
 db_path: helper.db              # SQLite system of record (git-ignored)
 latex_engine: pdflatex          # pdflatex | xelatex
-immediate_start_target: "December 2026"   # spec section 8: immediate-start full-time roles are checked against this
+immediate_start_target: "May 2027"   # spec section 8: immediate-start full-time roles are checked against this (Vatsal, 2026-11-15: full-time from May)
 match_auto_threshold: 0.85      # field matcher: fill automatically at or above this confidence
 match_ask_threshold: 0.60       # between the two thresholds: ask you. Below: unknown (pauses if required)
 fill_wait_timeout_minutes: 30   # how long a fill run keeps the browser open waiting for answers or your submit

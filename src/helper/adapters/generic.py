@@ -56,13 +56,17 @@ DISCOVER_JS = r"""
     return '';
   };
   const wrapper = members => {  // the widest ancestor holding these controls and no other question's
-    let w = members[0].parentElement, best = w;
+    let w = members[0].parentElement, best = null;
     for (let i = 0; i < 6 && w && w !== document.body; i++, w = w.parentElement) {
       const inside = [...w.querySelectorAll('input, select, textarea')].filter(x => !skipType((x.type || '').toLowerCase()));
       if (inside.some(x => !members.includes(x))) break;
       best = w;
     }
-    return best;
+    if (best) return best;
+    // no wrapper of its own (fields side by side in one parent): a single field is tagged itself, so tagging the
+    // next field doesn't overwrite it
+    const kind = (members[0].type || '').toLowerCase();
+    return members.length === 1 && !['radio', 'checkbox'].includes(kind) ? members[0] : members[0].parentElement;
   };
   const nearbyLabel = (box, members) => {
     const fs = members[0].closest('fieldset');
@@ -143,7 +147,7 @@ def _ld_location(place: Any) -> Optional[str]:
     if not isinstance(address, dict):
         return None
     parts = [address.get("addressLocality"), address.get("addressRegion")]
-    return ", ".join(p for p in parts if isinstance(p, str) and p.strip()) or None
+    return ", ".join(p for p in parts if isinstance(p, str) and p.strip() and p.strip().upper() != "UNAVAILABLE") or None
 
 
 def job_posting_ld(blocks: list[str]) -> Optional[Scan]:
@@ -315,7 +319,7 @@ def scan_page(page: Any) -> Scan:
             if robot_check(page):
                 scan.robot_check = urlparse(page.url).hostname or page.url
                 return scan
-            if _manual_site(page.url):
+            if _applies_elsewhere(page.url):
                 scan.apply_url = page.url
                 return scan
             form = _form_frame(page)
@@ -344,11 +348,18 @@ def robot_check(page: Any) -> bool:
 
 
 def _manual_site(url: str) -> Optional[str]:
-    """iCIMS, Taleo, SmartRecruiters or SuccessFactors: sites helper never fills (rule 8)."""
+    """Taleo, SmartRecruiters or SuccessFactors: sites helper never fills (rule 8)."""
     from ..ats import detect_ats
     from . import MANUAL
 
     return MANUAL.get(detect_ats(url))
+
+
+def _applies_elsewhere(url: str) -> bool:
+    """An Apply button that leads to a site with accounts: iCIMS (helper fills it) or one helper never fills."""
+    from . import icims
+
+    return bool(_manual_site(url) or icims.parse_ref(url))
 
 
 def _settle(page: Any) -> None:
@@ -434,7 +445,7 @@ def read_html(url: str, session: Optional[Any] = None) -> Optional[Scan]:
         return None
     links = _apply_links(html, url)
     found.delegate = known_link(links)
-    found.apply_url = next((link for link in links if _manual_site(link)), None)
+    found.apply_url = next((link for link in links if _applies_elsewhere(link)), None)
     return found
 
 

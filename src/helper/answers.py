@@ -115,6 +115,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("terms_consent", r"\b(read and accept|accept the|acknowledge (the|that)|agree to the)\b.{0,100}\b(privacy|terms|notice|"
                       r"policy|conditions)\b|\b(privacy|data protection) (notice|policy)\b.{0,60}\b(accept|acknowledge|"
                       r"agree|consent)\b", 0.9),
+    ("relatives_at_company", r"\b(relatives?|family members?|immediate family|related to (anyone|someone|a person))\b"
+                             r".{0,120}\b(employ\w*|work\w*|board)\b", 0.95),
     ("employment_restrictions", r"\bnon-?compete\b|\bemployment restrictions?\b|\brestrictive covenants?\b|"
                                 r"\bnon-?solicit", 0.9),
     ("keep_for_other_roles", r"\bretain\w*\b.{0,80}\b(future|other|alternative)\b.{0,40}\b(roles?|opportunit\w*|"
@@ -153,7 +155,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("school", r"\bschool\b|\buniversity\b|\bcollege\b|\binstitution\b", 0.85),
     ("relocate_from", r"\b(moving|relocat\w*|move) from\b|\bcity,? state,? (and )?zip\b", 0.9),
     ("relocate", r"\breloca", 0.9),
-    ("start_date", r"\bstart date\b|\bwhen can you (start|begin)\b|\bavailab\w* to (start|begin)\b"
+    ("start_date", r"\bstart date\b|\bwhen (can|could|would|will) you (be able to |be available to )?(start|begin)\b"
+                   r"|\bavailab\w* to (start|begin)\b"
                    r"|\bearliest\b.*\b(start|begin)\b", 0.9),
     ("salary", r"\bsalary\b|\bcompensation\b|\bpay (expectation|range)s?\b|\bwages?\b|"
                r"\b(desired|expected|hourly|annual)\b.{0,20}\b(pay|rate|wage)\b", 0.9),
@@ -173,7 +176,7 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                       r"|city)\b|\bwork (location|arrangement)\b", 0.95),
     ("address_zip", r"\bzip\b|\bpostal\b", 0.9),
     ("address_full", r"\b(mailing|home|current|full|permanent|residential) address\b", 0.9),
-    ("address_line2", r"\baddress line 2\b|^\s*(apartment|apt|suite|unit)\b", 0.85),
+    ("address_line2", r"\baddress (line )?2\b|^\s*(apartment|apt|suite|unit)\b", 0.85),
     ("address_street", r"\bstreet\b|\baddress line\b|\bmailing address\b|\bhome address\b|^\s*address\s*$", 0.85),
     ("address_country", r"^\s*country\b", 0.85),
     ("address_state", r"^\s*(state|province)\b", 0.85),
@@ -285,7 +288,8 @@ def posted_pay(text: str) -> Optional[Pay]:
 
 
 def salary_answer(q: FormQuestion, pay: Pay) -> str:
-    """The posting's pay for this question: hourly or monthly when it asks that way, otherwise a year; rounded."""
+    """The posting's pay for this question, as a plain number: hourly or monthly when it asks that way, otherwise a
+    year; rounded."""
     asked = "hour" if re.search(r"(?i)hour", q.label) else "month" if re.search(r"(?i)month", q.label) else "year"
     if asked == "hour":
         value = round(pay.yearly / 2080)
@@ -293,9 +297,7 @@ def salary_answer(q: FormQuestion, pay: Pay) -> str:
         value = round(pay.yearly / 12 / 100) * 100
     else:
         value = round(pay.yearly / 1000) * 1000
-    if q.type == "number":
-        return str(value)
-    return f"${value:,}" + {"hour": " per hour", "month": " per month", "year": ""}[asked]
+    return str(value)  # digits only: number boxes (iCIMS: "only the digits 0 to 9") reject "$36 per hour"
 
 
 _NEGATIVE_CHOICE = re.compile(r"(?i)\bwithout\b|\bnot\b|n['\u2019]t\b|\bdecline\b|\bopt(?:[- ])?out\b|^\s*no\b|\brefuse\b")
@@ -425,6 +427,13 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value(t1.work_location_preferences, "profile work_location_preferences",
                      aliases=("either", "any", "no preference", "open to", "flexible", "all locations", "both"))
     if key == "start_date":
+        if q.options:  # Vatsal, 2026-11-15: internships can start now (he's free from January); full-time in May
+            now = [o for o in q.options if re.search(r"(?i)\b(start(ing)? now|immediately|right away|asap|as soon as)\b", o)]
+            summer = [o for o in q.options if re.search(r"(?i)\bsummer\b|\bmay\b", o)]
+            pick = now if ctx.employment == "internship" else summer if ctx.employment == "full_time" else []
+            if len(pick) == 1:
+                return Value(pick[0], "rule: internships can start now, full-time roles in the summer (Vatsal, "
+                                      "2026-11-15)", confidence=0.95)
         return _start_date(ctx)
     if key == "salary":
         pay = posted_pay(ctx.job.description_text) if t2.salary_from_posting else None
@@ -433,6 +442,13 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return tier2(t2.salary_expectation, "salary_expectation")
     if key == "employment_restrictions":
         return tier2(t2.employment_restrictions, "employment_restrictions")
+    if key == "relatives_at_company":  # Vatsal, 2026-11-15: none, always ("N/A" where a written answer is asked)
+        given = tier2(t2.relatives_at_company, "relatives_at_company",
+                      aliases=("no", "none", "n/a", "not applicable", "i do not", "no relatives"))
+        none = (given.text or "").strip().lower() in ("no", "none", "n/a")
+        if none and not q.options and q.type in ("text", "textarea"):
+            return Value("N/A", given.source, confidence=given.confidence)
+        return given
     if key in ("ai_consent", "keep_for_other_roles"):
         item = t2.ai_screening_consent if key == "ai_consent" else t2.keep_for_other_roles
         name = "ai_screening_consent" if key == "ai_consent" else "keep_for_other_roles"

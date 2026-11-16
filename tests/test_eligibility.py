@@ -9,6 +9,7 @@ from typing import Optional
 import pytest
 import yaml
 
+from helper.dates import parse_month_year
 from helper.eligibility import (
     CompanyApplication,
     Eligibility,
@@ -112,8 +113,11 @@ def test_semester_roles_raise_the_cpt_hours_question() -> None:
 def test_immediate_start_is_checked_against_the_target() -> None:
     title = "New Grad Software Engineer"
     text = "We need someone who can start immediately."
-    assert levels(check(text, title=title))["immediate_start"] == "warning"
-    assert "immediate_start" not in levels(check(text, title=title, today=date(2027, 1, 10)))
+    target = parse_month_year(CFG.immediate_start_target)
+    assert levels(check(text, title=title))["immediate_start"] == "warning"  # full-time: from the target month
+    assert "immediate_start" not in levels(check(text, title=title, today=date(target.year, target.month, 10)))
+    # internships can start now (Vatsal, 2026-11-15: free from January)
+    assert levels(check(text, title="Software Engineer Intern"))["immediate_start"] == "note"
 
 
 # --------------------------------------------------------------------------- 4. graduation date

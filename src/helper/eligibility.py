@@ -464,7 +464,10 @@ def check_eligibility(
              "the semester: ask how many hours a week it needs.")
     immediate = _matching(sentences, _IMMEDIATE_RE)
     target = parse_month_year(cfg.immediate_start_target)
-    if immediate and target and (today.year, today.month) < (target.year, target.month):
+    if immediate and employment == "internship":  # Vatsal, 2026-11-15: internships can start now (free from January)
+        flag("immediate_start", "note", "It wants an immediate start; fine for an internship (you can start now).",
+             immediate)
+    elif immediate and target and (today.year, today.month) < (target.year, target.month):
         flag("immediate_start", "warning", f"It wants an immediate start; your target for immediate-start roles is "
              f"{cfg.immediate_start_target}.", immediate)
 

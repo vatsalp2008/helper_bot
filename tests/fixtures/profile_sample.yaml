@@ -92,6 +92,9 @@ tier2:
   employment_restrictions:
     auto_answer: false
     value: null
+  relatives_at_company:
+    auto_answer: false
+    value: null
 
 documents:
   transcript: null
