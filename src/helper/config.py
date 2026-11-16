@@ -11,7 +11,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from .errors import HelperError
+from .errors import HelperError, problems
 from .models import Config
 
 ROOT_ENV_VAR = "HELPER_ROOT"
@@ -143,7 +143,9 @@ class Paths:
 
 def load_yaml(path: Path) -> Any:
     if not path.is_file():
-        raise HelperError(f"Missing file: {path}")
+        hint = {"profile.yaml": " Run `helper setup` to create it from data/profile.example.yaml, then fill it in.",
+                "master.yaml": " Run `helper convert` to build it from the master list."}.get(path.name, "")
+        raise HelperError(f"Missing file: {path}.{hint}")
     try:
         with path.open(encoding="utf-8") as fh:
             return yaml.safe_load(fh)
@@ -156,7 +158,7 @@ def load_config(paths: Paths) -> Config:
     try:
         return Config.model_validate(data)
     except ValidationError as exc:
-        raise HelperError(f"config.yaml is invalid:\n{exc}") from exc
+        raise HelperError(f"config.yaml has problems:\n{problems(exc)}") from None
 
 
 def read_env_file(path: Path) -> dict[str, str]:

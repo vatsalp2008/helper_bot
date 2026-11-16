@@ -11,7 +11,7 @@ from typing import Any, Optional
 from pydantic import ValidationError
 
 from .config import Paths
-from .errors import HelperError
+from .errors import HelperError, problems
 from .models import RunState, StepState, StepStatus
 from .tracker.db import now_iso
 
@@ -57,7 +57,7 @@ def load_state(paths: Paths, run_id: str) -> RunState:
     try:
         return RunState.model_validate(read_json(path))
     except ValidationError as exc:
-        raise HelperError(f"{rel(paths, path)} is damaged: {exc}") from None
+        raise HelperError(f"{rel(paths, path)} is damaged:\n{problems(exc)}") from None
 
 
 def save_state(paths: Paths, state: RunState) -> Path:

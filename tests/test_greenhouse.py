@@ -103,4 +103,31 @@ def test_tracking_parameters_are_dropped() -> None:
 
     url = "https://www.nuro.ai/careersitem?gh_jid=8360415&fbclid=PAdGRleAVkcVpl&utm_source=x#top"
     assert clean_url(url) == "https://www.nuro.ai/careersitem?gh_jid=8360415"
+    assert clean_url("https://job-boards.greenhouse.io/embed/job_app?for=lyft&token=8796124002&jr_id=6aa46ddd1d92e2d0") \
+        == "https://job-boards.greenhouse.io/embed/job_app?for=lyft&token=8796124002"
     assert gh.parse_ref(clean_url(url)) == gh.GreenhouseRef(None, "8360415")
+
+
+def test_a_company_page_names_its_own_board() -> None:
+    page = ('<script src="https://boards.greenhouse.io/embed/job_board/js?for=current81"></script>'
+            "<script>fetch(`https://boards-api.greenhouse.io/v1/boards/current81/jobs/${id}`)</script>"
+            '<a href="https://job-boards.greenhouse.io/embed/job_app?for=current81&amp;token=1">x</a>')
+    assert gh.boards_on_page(page) == ["current81"]
+    assert gh.boards_on_page('<a href="https://job-boards.greenhouse.io/acme/jobs/12">Apply</a>') == ["acme"]
+
+    class Page(FakeResponse):
+        text = page
+
+    class Session(FakeSession):
+        def get(self, url: str, params: Any = None, timeout: int = 0) -> FakeResponse:
+            if "/boards/" not in url:  # the company's own careers page
+                self.asked.append(url)
+                return Page(200)
+            return super().get(url, params, timeout)
+
+    session = Session({"current81": {**FIGMA, "company_name": "Current"}})
+    job = gh.fetch_job("https://current.com/careers/open-positions/?id=6178851004&gh_jid=6178851004", session)
+    assert job.company == "Current" and job.apply_url == "https://job-boards.greenhouse.io/current81/jobs/6178851004"
+    assert [u.split("/boards/")[-1] for u in session.asked] == [
+        "current/jobs/6178851004", "https://current.com/careers/open-positions/?id=6178851004&gh_jid=6178851004",
+        "current81/jobs/6178851004"]

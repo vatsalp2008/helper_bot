@@ -10,7 +10,7 @@ from typing import Optional
 from pydantic import ValidationError
 
 from .config import Paths, load_yaml
-from .errors import HelperError
+from .errors import HelperError, problems
 from .latex import CompileResult, OverfullBox, compile_tex, find_binary
 from .master import load_master
 from .models import Config, Profile, ResumeMetaFile, TailorOutput
@@ -101,13 +101,14 @@ def render_sample(paths: Paths, cfg: Config, tailor_path: Path, out_dir: Path) -
     try:
         tailor = TailorOutput.model_validate_json(tailor_path.read_text(encoding="utf-8"))
     except (OSError, ValidationError) as exc:
-        raise HelperError(f"{tailor_path}: not a valid tailor_output.json: {exc}") from None
+        raise HelperError(f"{tailor_path}: not a valid tailor_output.json:\n"
+                          f"{problems(exc) if isinstance(exc, ValidationError) else exc}") from None
     master = load_master(paths, cfg)
     meta = ResumeMetaFile.model_validate(load_yaml(paths.resume_meta))
     try:
         profile = Profile.model_validate(load_yaml(paths.profile))
     except ValidationError as exc:
-        raise HelperError(f"data/profile.yaml: the header must be filled in to render a resume: {exc}") from None
+        raise HelperError(f"data/profile.yaml needs these filled in before helper can render a resume (see data/profile.example.yaml):\n{problems(exc)}") from None
     tex_source = render_tex(build_content(tailor, master, meta, profile.header), paths.resume_template)
     tex_path = write_tex(tex_source, out_dir / f"{tailor_path.stem}.tex")
     compiled = compile_tex(tex_path, engine=cfg.latex_engine)

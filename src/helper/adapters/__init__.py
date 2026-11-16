@@ -36,8 +36,12 @@ def adapter_for(url: str, purpose: str = "apply") -> ModuleType:
     if ats in MANUAL:
         if purpose == "resume":
             return generic  # the posting page is public: read its job description
-        raise NeedsUser(f"helper doesn't fill {MANUAL[ats]} applications: they need an account at each company, and "
-                        "helper never creates one there (rule 8; the account exception covers Workday only). Apply in "
-                        "your own browser. helper still builds the tailored resume and cover letter from this posting: "
-                        f"`helper resume {url}`. After you apply, `helper mark <id> applied` logs it.")
+        raise manual_stop(MANUAL[ats], url)
     return generic  # anything else: the best-effort adapter, which always stops before Submit
+
+
+def manual_stop(site: str, url: str) -> NeedsUser:
+    return NeedsUser(f"helper doesn't fill {site} applications: they need an account at each company, and helper never "
+                     "creates one there (rule 8; the account exception covers Workday only). Apply in your own browser. "
+                     f"helper still builds the tailored resume and cover letter from this posting: `helper resume {url}`. "
+                     "After you apply, `helper mark <id> applied` logs it.")

@@ -49,7 +49,8 @@ def fetch_job(url: str, session: Optional[Any] = None,
         try:
             r = session.get(f"{API}/{candidate}", params={"includeCompensation": "true"}, timeout=30)
         except requests.RequestException as exc:
-            raise HelperError(f"can't reach Ashby ({type(exc).__name__})") from None
+            raise HelperError(f"Couldn't reach Ashby ({type(exc).__name__}). Check your internet connection and "
+                          "try again.") from None
         if r.status_code != 200:
             continue
         job = next((j for j in r.json().get("jobs", []) if str(j.get("id", "")).lower() == job_id), None)

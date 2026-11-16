@@ -55,8 +55,8 @@ def test_a_known_system_gets_the_posting(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_a_page_without_a_description_asks_for_the_text() -> None:
     from helper.errors import HelperError
 
-    with pytest.raises(HelperError, match="--jd-file"):
-        generic.fetch_job("https://acme.com/careers/42", scan=lambda url: generic.Scan())
+    with pytest.raises(HelperError, match="--jd-file"):  # nor does the page's own HTML have a JobPosting
+        generic.fetch_job("https://acme.com/careers/42", FakeSession({}), scan=lambda url: generic.Scan())
 
 
 playwright_api = pytest.importorskip("playwright.sync_api")
@@ -199,3 +199,86 @@ def test_blocked_closed_or_empty_pages_are_not_used_as_a_description() -> None:
     assert not generic.readable("Access Denied", "You don't have permission to access this page. " * 20)
     assert not generic.readable("Engineer Intern", "This position is no longer available. " + "More text. " * 60)
     assert not generic.readable("www.example.com", "Loading")
+
+
+# --------------------------------------------------------------------------- pages that turn helper's browser away
+
+
+class FakePage:
+    def __init__(self, status: int, text: str = "") -> None:
+        self.status_code, self.text = status, text
+
+
+class FakeSession:
+    def __init__(self, pages: dict[str, FakePage]) -> None:
+        self.pages, self.asked = pages, []
+
+    def get(self, url: str, params: Any = None, timeout: int = 0) -> FakePage:
+        self.asked.append(url)
+        return self.pages.get(url, FakePage(404))
+
+
+JIBE_URL = "https://mockbank.jibeapply.com/jobs/6233"
+QUALIFICATIONS = "".join(f"<li>Experience building {t} services in Python with FastAPI, SQL and Docker.</li>"
+                         for t in ("retrieval", "agent", "evaluation", "ingestion", "search", "reporting", "billing"))
+JIBE_PAGE = ("<html><head><script type=\"application/ld+json\">" + json.dumps({
+    "@context": "http://schema.org", "@type": "JobPosting", "title": "Machine Learning Engineer",
+    "description": "<p>Job ID 2026-6233<br>Type: Full-Time</p>", "qualifications": f"<ul>{QUALIFICATIONS}</ul>",
+    "skills": "UNAVAILABLE", "hiringOrganization": {"@type": "Organization", "name": "Mockbank of Florida"},
+    "jobLocation": {"@type": "Place", "address": {"addressLocality": "Coral Gables", "addressRegion": "Florida"}},
+}) + "</script><script>window._jibe = {\"apply_url\":\"https:\\/\\/careers-mockbank.icims.com\\/jobs\\/6233\\/login\"};"
+    "</script></head><body><div ng-app></div></body></html>")
+
+
+def test_a_page_s_jobposting_data_gives_the_employer_and_description() -> None:
+    found = generic.job_posting_ld([JIBE_PAGE.split('ld+json">')[1].split("</script>")[0]])
+    assert (found.title, found.company, found.location) == ("Machine Learning Engineer", "Mockbank of Florida",
+                                                            "Coral Gables, Florida")
+    assert "- Experience building retrieval services" in found.description and "UNAVAILABLE" not in found.description
+    assert generic.job_posting_ld(['{"@type": "Organization", "name": "Mockco"}', "not json"]) is None
+
+
+def test_when_the_browser_is_turned_away_the_page_itself_is_read() -> None:
+    session = FakeSession({JIBE_URL: FakePage(200, JIBE_PAGE)})
+    job = generic.fetch_job(JIBE_URL, session, scan=lambda url: generic.Scan(title="403 Forbidden",
+                                                                             description="403 Forbidden"))
+    assert (job.company, job.role_title, job.location) == ("Mockbank of Florida", "Machine Learning Engineer",
+                                                           "Coral Gables, Florida")
+    assert job.apply_url == "https://careers-mockbank.icims.com/jobs/6233/login" and session.asked == [JIBE_URL]
+
+
+def test_a_company_page_that_applies_on_icims_gets_the_stop_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    from helper import apply
+
+    session, real = FakeSession({JIBE_URL: FakePage(200, JIBE_PAGE)}), generic.fetch_job
+    turned_away = generic.Scan(description="403 Forbidden")
+    monkeypatch.setattr(generic, "fetch_job", lambda url: real(url, session, scan=lambda u: turned_away))
+    with pytest.raises(NeedsUser, match="helper doesn't fill iCIMS") as stop:
+        apply.fetch_job(JIBE_URL + "?jr_id=6adb96c6389e06bb41ad2d1f")
+    assert f"helper resume {JIBE_URL}`" in str(stop.value)  # the tracking tag is gone
+    assert apply.fetch_job(JIBE_URL, purpose="resume").company == "Mockbank of Florida"
+
+
+def test_an_apply_link_that_ends_at_a_robot_check_is_left_to_vatsal() -> None:
+    with pytest.raises(NeedsUser, match="us.bigjobs.example.*check you are not a robot.*rule 6"):
+        generic.fetch_job("https://jobs.example.com/x/1", FakeSession({}), scan=lambda url: generic.Scan(
+            title="SQL Developer", description="x" * 600, robot_check="us.bigjobs.example"))
+
+
+def test_a_robot_check_page_is_recognized(browser: Any) -> None:
+    page = browser.new_page()
+    page.set_content("<body><p>You are now being redirected.</p><p>First we just need to check you are not a robot"
+                     "</p></body>")
+    assert generic.robot_check(page)
+    page.set_content("<body><p>We build robots for warehouses.</p></body>")
+    assert not generic.robot_check(page)
+    page.close()
+
+
+def test_an_apply_link_that_opens_a_new_tab_is_followed(browser: Any) -> None:
+    page = browser.new_page()
+    page.goto(f"file://{(FIXTURES / 'generic_apply_new_tab.html').resolve()}")
+    scan = generic.scan_page(page)
+    assert scan.title == "Data Engineer Intern" and scan.apply_url == FORM
+    assert [q.label for q in scan.questions][:3] == ["First name", "Last name", "Email address"]
+    page.context.close()  # and the tab the Apply link opened

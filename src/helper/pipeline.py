@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from .ats import detect_ats, job_id_from_url
 from .config import Paths, load_yaml
 from .eligibility import Eligibility, Flag, check_eligibility, format_eligibility, load_applications
-from .errors import HelperError, NeedsUser, WaitingForClaude
+from .errors import HelperError, NeedsUser, WaitingForClaude, problems
 from .keywords import Keywords, extract_keywords
 from .latex import compile_tex
 from .models import CapsFile, Config, Job, Profile, RunState, TailorOutput
@@ -235,7 +235,7 @@ def continue_run(paths: Paths, cfg: Config, run_id: str, build_anyway: bool = Fa
     try:
         profile = Profile.model_validate(load_yaml(paths.profile))
     except ValidationError as exc:
-        raise HelperError(f"data/profile.yaml: the header must be filled in to render a resume: {exc}") from None
+        raise HelperError(f"data/profile.yaml needs these filled in before helper can render a resume (see data/profile.example.yaml):\n{problems(exc)}") from None
     content = build_content(out, ctx.master, ctx.meta, profile.header)
     tex_source = render_tex(content, paths.resume_template)
     base = resume_basename(profile.header.name)  # VatsalPatel_Resume, the name recruiters see

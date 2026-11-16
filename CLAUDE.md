@@ -7,6 +7,7 @@ helper is Vatsal's local job-application tool. The full spec is `helper_claude_c
 - This interactive session is the only reasoning engine. Each judgment step is a file handoff: helper writes an input file in `runs/<run_id>/`, Claude writes the output file, and helper validates it.
 - Exit code 3 means "waiting for Claude". The message names the file to read and the file to write; after writing it, run `helper continue <run_id>`.
 - Exit code 4 means paused for Vatsal: an eligibility blocker, CAPTCHA, or unknown required field (caps only flag). Tell him why; don't work around it. After an eligibility pause, run `helper continue <run_id> --build-anyway` only when he says build.
+- "helper hit an unexpected error" is a bug in helper: read `~/.helper/last_error.txt` (or rerun with `HELPER_DEBUG=1`), fix the code, add a test. Other failures already come with a plain message that says what to do. Exit 130 is Ctrl+C.
 - Everything else is deterministic Python: Playwright, SQLite, the Notion REST API, LaTeX.
 - If a Claude feature is blocked on this seat (Claude in Chrome, connectors), say so and use plain Playwright.
 
@@ -82,15 +83,17 @@ Enforce these in code, not only in instructions.
 - **Profile values:** "ask" means ask Vatsal every time. "per_run" means decided per application. `data/profile.yaml` is git-ignored.
 - **Location data:** experience locations and project display names live in `data/resume_meta.yaml`, because the master list doesn't have them.
 
-## Applying (milestones 7 and 8)
-Supported sites: Greenhouse, Lever, Ashby and Workday, plus the generic adapter for any other site (milestone 10).
+## Applying
+Supported sites: Greenhouse, Lever, Ashby and Workday, plus the generic adapter for any other site.
 - **The generic adapter:** finds a Greenhouse, Lever, Ashby or Workday posting behind a company's own page and hands it over. Otherwise it reads the page's form by its labels, always stops before Submit, and never auto-submits. A sign-in wall or a blocked page is left to Vatsal.
-- **Stopped sites:** iCIMS, Taleo, SmartRecruiters and SuccessFactors are never filled (accounts, rule 8). `helper resume <link>` still builds their resume and cover letter from the posting.
+- **Stopped sites:** iCIMS, Taleo, SmartRecruiters and SuccessFactors are never filled (accounts, rule 8). `helper resume <link>` still builds their resume and cover letter from the posting. A company page whose Apply button leads to one of them (Jibe pages lead to iCIMS) gets the same stop message.
+- **Bot filters:** helper identifies itself honestly. Never disguise its browser or requests (user agent, stealth tricks) to get past a site that turns it away. A robot check, a blocked page or a sign-in wall goes to Vatsal, or use `--jd-file`.
+- **Job boards that relay postings** (divulgavagas, thebigjobsite and the like) aren't the employer's posting. Before tailoring, check that the company helper read is the real employer; if it isn't, ask Vatsal for the employer's own link.
 1. `helper apply <link>` goes through eligibility (exit 4 pauses), then the tailor handoff (exit 3). Then `helper continue <run_id>`.
 2. After the resume is built, the answers handoff starts: read `questions_needed.json` and write `answers_provided.json`, as `{"answers": [{"field", "answer"}]}`.
    - Drafts use master-list facts and the job description only. Dropdown answers must be one of the options.
    - Leave out anything only Vatsal can answer.
-3. `helper continue` then pauses (exit 4) so Vatsal can review. Show him every draft. Run `helper continue <run_id> --approve-answers` only after he approves.
+3. `helper continue` then pauses (exit 4) so Vatsal can review. Show him every draft. Run `helper continue <run_id> --approve-answers` only after he approves. When every answer came from the profile or a rule, helper approves the plan itself and there is no pause.
 4. Then run `helper fill <run_id>` in the background (run_in_background). It opens a visible Chromium window on Vatsal's screen, fills the form, and never clicks Submit. It waits up to `fill_wait_timeout_minutes` for him to submit, then logs to SQLite, Notion and CSV. Report the result when the task exits.
 - **Workday runs** differ: `helper continue` ends right after the resume, because Workday shows its questions page by page.
   1. Run `helper fill <run_id>` in the background, and watch its output for "waiting for Claude" (a background until-loop that greps the output file).
@@ -99,7 +102,7 @@ Supported sites: Greenhouse, Lever, Ashby and Workday, plus the generic adapter 
   4. It stops on the Review page; Vatsal submits.
 - Never type Vatsal's data into a live form outside a run he started. Live checks use the fictional test profile and never submit.
 
-## Auto-submit (milestone 9)
+## Auto-submit
 - **Off by default** (`submit_mode: review` in config.yaml). Turn it on only when Vatsal asks: `helper apply <url> --mode auto` for one run, or `submit_mode: auto` in config.yaml for every run.
 - **The gate:** in auto mode helper clicks Submit itself, once and never again (rule 10), only if every spec 10.5 condition holds:
   - the site has at least `auto_submit_min_clean_runs` (5) clean review-mode runs;
@@ -108,15 +111,16 @@ Supported sites: Greenhouse, Lever, Ashby and Workday, plus the generic adapter 
   - no CAPTCHA or verification step appeared, and the form shows no errors.
   Otherwise the run falls back to review mode and says why.
 - **Clean runs:** every fill is logged in SQLite (`fill_runs`). A review run is clean when the submit was confirmed and helper filled every field with nothing for Vatsal to fix. `helper stats` shows each site's count.
-- **Workday is always review-only.** The generic adapter (milestone 10) will never auto-submit either.
+- **Workday is always review-only.** The generic adapter never auto-submits either.
 
-## Tracker and Notion (milestone 6)
+## Tracker and Notion
 - `helper.db` (SQLite) is the system of record, and it holds Vatsal's imported Notion history.
 - Notion receives only sent applications (status applied or later), in the seven columns of `data/notion_mapping.yaml`. Never create Notion columns, never touch Deadline/Referral/Referral name, and never write test rows without asking.
-- Until milestone 7 automates submitting, run `helper mark <id> applied` after Vatsal applies by hand.
+- When Vatsal applies outside helper (iCIMS and the other stopped sites, or by hand), run `helper mark <id> applied` once he says he submitted.
 
 ## Working conventions
 - Python 3.12 venv at `.venv`. Run `.venv/bin/helper ...` and `.venv/bin/pytest`.
-- The build follows spec section 13. After each milestone, run the tests, commit, push to `origin/main` (Vatsal approved this on 2026-11-13), show Vatsal the result, and wait for "continue". Outside milestone ends, commit only when he asks.
+- The spec 13 build is complete (milestones 1 to 11, 2026-11-15). Commit only when Vatsal asks; pushing to `origin/main` is approved (2026-11-13). Run the tests before every commit.
+- Run one `helper fill` at a time: it uses the single browser profile in `~/.helper/browser-profile`. Resumes for several postings can be tailored in parallel; their fills go one after another.
 - The GitHub repo is public by Vatsal's choice. `data/profile.yaml` stays git-ignored.
 - Never edit `data/master.yaml` by hand. It is generated by `helper convert`.

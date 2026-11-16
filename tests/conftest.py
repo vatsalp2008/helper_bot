@@ -9,17 +9,21 @@ REPO = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
+PERSONAL = ("profile.yaml", "grades.yaml", "answers.yaml", "certifications.yaml", "cover_letter_examples.md")
+
+
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A throwaway copy of config, data and templates, with HELPER_ROOT pointing at it.
 
-    The real data/profile.yaml is personal and never copied; tests use fixtures instead.
+    Only what a fresh clone has: Vatsal's personal, git-ignored files (profile, grades, remembered answers,
+    certificates, example letters) are never copied, so tests pass the same on any machine.
     """
     root = tmp_path / "repo"
     (root / "data").mkdir(parents=True)
     shutil.copytree(REPO / "templates", root / "templates")
     for path in (REPO / "data").iterdir():
-        if path.is_file() and path.name not in ("profile.yaml", "master.yaml"):
+        if path.is_file() and path.name not in PERSONAL + ("master.yaml",):
             shutil.copy(path, root / "data" / path.name)
     config = (REPO / "config.yaml").read_text(encoding="utf-8")
     config = config.replace("~/.helper/browser-profile", str(tmp_path / "browser-profile"))

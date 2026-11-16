@@ -30,8 +30,12 @@ def test_setup_creates_folders_database_and_profile_from_example(repo: Path) -> 
     for name in ("config.yaml", "SQLite", "master list", "courses.yaml", "answers.yaml",
                  "project_sets.yaml", "caps.yaml", "resume_meta.yaml"):
         assert _last(checks, name).status == "ok", name
-    assert _last(checks, "master.yaml").status == "warn"  # built in milestone 2
-    assert _last(checks, "Notion").status == "warn"  # connected in milestone 6
+    assert _last(checks, "master.yaml").status == "warn"  # `helper convert` builds it
+    assert _last(checks, "Notion").status == "warn"  # optional: set up in .env
+    # the personal answers file starts from the tracked example on a fresh clone
+    assert (repo / "data" / "answers.yaml").read_text(encoding="utf-8") == (
+        repo / "data" / "answers.example.yaml").read_text(encoding="utf-8")
+    assert "created from answers.example.yaml" in _last(checks, "answers.yaml").detail
 
 
 def test_setup_is_idempotent(repo: Path, sample_profile_text: str) -> None:

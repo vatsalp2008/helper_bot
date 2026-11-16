@@ -127,6 +127,46 @@ class Scan:
     questions: list[FormQuestion] = field(default_factory=list)
     delegate: Optional[str] = None  # a known applicant tracking system's posting link
     login_wall: bool = False
+    location: Optional[str] = None
+    robot_check: Optional[str] = None  # the site the Apply link led to, when it showed a robot check
+
+
+_LD_JS = "() => [...document.querySelectorAll('script[type=\"application/ld+json\"]')].map(s => s.textContent)"
+_LD_RE = re.compile(r"(?is)<script[^>]*type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>")
+_LD_TEXT_KEYS = ("description", "responsibilities", "qualifications", "skills", "experienceRequirements",
+                 "educationRequirements")
+
+
+def _ld_location(place: Any) -> Optional[str]:
+    place = place[0] if isinstance(place, list) and place else place
+    address = place.get("address") if isinstance(place, dict) else None
+    if not isinstance(address, dict):
+        return None
+    parts = [address.get("addressLocality"), address.get("addressRegion")]
+    return ", ".join(p for p in parts if isinstance(p, str) and p.strip()) or None
+
+
+def job_posting_ld(blocks: list[str]) -> Optional[Scan]:
+    """The schema.org JobPosting many career sites embed for search engines (title, employer, location, the full
+    description). Its employer is the hiring company even on a page a job board shows."""
+    for raw in blocks:
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        items = data if isinstance(data, list) else (data.get("@graph") or [data]) if isinstance(data, dict) else []
+        for item in items:
+            kind = item.get("@type") if isinstance(item, dict) else None
+            if "JobPosting" not in (kind if isinstance(kind, list) else [kind]):
+                continue
+            parts = [item.get(k) for k in _LD_TEXT_KEYS]
+            text = "\n\n".join(html_to_text(p) for p in parts
+                               if isinstance(p, str) and p.strip() and p.strip().upper() != "UNAVAILABLE")
+            org = item.get("hiringOrganization")
+            company = org.get("name") if isinstance(org, dict) else org if isinstance(org, str) else ""
+            return Scan(title=str(item.get("title") or "").strip(), company=str(company or "").strip(),
+                        description=text.strip(), location=_ld_location(item.get("jobLocation")))
+    return None
 
 
 def parse_ref(url: str) -> Optional[str]:
@@ -165,7 +205,15 @@ def read_posting(page: Any) -> tuple[str, str, str]:
     title = data["h1"] or data["ogtitle"] or data["title"]
     host = (urlparse(page.url).hostname or "").removeprefix("www.").removeprefix("careers.").removeprefix("jobs.")
     company = data["site"] or (host.split(".")[0].replace("-", " ").title() if host else "")
-    return title.strip(), company.strip(), data["text"].strip()
+    text = data["text"].strip()
+    try:
+        ld = job_posting_ld(page.evaluate(_LD_JS))
+    except Exception:
+        ld = None
+    if ld:  # the page's own JobPosting data names the employer, and its description has no menus or ads
+        return ld.title or title.strip(), ld.company or company.strip(), ld.description if readable(
+            ld.title, ld.description) else text
+    return title.strip(), company.strip(), text
 
 
 _FORM_SIZE_JS = r"""
@@ -191,9 +239,13 @@ def _has_form(root: Any) -> bool:
     return size["count"] >= 3 and size["key"]
 
 
-_UNREADABLE_RE = re.compile(r"(?i)access denied|page not found|\b404\b|no longer (available|accepting|open)|"
+_ROBOT = (r"are you a (human|robot)|verify you are (a )?human|(you are|you're|i'?m) not a robot|"
+          r"checking (if the site connection is secure|your browser)|just a moment\.\.\.|"
+          r"press (&|and) hold|security check to (continue|access)")
+_ROBOT_RE = re.compile(_ROBOT, re.I)
+_UNREADABLE_RE = re.compile(r"access denied|403 forbidden|page not found|\b404\b|no longer (available|accepting|open)|"
                             r"(job|position|posting) (has been |is )?(closed|filled|expired|removed)|"
-                            r"(enable|requires) javascript|are you a (human|robot)|verify you are human")
+                            r"(enable|requires) javascript|" + _ROBOT, re.I)
 
 
 def readable(title: str, description: str) -> bool:
@@ -251,19 +303,52 @@ def scan_page(page: Any) -> Scan:
     if delegate:
         return Scan(delegate=delegate)
     title, company, description = read_posting(page)
-    scan = Scan(title=title, company=company, description=description)
+    scan = Scan(title=title, company=company, description=description, location=_page_location(page))
     form = _form_frame(page)
-    if form is None and _click_apply(page):
-        delegate = known_link(_sources(page))
-        if delegate:
-            return Scan(delegate=delegate, title=title, company=company, description=description)
-        form = _form_frame(page)
+    if form is None:
+        opened = _click_apply(page, new_tab=True)
+        if opened is not None:
+            page = opened
+            delegate = known_link(_sources(page))
+            if delegate:
+                return Scan(delegate=delegate, title=title, company=company, description=description)
+            if robot_check(page):
+                scan.robot_check = urlparse(page.url).hostname or page.url
+                return scan
+            if _manual_site(page.url):
+                scan.apply_url = page.url
+                return scan
+            form = _form_frame(page)
     if form is None:
         scan.login_wall = _login_wall(page)
         return scan
     scan.apply_url = page.url
     scan.questions = discover(form)
     return scan
+
+
+def _page_location(page: Any) -> Optional[str]:
+    try:
+        ld = job_posting_ld(page.evaluate(_LD_JS))
+    except Exception:
+        return None
+    return ld.location if ld else None
+
+
+def robot_check(page: Any) -> bool:
+    """A "check you are not a robot" page (Cloudflare and the like). helper never gets past one (rule 6)."""
+    try:
+        return bool(_ROBOT_RE.search(page.locator("body").inner_text(timeout=3000)[:2000]))
+    except Exception:
+        return False
+
+
+def _manual_site(url: str) -> Optional[str]:
+    """iCIMS, Taleo, SmartRecruiters or SuccessFactors: sites helper never fills (rule 8)."""
+    from ..ats import detect_ats
+    from . import MANUAL
+
+    return MANUAL.get(detect_ats(url))
 
 
 def _settle(page: Any) -> None:
@@ -274,48 +359,123 @@ def _settle(page: Any) -> None:
     page.wait_for_timeout(800)
 
 
-def _click_apply(page: Any) -> bool:
-    """Follow the page's Apply link or button (reading only: nothing is typed)."""
+def _click_apply(page: Any, new_tab: bool = False) -> Optional[Any]:
+    """Follow the page's Apply link or button (reading only: nothing is typed) and return the page to read next.
+    With new_tab, a link that opens a new tab is clicked the way a person would (job boards often only allow that)
+    and the new tab is returned."""
     for el in page.locator("a, button, [role=button]").all()[:400]:
         try:
             if not el.is_visible() or not _APPLY_RE.match(el.inner_text(timeout=500) or ""):
                 continue
             href = el.get_attribute("href")
+            if new_tab and href and (el.get_attribute("target") or "").lower() == "_blank":
+                tab = _open_in_tab(page, el)
+                if tab is not None:
+                    return tab
             if href and not href.startswith(("#", "javascript")):
                 page.goto(urljoin(page.url, href), wait_until="domcontentloaded")
             else:
                 el.click()
             _settle(page)
-            return True
+            return page
         except Exception:
             continue
-    return False
+    return None
+
+
+def _open_in_tab(page: Any, el: Any) -> Optional[Any]:
+    try:
+        with page.context.expect_page(timeout=10000) as opened:
+            el.click()
+        tab = opened.value
+        tab.wait_for_load_state("domcontentloaded", timeout=30000)
+    except Exception:
+        return None
+    _settle(tab)
+    last = None
+    for _ in range(6):  # job boards pass through redirect pages: wait until the address stops changing
+        if tab.url == last:
+            break
+        last = tab.url
+        tab.wait_for_timeout(1500)
+    return tab
+
+
+_APPLY_URL_RE = re.compile(r"\"apply_?url\"\s*:\s*\"([^\"]+)\"", re.I)
+_ANCHOR_RE = re.compile(r"(?is)<a\b([^>]*)>(.*?)</a>")
+_HREF_RE = re.compile(r"""href=["']([^"']+)["']""", re.I)
+
+
+def _apply_links(html: str, base: str) -> list[str]:
+    """Where a page's Apply button goes, from its HTML: apply_url values in its data, and links that say Apply."""
+    links = [u.replace("\\/", "/") for u in _APPLY_URL_RE.findall(html)]
+    for attrs, inner in _ANCHOR_RE.findall(html):
+        href = _HREF_RE.search(attrs)
+        if href and re.search(r"(?i)\bapply\b", f"{re.sub(r'<[^>]+>', ' ', inner)} {attrs}"):
+            links.append(urljoin(base, href.group(1)))
+    return links
+
+
+def read_html(url: str, session: Optional[Any] = None) -> Optional[Scan]:
+    """The posting from the page's HTML alone, for sites that turn helper's hidden browser away (Jibe answers it with
+    403 Forbidden): its schema.org JobPosting data, and where its Apply button goes."""
+    import requests
+
+    session = session or requests.Session()
+    try:
+        r = session.get(url, timeout=30)
+    except requests.RequestException:
+        return None
+    if r.status_code != 200:
+        return None
+    html = r.text or ""
+    found = job_posting_ld(_LD_RE.findall(html))
+    if found is None:
+        return None
+    links = _apply_links(html, url)
+    found.delegate = known_link(links)
+    found.apply_url = next((link for link in links if _manual_site(link)), None)
+    return found
+
+
+def _handed_over(link: str) -> Optional[Job]:
+    from . import adapter_for
+
+    adapter = adapter_for(link)
+    return adapter.fetch_job(link) if adapter.__name__ != __name__ else None
 
 
 def fetch_job(url: str, session: Optional[Any] = None, scan: Callable[[str], Scan] = scan_posting) -> Job:
     from ..ats import detect_ats
-    from ..errors import HelperError
+    from ..errors import HelperError, NeedsUser
 
     result = scan(url)
-    if result.delegate:
-        from . import adapter_for
-
-        adapter = adapter_for(result.delegate)
-        if adapter.__name__ != __name__:
-            return adapter.fetch_job(result.delegate)
+    if result.robot_check:
+        raise NeedsUser(f"This posting's Apply link leads to {result.robot_check}, which shows a \"check you are not a "
+                        "robot\" page, and helper never gets past those (rule 6). Open the link in your browser, click "
+                        "Apply, and send me the employer's own posting link. To build the resume from this page "
+                        "anyway, save its description and run `helper resume --jd-file <file> --company <employer> "
+                        "--role <role>`.")
+    if result.delegate and (job := _handed_over(result.delegate)) is not None:
+        return job
+    if not readable(result.title, result.description):
+        fallback = read_html(url, session)
+        if fallback is not None and fallback.delegate and (job := _handed_over(fallback.delegate)) is not None:
+            return job
+        result = fallback or result
     if not readable(result.title, result.description):
         raise HelperError(f"couldn't read a job description at {url} (the site blocked helper's browser, the posting "
                           "is closed, or the page was empty). Save the description to a file and use `--jd-file`.")
     ats = detect_ats(url)
     return Job(url=url, ats=ats if ats != "unknown" else "generic", company=result.company or "Unknown",
-               role_title=result.title or "Unknown role", description_text=html_to_text(result.description)
-               if "<" in result.description else result.description, questions=result.questions,
-               source="page", fetched_at=now_iso(), apply_url=result.apply_url or url)
+               role_title=result.title or "Unknown role", location=result.location,
+               description_text=html_to_text(result.description) if "<" in result.description else result.description,
+               questions=result.questions, source="page", fetched_at=now_iso(), apply_url=result.apply_url or url)
 
 
 def find_form(page: Any, timeout_ms: int = 15000) -> Optional[Any]:
     form = common.find_form(page, ANCHORS, timeout_ms=timeout_ms)
-    if form is None and _click_apply(page):
+    if form is None and _click_apply(page) is not None:
         form = common.find_form(page, ANCHORS, timeout_ms=timeout_ms)
     return form
 

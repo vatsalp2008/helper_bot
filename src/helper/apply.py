@@ -22,7 +22,7 @@ from .answers import NOTE_STYLE, AnswerContext, AnswerPlan, PlannedAnswer, forma
 from .autosubmit import REVIEW_ONLY, Gate, blockers, clean_review_runs, record_fill_run, run_problems
 from .browser import browser_session, captcha_visible, make_pause
 from .config import Paths, env_value, load_yaml
-from .errors import HelperError, NeedsUser, WaitingForClaude
+from .errors import HelperError, NeedsUser, WaitingForClaude, problems
 from .models import AnswersFile, Config, Job, Profile
 from .runs import load_state, read_json, rel, run_dir, save_state, set_step, write_json
 from .validate import RunOptions, load_context
@@ -48,6 +48,13 @@ def fetch_job(url: str, jd_text: Optional[str] = None, purpose: str = "apply") -
 
     url = clean_url(url)
     job: Job = adapter_for(url, purpose).fetch_job(url)
+    if purpose == "apply" and job.apply_url:  # a company page whose Apply button leads to iCIMS, Taleo...
+        from .adapters import MANUAL, manual_stop
+        from .ats import detect_ats
+
+        site = MANUAL.get(detect_ats(job.apply_url))
+        if site:
+            raise manual_stop(site, url)
     if jd_text:  # rule 12: a job description Vatsal gave is used as is
         job = job.model_copy(update={"description_text": jd_text, "description_html": None})
     return job
@@ -64,12 +71,12 @@ def _context(paths: Paths, cfg: Config, run_id: str, job: Job) -> AnswerContext:
     try:
         profile = Profile.model_validate(load_yaml(paths.profile))
     except ValidationError as exc:
-        raise HelperError(f"data/profile.yaml is incomplete: {exc}") from None
+        raise HelperError(f"data/profile.yaml needs these filled in before helper can plan form answers (see data/profile.example.yaml):\n{problems(exc)}") from None
     master = load_context(paths, cfg, run).master
     return AnswerContext(
         profile=profile, cfg=cfg, job=job, grad_date=run.grad_date,
         employment=eligibility.get("employment", "unknown"), season=eligibility.get("season"),
-        season_year=eligibility.get("season_year"), approved=AnswersFile.model_validate(load_yaml(paths.answers) or {}),
+        season_year=eligibility.get("season_year"), approved=AnswersFile.model_validate((load_yaml(paths.answers) if paths.answers.is_file() else None) or {}),
         past_employers=[e.organization for e in master.experience if e.organization],
         documents={**documents(paths, profile), **_letter_documents(paths, state.options)},
         grades=grades(paths),
@@ -743,7 +750,7 @@ def preview(paths: Paths, cfg: Config, job: Job) -> str:
     answer_ctx = AnswerContext(
         profile=profile, cfg=cfg, job=job, grad_date=eligibility.grad_date, employment=eligibility.employment,
         season=eligibility.season, season_year=eligibility.season_year,
-        approved=AnswersFile.model_validate(load_yaml(paths.answers) or {}),
+        approved=AnswersFile.model_validate((load_yaml(paths.answers) if paths.answers.is_file() else None) or {}),
         past_employers=[e.organization for e in ctx.master.experience if e.organization],
         documents=documents(paths, profile), grades=grades(paths),
     )

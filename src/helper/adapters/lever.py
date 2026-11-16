@@ -39,7 +39,8 @@ def fetch_job(url: str, session: Optional[Any] = None,
     try:
         r = (session or requests.Session()).get(api, timeout=30)
     except requests.RequestException as exc:
-        raise HelperError(f"can't reach Lever ({type(exc).__name__})") from None
+        raise HelperError(f"Couldn't reach Lever ({type(exc).__name__}). Check your internet connection and "
+                          "try again.") from None
     if r.status_code != 200:
         raise HelperError(f"Lever has no open posting {posting} at {company}; it may be closed")
     data = r.json()

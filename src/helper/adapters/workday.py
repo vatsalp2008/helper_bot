@@ -90,7 +90,8 @@ def fetch_job(url: str, session: Optional[Any] = None) -> Job:
     try:
         r = session.get(ref.api_url, headers={"Accept": "application/json"}, timeout=30)
     except requests.RequestException as exc:
-        raise HelperError(f"can't reach Workday ({type(exc).__name__})") from None
+        raise HelperError(f"Couldn't reach Workday ({type(exc).__name__}). Check your internet connection and "
+                          "try again.") from None
     if r.status_code in (403, 404):
         raise HelperError(f"Workday says this posting isn't open ({r.status_code}). If it is, save the job "
                           "description to a file and use `--jd-file`.")

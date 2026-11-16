@@ -8,6 +8,7 @@ import yaml
 from pydantic import ValidationError
 
 from helper.config import Paths, load_config
+from helper.errors import problems
 from helper.models import Config, Profile, TailorOutput, find_gpa_keys
 
 from .conftest import FIXTURES, REPO
@@ -101,7 +102,10 @@ def test_real_profile_is_valid_and_matches_the_example_shape() -> None:
     if not path.exists():
         pytest.skip("data/profile.yaml is personal and git-ignored")
     real = yaml.safe_load(path.read_text(encoding="utf-8"))
-    Profile.model_validate(real)
+    try:
+        Profile.model_validate(real)
+    except ValidationError as exc:  # a fresh clone before README step 4
+        pytest.fail(f"data/profile.yaml isn't filled in yet (README, step 4):\n{problems(exc)}")
     example = yaml.safe_load((REPO / "data" / "profile.example.yaml").read_text(encoding="utf-8"))
     assert _key_paths(real) == _key_paths(example)
 

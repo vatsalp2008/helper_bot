@@ -1,4 +1,4 @@
-"""Which applicant tracking system a posting URL belongs to (spec 9 step 2). Adapters arrive in milestones 7 to 10."""
+"""Which applicant tracking system a posting URL belongs to (spec 9 step 2)."""
 
 from __future__ import annotations
 
@@ -80,7 +80,7 @@ def normalize_url(url: Optional[str]) -> Optional[str]:
 
 
 _TRACKING_KEYS = re.compile(r"^(?:fbclid|gclid|dclid|msclkid|mc_cid|mc_eid|igshid|ref|referrer|source|gh_src|lever-source"
-                            r"|lever-origin|utm_[a-z]+)$", re.I)
+                            r"|lever-origin|jr_id|utm_[a-z]+)$", re.I)
 
 
 def clean_url(url: str) -> str:

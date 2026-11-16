@@ -117,7 +117,7 @@ def _latex_check(cfg: Config) -> Check:
 def _poppler_check() -> Check:
     missing = [b for b in ("pdftotext", "pdftoppm", "pdfinfo") if find_binary(b) is None]
     if missing:
-        return Check("poppler", "warn", f"missing {', '.join(missing)} (needed from milestone 3): brew install poppler")
+        return Check("poppler", "warn", f"missing {', '.join(missing)} (used to check how each resume bullet wraps): brew install poppler")
     return Check("poppler", "ok", "pdftotext, pdftoppm, pdfinfo found")
 
 
@@ -137,7 +137,7 @@ def _playwright_check() -> Check:
         return Check("Playwright", "ok", f"{version}; Chromium ready")
     return Check(
         "Playwright", "warn",
-        f"{version} installed; Chromium not downloaded yet (needed from milestone 7): "
+        f"{version} installed; Chromium not downloaded yet (needed to read and fill application forms): "
         "`.venv/bin/playwright install chromium`",
     )
 
@@ -160,6 +160,13 @@ def _data_checks(paths: Paths, cfg: Config) -> list[Check]:
     else:
         checks.append(Check("master.yaml", "warn", "not built yet: run `helper convert`"))
 
+    created = []
+    for name in ("answers.yaml",):  # personal, git-ignored: a fresh clone starts from the example
+        target, example = paths.data / name, paths.data / name.replace(".yaml", ".example.yaml")
+        if not target.exists() and example.is_file():
+            shutil.copy(example, target)
+            created.append(name)
+
     loaded: dict[str, Any] = {}
     for name, model in DATA_MODELS.items():
         try:
@@ -176,7 +183,8 @@ def _data_checks(paths: Paths, cfg: Config) -> list[Check]:
         except ValidationError as exc:
             checks.append(Check(name, "error", _first_errors(exc)))
             continue
-        checks.append(Check(name, "ok", _summary(name, loaded[name])))
+        made = f" (created from {name.replace('.yaml', '.example.yaml')})" if name in created else ""
+        checks.append(Check(name, "ok", _summary(name, loaded[name]) + made))
 
     sets, meta = loaded.get("project_sets.yaml"), loaded.get("resume_meta.yaml")
     if sets and meta:
@@ -210,12 +218,19 @@ def _summary(name: str, model: BaseModel) -> str:
 
 
 def _first_errors(exc: ValidationError, limit: int = 3) -> str:
+    """Empty fields first ("fill in: ..."), then the other problems, a few at a time."""
+    errs = exc.errors()
+    where = [".".join(str(p) for p in e["loc"]) or "(top level)" for e in errs]
+    empty = [w for w, e in zip(where, errs) if e.get("type") == "missing" or e.get("input") is None]
+    other = [f"{w}: {e['msg']}" for w, e in zip(where, errs) if not (e.get("type") == "missing" or e.get("input") is None)]
     parts = []
-    for err in exc.errors()[:limit]:
-        where = ".".join(str(p) for p in err["loc"]) or "(top level)"
-        parts.append(f"{where}: {err['msg']}")
-    more = len(exc.errors()) - limit
-    return "; ".join(parts) + (f"; and {more} more" if more > 0 else "")
+    if empty:
+        more = len(empty) - limit
+        parts.append("fill in " + ", ".join(empty[:limit]) + (f" and {more} more" if more > 0 else ""))
+    if other:
+        more = len(other) - limit
+        parts.append("; ".join(other[:limit]) + (f"; and {more} more" if more > 0 else ""))
+    return "; ".join(parts)
 
 
 # --------------------------------------------------------------------------- profile
@@ -281,7 +296,8 @@ def _terminal_prompt(question: str) -> str:
 def _notion_check(paths: Paths) -> Check:
     if env_value(paths, "NOTION_TOKEN") and env_value(paths, "NOTION_DATABASE_ID"):
         return Check("Notion", "ok", "token and database ID set; `helper sync-notion --check` tests the connection")
-    return Check("Notion", "warn", "not configured yet; connects in milestone 6 (see .env.example)")
+    return Check("Notion", "warn", "not set up yet: put NOTION_TOKEN and NOTION_DATABASE_ID in .env (see .env.example). Until then "
+                 "applications are tracked in helper.db and exports/applications.csv only")
 
 
 # --------------------------------------------------------------------------- report

@@ -67,11 +67,39 @@ def _board_candidates(url: str) -> list[str]:
     return out
 
 
+_PAGE_BOARD_RES = (
+    re.compile(r"greenhouse\.io/embed/job_(?:board|app)[^\"'\s<>]*?[?&](?:amp;)?for=([A-Za-z0-9_-]+)", re.I),
+    re.compile(r"greenhouse\.io/v1/boards/([A-Za-z0-9_-]+)", re.I),
+    re.compile(r"(?:job-)?boards(?:\.eu)?\.greenhouse\.io/([A-Za-z0-9_-]+)/jobs/", re.I),
+)
+
+
+def boards_on_page(html: str) -> list[str]:
+    """Board names a company careers page gives in its Greenhouse embed. They needn't match the domain: current.com
+    loads board "current81"."""
+    out: list[str] = []
+    for pattern in _PAGE_BOARD_RES:
+        for token in pattern.findall(html):
+            token = token.lower()
+            if token != "embed" and token not in out:
+                out.append(token)
+    return out
+
+
+def _page_boards(session: Any, url: str) -> list[str]:
+    try:
+        r = session.get(url, timeout=30)
+    except requests.RequestException:
+        return []
+    return boards_on_page(r.text or "") if r.status_code == 200 else []
+
+
 def _get(session: Any, url: str, **params: str) -> Any:
     try:
         r = session.get(url, params=params or None, timeout=30)
     except requests.RequestException as exc:
-        raise HelperError(f"can't reach Greenhouse ({type(exc).__name__})") from None
+        raise HelperError(f"Couldn't reach Greenhouse ({type(exc).__name__}). Check your internet connection and "
+                          "try again.") from None
     return r
 
 
@@ -82,11 +110,20 @@ def fetch_job(url: str, session: Optional[Any] = None) -> Job:
         raise HelperError(f"{url} isn't a Greenhouse posting link")
     boards = [ref.board] if ref.board else _board_candidates(url)
     data, board = None, None
-    for candidate in boards:
-        r = _get(session, f"{API}/{candidate}/jobs/{ref.job_id}", questions="true")
-        if r.status_code == 200:
-            data, board = r.json(), candidate
-            break
+
+    def look(candidates: list[str]) -> None:
+        nonlocal data, board
+        for candidate in candidates:
+            r = _get(session, f"{API}/{candidate}/jobs/{ref.job_id}", questions="true")
+            if r.status_code == 200:
+                data, board = r.json(), candidate
+                return
+
+    look(boards)
+    if data is None and ref.board is None:  # the company page names its board in its Greenhouse embed
+        on_page = [b for b in _page_boards(session, url) if b not in boards]
+        boards += on_page
+        look(on_page)
     if data is None or board is None:
         tried = ", ".join(boards) or "none"
         raise HelperError(f"Greenhouse has no open job {ref.job_id} (boards tried: {tried}). The posting may be closed, or "

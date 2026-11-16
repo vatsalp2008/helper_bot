@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import os
 from enum import Enum
 from pathlib import Path
 from typing import Annotated, Callable, Optional, TypeVar
@@ -11,7 +12,7 @@ import typer
 
 from . import __version__
 from .config import Paths, find_root
-from .errors import EXIT_ERROR, HelperError
+from .errors import EXIT_ERROR, EXIT_STOPPED, STOPPED, HelperError, report_unexpected
 
 app = typer.Typer(
     help="helper: one job URL in; a tailored resume, a filled form, and a tracked application out.",
@@ -24,7 +25,8 @@ F = TypeVar("F", bound=Callable[..., object])
 
 
 def guarded(func: F) -> F:
-    """Print HelperError messages plainly and exit with the error's exit code."""
+    """Print HelperError messages plainly and exit with the error's exit code. Anything else (a missing install, a
+    busy browser, a bug) gets a plain explanation too, with the traceback saved for Claude (HELPER_DEBUG=1 shows it)."""
 
     @functools.wraps(func)
     def wrapper(*args: object, **kwargs: object) -> object:
@@ -33,6 +35,16 @@ def guarded(func: F) -> F:
         except HelperError as exc:
             typer.echo(str(exc), err=True)
             raise typer.Exit(exc.exit_code) from None
+        except (typer.Exit, typer.Abort, typer.TyperException):
+            raise
+        except KeyboardInterrupt:
+            typer.echo(STOPPED, err=True)
+            raise typer.Exit(EXIT_STOPPED) from None
+        except Exception as exc:
+            if os.environ.get("HELPER_DEBUG"):
+                raise
+            typer.echo(report_unexpected(exc), err=True)
+            raise typer.Exit(EXIT_ERROR) from None
 
     return wrapper  # type: ignore[return-value]
 
