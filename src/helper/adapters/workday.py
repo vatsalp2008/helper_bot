@@ -213,6 +213,16 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
                 return out
         step = wp.current_step(page)
         kind = wp.step_kind(step)
+        if kind == "account" and not account_screen(page):
+            # the step title can show before the sign-in form does (Symbotic, wd504): wait for the form, never Next
+            if not _wait_until(page, ctx, lambda: bool(account_screen(page)) or wp.step_kind(wp.current_step(page))
+                               != "account", seconds=30):
+                ctx.say("Workday's account page didn't show its sign-in form. Sign in or create the account in the "
+                        "window; helper continues after that.")
+                if not _wait_until(page, ctx, lambda: wp.step_kind(wp.current_step(page)) != "account"):
+                    return out
+                out.account = out.account or "by Vatsal"
+            continue
         if account_screen(page) and kind in ("account", "questions"):
             if not handle_account(page, ctx, out):
                 return out

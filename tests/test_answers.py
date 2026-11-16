@@ -515,3 +515,51 @@ def test_internship_counts_full_time_starts_and_unlisted_sources() -> None:  # S
     assert social.value == "Social Media"
     anything = one(q("How did you hear about us?", "select", ["Employee Referral", "University event"]))
     assert anything.value == "University event"  # never claims a referral
+
+
+def test_a_date_box_under_a_consent_text_gets_todays_date() -> None:  # Kensho/HiredScore, 2026-11-16
+    label = ("Candidate Consent: Use of AI-Assisted Screening Tool (HiredScore) S&P Global requests your consent to use "
+             "HiredScore. Enter today’s date below to confirm that you have read and understand the above information.")
+    a = one(q(label, "date"))
+    assert a.key == "signature_date" and a.value == date.today().strftime("%m/%d/%Y")
+    assert key_for(q("Do you consent to the use of AI-assisted screening (HiredScore)?", "select", ["Yes", "No"]))[0] \
+        == "ai_consent"
+    assert key_for(q("I consent to HiredScore reviewing my application", "date"))[0] != "ai_consent"
+
+
+def test_a_list_of_countries_is_checked_against_the_profile_citizenship() -> None:  # Analog Devices, 2026-11-16
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier1.citizenship = "Freedonia"
+    group_d = q("Are you a citizen of any of the following countries: Group D (Armenia, Azerbaijan, Belarus, China (PRC), "
+                "Russia, Vietnam)", "select", ["Yes", "No"])
+    assert key_for(group_d)[0] == "citizen_of_listed" and one(group_d, profile=profile).value == "No"
+    listed = q("Are you a citizen of any one of these countries: Cuba, Freedonia, Iran?", "select", ["Yes", "No"])
+    assert one(listed, profile=profile).value == "Yes"
+
+
+def test_a_date_box_only_takes_a_date() -> None:  # Analog Devices, 2026-11-16: "Master of Science" became "/01/"
+    done = q("When do you expect to complete your current degree program?", "date")
+    assert key_for(done)[0] == "graduation_date"
+    assert key_for(q("What degree are you pursuing? Enter the date you started.", "date"))[0] != "degree"
+    assert key_for(q("When do you expect to complete your current degree program?", "select", ["Yes", "No"]))[0] \
+        == "graduation_date"
+
+
+def test_counts_pick_their_range_and_projects_are_not_internships() -> None:  # Direct Supply, 2026-11-16
+    from helper.answers import count_option
+    ranges = ["0", "1-3", "4-6", "7-9", "10+"]
+    assert count_option(26, ranges) == "10+" and count_option(2, ranges) == "1-3" and count_option(0, ranges) == "0"
+    assert count_option(6, ["Less than 5", "5 or more"]) == "5 or more"
+    projects = q("How many software engineering or AI projects have you completed (personal, academic, or internship "
+                 "based)?", "select", ranges)
+    assert key_for(projects)[0] == "project_count"
+    assert one(projects, projects_done=26).value == "10+"
+    interns = q("How many paid internships will you have completed?", "select", ranges)
+    assert one(interns, internships_done=2).value == "1-3"
+
+
+def test_two_digit_year_terms() -> None:  # Direct Supply, 2026-11-16: "Winter '27" is December 2027
+    terms = ["Winter '26", "Spring '27", "Summer '27", "Winter '27", "Spring '28", "Graduated"]
+    grad = q("What is your anticipated graduation date?", "select", terms)
+    assert one(grad, grad_date="December 2027").value == "Winter '27"
+    assert one(grad, grad_date="May 2027").value == "Spring '27"

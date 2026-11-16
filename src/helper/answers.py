@@ -122,6 +122,9 @@ def match_option(value: str, options: list[str], aliases: tuple[str, ...] | list
 # (key, pattern, confidence that the label means this). First match wins, so order matters.
 LABEL_RULES: list[tuple[str, str, float]] = [
     ("gpa", r"\bgpa\b|grade point", 1.0),
+    # "How many software engineering or AI projects ... (personal, academic, or internship based)?" counts projects
+    # (Direct Supply, 2026-11-16), so it comes before the internship count
+    ("project_count", r"\bhow many\b.{0,80}\bprojects?\b|\bnumber of\b.{0,60}\bprojects?\b", 0.9),
     ("internship_count", r"\bhow many\b.{0,100}\binternships?\b|\bnumber of\b.{0,60}\binternships?\b", 0.9),
     ("ai_consent", r"\bhiredscore\b|\bAI[- ]assisted (recruit|tool|screen)|\binvolving AI\b|"
                    r"\b(consent|opt[- ]?in|agree)\b.{0,80}\b(AI|artificial intelligence)\b|"
@@ -157,6 +160,9 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     # whether you need it (No), even when it also says "work authorization" (Fanatics, 2026-11-15)
     ("work_authorization", r"\b(authori[sz]ed|eligible|permitted) to work\b.{0,80}\bwithout\b.{0,40}\bsponsor", 0.95),
     ("sponsorship", r"\bsponsor", 0.95),
+    # "Are you a citizen of any of the following countries: Group D (Armenia, ...)" (Analog Devices, 2026-11-16):
+    # checked against the profile's citizenship, not the U.S.-citizen answer
+    ("citizen_of_listed", r"\bcitizen (of|in) (any|one) (one )?of (these|the following|the listed)\b.{0,20}\bcountr", 0.95),
     ("citizenship_country", r"\bcountry of citizenship\b|\bcitizenship country\b|\bcountry (of|where you hold) "
                             r"citizenship\b|\bwhat is your citizenship\b|^\W*citizenship\W*$", 0.9),
     # a list of statuses ("US Citizen / Lawful Permanent Resident / Protected Person / None"; Muon Space, 2026-11-15)
@@ -172,7 +178,10 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                   r"\backnowledge\b.{0,80}\b(days? (a week |per week )?in the office|in the office \d|on-?site)\b",
      0.9),
     ("graduation_date", r"\bgraduat\w*\b.*\b(date|when|year|term|semester)\b|\bexpected graduation\b|\bgraduation\b"
-                        r"|\bclass of\b|\bwhen (do|will) you graduate\b|\b(term|semester|season)\b.*\bgraduat", 0.9),
+                        r"|\bclass of\b|\bwhen (do|will) you graduate\b|\b(term|semester|season)\b.*\bgraduat"
+                        # "When do you expect to complete your current degree program?" (Analog Devices, 2026-11-16)
+                        r"|\bwhen (do|will) you (expect to )?(complete|finish)\b.{0,40}\b(degree|program|studies)\b"
+                        r"|\b(expected|anticipated) (degree )?completion\b", 0.9),
     ("enrolled", r"\bcurrently enrolled\b.*\?\s*$|\bare you (currently )?(a )?(student|enrolled)\b", 0.9),
     ("school_status", r"\bbest describes your (current )?(status|situation)\b|\byear of (school|study)\b|"
                       r"\bclass standing\b|\bacademic (status|standing)\b", 0.85),
@@ -243,15 +252,22 @@ _US_STATES = {"WA": "Washington", "CA": "California", "NY": "New York", "OR": "O
 
 
 _FILE_KEYS = ("resume", "cover_letter", "transcript")
+_DATE_KEYS = ("graduation_date", "start_date", "signature_date", "full_time_start")
 
 
 def key_for(q: FormQuestion) -> tuple[Optional[str], float]:
     if q.field_name in FIELD_KEYS:
         return FIELD_KEYS[q.field_name], 1.0
     text = q.label
+    if q.type == "date" and re.search(r"(?i)\b(today['’]?s|the current) date\b", text):
+        # "Enter today's date below to confirm..." under a long AI-consent text (Kensho/HiredScore, 2026-11-16): the
+        # consent rule's "Yes" typed into a date box came out as "/01/2001"
+        return "signature_date", 0.95
     for key, pattern, confidence in LABEL_RULES:
         if q.type == "file" and key not in _FILE_KEYS:  # an upload takes a document, never a zip code (Riot: ".zip")
             continue
+        if q.type == "date" and key not in _DATE_KEYS:  # only a date goes into a date box: "Yes" and "Master of
+            continue  # Science" came out as "/01/2001" and "/01/" (Kensho, Analog Devices, 2026-11-16)
         if q.type == "file" and key == "resume" and not re.search(r"(?i)\bresume|\bcv\b", q.label) and \
                 re.search(r"(?i)additional|attachment|supporting|other", q.description or ""):
             continue  # "Upload a file" under Additional Attachments isn't the resume box (Camping World, 2026-11-16)
@@ -277,6 +293,7 @@ class AnswerContext:
     approved: AnswersFile = field(default_factory=AnswersFile)
     past_employers: list[str] = field(default_factory=list)
     internships_done: Optional[int] = None  # internship entries in the master list (Vatsal, 2026-11-16)
+    projects_done: Optional[int] = None  # projects in the master list
     documents: dict[str, str] = field(default_factory=dict)  # "transcript" / "undergrad_transcript" -> a file that exists
     grades: dict[str, str] = field(default_factory=dict)  # school -> GPA, from data/grades.yaml (forms only, rule 3)
 
@@ -356,6 +373,25 @@ def affirmative_option(options: list[str]) -> Optional[str]:
     return agree[0] if len(agree) == 1 else None
 
 
+def count_option(n: int, options: list[str]) -> Optional[str]:
+    """The choice a count falls in: 26 -> "10+", 2 -> "1-3" ("0", "1-3", "4-6", "10+", "More than 5", "5 or more")."""
+    for option in options:
+        o = option.lower().replace("–", "-")
+        if m := re.fullmatch(r"\s*(\d+)\s*(?:-|to)\s*(\d+)\s*(?:\w+\s*)?", o):
+            if int(m.group(1)) <= n <= int(m.group(2)):
+                return option
+        elif m := re.fullmatch(r"\s*(\d+)\s*(?:\+|or more|and (?:above|up))\s*(?:\w+\s*)?", o):
+            if n >= int(m.group(1)):
+                return option
+        elif m := re.fullmatch(r"\s*(?:more than|over)\s*(\d+)\s*(?:\w+\s*)?", o):
+            if n > int(m.group(1)):
+                return option
+        elif m := re.fullmatch(r"\s*(\d+)\s*", o):
+            if n == int(m.group(1)):
+                return option
+    return None
+
+
 def _grad_candidates(grad: str) -> tuple[str, ...]:
     my = parse_month_year(grad)
     if not my:
@@ -365,6 +401,8 @@ def _grad_candidates(grad: str) -> tuple[str, ...]:
 
     return (grad, f"{calendar.month_abbr[my.month]} {my.year}", f"{my.month:02d}/{my.year}", f"{my.month}/{my.year}",
             f"{my.year}-{my.month:02d}", f"{season} {my.year}", *(("Winter " + str(my.year),) if my.month == 12 else ()),
+            # "Winter '27" for December 2027, "Spring '27" for May 2027 (Direct Supply, 2026-11-16)
+            *((f"Winter '{my.year % 100:02d}",) if my.month == 12 else ()), f"{season} '{my.year % 100:02d}",
             season)  # a term without the year: "Spring (April - June)"
 
 
@@ -459,6 +497,11 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
             return Value(None, "rule: sponsorship and CPT/OPT",
                          note="names CPT/OPT/F-1 (in the question or its choices) without saying they count")
         return tier2(t2.sponsorship, "sponsorship")
+    if key == "citizen_of_listed":
+        if not t1.citizenship:
+            return Value(None, "profile citizenship")
+        listed = re.search(rf"(?i)\b{re.escape(t1.citizenship)}\b", q.label)
+        return Value("Yes" if listed else "No", "profile citizenship (checked against the countries listed)")
     if key == "citizenship_country":  # from the profile (Vatsal, 2026-11-16)
         if not t1.citizenship:
             return Value(None, "profile citizenship")
@@ -516,11 +559,15 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
             if len(never) == 1:
                 return Value(never[0], "rule: military service questions are No (Vatsal, 2026-11-16)")
         return Value("No", "rule: military service questions are No (Vatsal, 2026-11-16)")
-    if key == "internship_count":
-        if ctx.internships_done is None:
+    if key in ("internship_count", "project_count"):
+        n = ctx.internships_done if key == "internship_count" else ctx.projects_done
+        what = "internships" if key == "internship_count" else "projects"
+        if n is None:
             return Value(None, "master list")
-        n = ctx.internships_done
-        return Value(str(n), "master list: internships", candidates=(str(n), f"{n}+", "4+" if n >= 4 else str(n)))
+        bucket = count_option(n, q.options)
+        if bucket:
+            return Value(bucket, f"master list: {n} {what}")
+        return Value(str(n), f"master list: {n} {what}", candidates=(str(n), f"{n}+", "4+" if n >= 4 else str(n)))
     if key == "full_time_start":
         asked = re.search(r"(?i)\b(january|february|march|april|may|june|july|august|september|october|november|"
                           r"december|spring|summer|fall|winter)\s+(\d{4})\b", q.label)

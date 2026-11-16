@@ -263,6 +263,38 @@ def test_the_flow_fills_every_page_and_stops_on_review(browser: Any, tmp_path: P
     page.close()
 
 
+def test_education_with_a_school_box_named_school(browser: Any) -> None:  # Visa, Analog Devices, 2026-11-16
+    from helper.dates import MonthYear
+    assert wp.school_search_terms("Northeastern University") == ["Northeastern", "Northeastern University"]
+    assert wp.school_search_terms("University of Mumbai") == ["Mumbai", "University of Mumbai"]
+    page = browser.new_page()
+    page.goto(f"file://{(FIXTURES / 'workday_mock_education.html').resolve()}")
+    schools = [wp.SchoolEntry("Northeastern University", "Master of Science", "Computer Science",
+                              MonthYear(2025, 9), MonthYear(2027, 5)),
+               wp.SchoolEntry("University of Mumbai", "Bachelor of Engineering", "", MonthYear(2021, 8), MonthYear(2025, 5))]
+    results = wp.fill_education(page, schools, lambda: None)
+    assert all(r.ok for r in results), [(r.label, r.detail) for r in results]
+    assert wp.selected_items(page.locator("[data-automation-id=formField-school]").nth(0)) == ["Northeastern University"]
+    # not in this site's list: "Other", as the page itself asks
+    assert wp.selected_items(page.locator("[data-automation-id=formField-school]").nth(1)) == ["Other"]
+    assert "Other (as the page asks)" in results[1].detail
+    # never the MBA for a Master of Science
+    assert page.inner_text("#education-7--degree").startswith("Master’s or Equivalent")
+    assert page.inner_text("#education-9--degree").startswith("Bachelor’s or Equivalent")
+    assert wp.selected_items(page.locator("[data-automation-id=formField-fieldOfStudy]")) == ["Computer Science"]
+    page.close()
+
+
+def test_degree_choices_never_pick_another_named_degree() -> None:
+    visa = ["Master of Business Administration - MBA ( (ISCED 7)",
+            "Master’s or Equivalent (ISCED 7: MA, MSc, MEng, MBA, LLM, et cetera)", "Doctorate (ISCED 8)"]
+    best = max(visa, key=lambda o: (wp.degree_score("Master of Science", o), -len(o)))
+    assert best.startswith("Master’s or Equivalent")
+    assert wp.degree_score("Master of Science", "Master of Science (MS)") > wp.degree_score("Master of Science",
+                                                                                            "Master's Degree")
+    assert wp.degree_score("Bachelor of Engineering", "Bachelor of Arts") < 0.85
+
+
 def test_a_question_only_vatsal_can_answer_waits_for_him(browser: Any, tmp_path: Path) -> None:
     said: list[str] = []
     page = browser.new_page()
@@ -347,6 +379,12 @@ def test_claude_answers_while_the_form_waits(repo: Path) -> None:
     assert (answers[0].value, answers[0].status) == ("Because I like data tools.", "needs_review")
     needed = json.loads((folder / "questions_needed.json").read_text(encoding="utf-8"))
     assert [x["field"] for x in needed["questions"]] == ["workday:q3"] and "continues by itself" in needed["then_run"]
+
+    # Workday makes helper fill the page again: the same question is answered from this run, without asking twice
+    (folder / "questions_needed.json").unlink()
+    again = [PlannedAnswer(field="workday:q3", label="Why Mockco?", type="textarea", required=True, kind="free_text")]
+    _ask_claude_midfill(paths, state, job, again, lambda: False, wait_seconds=1, poll=0.1)
+    assert again[0].value == "Because I like data tools." and not (folder / "questions_needed.json").exists()
 
 
 # --------------------------------------------------------------------------- `helper apply` on a Workday link

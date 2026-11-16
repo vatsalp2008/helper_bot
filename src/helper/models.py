@@ -62,13 +62,15 @@ class Config(StrictModel):
     db_path: str = "helper.db"
     latex_engine: Literal["pdflatex", "xelatex"] = "pdflatex"
     immediate_start_target: str = "December 2026"
+    # free of classes from this month: spring work and co-ops anywhere are fine (Vatsal, 2026-11-16)
+    free_from: str = "January 2027"
     match_auto_threshold: float = Field(0.85, gt=0, le=1)
     match_ask_threshold: float = Field(0.60, gt=0, le=1)
     fill_wait_timeout_minutes: int = Field(30, ge=1)
     fill_certifications: bool = False  # Workday's Certifications section (Vatsal, 2026-11-15: off for now)
     pause_ms: tuple[int, int] = (150, 600)
 
-    @field_validator("default_grad_date", "alt_grad_date", "immediate_start_target")
+    @field_validator("default_grad_date", "alt_grad_date", "immediate_start_target", "free_from")
     @classmethod
     def _month_year(cls, v: str) -> str:
         if not MONTH_YEAR_RE.match(v):

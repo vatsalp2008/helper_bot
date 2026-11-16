@@ -84,6 +84,7 @@ def _context(paths: Paths, cfg: Config, run_id: str, job: Job) -> AnswerContext:
         season_year=eligibility.get("season_year"), approved=AnswersFile.model_validate((load_yaml(paths.answers) if paths.answers.is_file() else None) or {}),
         past_employers=[e.organization for e in master.experience if e.organization],
         internships_done=sum(1 for e in master.experience if re.search(r"(?i)\bintern(ship)?\b", e.name or "")),
+        projects_done=len(master.projects),
         documents={**documents(paths, profile), **_letter_documents(paths, state.options)},
         grades=grades(paths),
     )
@@ -534,6 +535,18 @@ def _flow_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, planned: l
     return list(dict.fromkeys(reasons))
 
 
+EARLIER_ANSWERS = "claude_answers.json"  # field -> Claude's answer, for this run only
+
+
+def _copy_merged(plan: AnswerPlan, answers: list[PlannedAnswer]) -> None:
+    by_field = {a.field: a for a in plan.answers}
+    for a in answers:
+        merged = by_field.get(a.field)
+        if merged is not None and merged.value is not None and a.value != merged.value:
+            for name in ("value", "kind", "status", "confidence", "source"):
+                setattr(a, name, getattr(merged, name))
+
+
 def _ask_claude_midfill(paths: Paths, state: Any, job: Job, answers: list[PlannedAnswer], moved_on: Any,
                         wait_seconds: float, poll: float) -> None:
     """questions_needed.json -> answers_provided.json while the form stays open. No approval step: Vatsal reviews
@@ -542,6 +555,17 @@ def _ask_claude_midfill(paths: Paths, state: Any, job: Job, answers: list[Planne
     plan = AnswerPlan(answers=[a.model_copy() for a in answers])
     if not plan.open_items():
         return
+    # Claude's answers from earlier in this fill: a page Workday made helper fill again asks the same questions
+    # (Analog Devices, Kensho, 2026-11-16), so reuse them instead of asking twice
+    earlier_file = folder / EARLIER_ANSWERS
+    earlier: dict[str, str] = read_json(earlier_file) if earlier_file.is_file() else {}
+    reuse = [{"field": a.field, "answer": earlier[a.field]} for a in plan.open_items() if a.field in earlier]
+    if reuse and not _merge(plan, {"answers": reuse}):
+        _copy_merged(plan, answers)
+        plan = AnswerPlan(answers=[a.model_copy() for a in answers])
+        if not plan.open_items():
+            _say(f"Reusing Claude's earlier answers for {len(reuse)} question(s) on this page.")
+            return
     needed = _needed(plan, job, state.options, paths, state.run_id)
     needed["then_run"] = "nothing: `helper fill` is waiting and continues by itself"
     needed["note"] = ("Questions on the open application page. Answer what the master list and the job description "
@@ -567,12 +591,10 @@ def _ask_claude_midfill(paths: Paths, state: Any, job: Job, answers: list[Planne
             if data is not None:
                 problems = _merge(plan, data)
                 if not problems:
-                    by_field = {a.field: a for a in plan.answers}
-                    for a in answers:
-                        merged = by_field.get(a.field)
-                        if merged is not None and merged.value is not None and a.value != merged.value:
-                            for name in ("value", "kind", "status", "confidence", "source"):
-                                setattr(a, name, getattr(merged, name))
+                    _copy_merged(plan, answers)
+                    earlier.update({i["field"]: i["answer"] for i in data.get("answers", [])
+                                    if i.get("field") and (i.get("answer") or "").strip()})
+                    write_json(earlier_file, earlier)
                     saved = remember(paths, [a for a in answers if a.status == "needs_review"])
                     _say("Claude's answers are in; filling them." + (f" Remembered {saved} for later postings."
                                                                      if saved else ""))

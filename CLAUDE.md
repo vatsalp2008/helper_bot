@@ -67,7 +67,7 @@ Enforce these in code, not only in instructions.
   - **AI screening and keeping the application for other roles** (for example HiredScore): yes, the choice that opts in (`tier2.ai_screening_consent`, `tier2.keep_for_other_roles`).
   - **Hispanic or Latino:** No (`tier2.eeo.hispanic_latino`). Other extra EEO questions, such as pronouns, keep the decline default.
   - **Relatives at the company:** none, always (Vatsal, 2026-11-15; `tier2.relatives_at_company`): "N/A" in a written box, "No" or "None" in a choice question.
-  - **Start dates** (Vatsal, 2026-11-15): internships can start now (he is free from January), so a "start now / immediately" choice is right and an immediate-start internship is only a note; full-time roles start in May (the summer option; `immediate_start_target: "May 2027"`).
+  - **Start dates** (Vatsal, 2026-11-15): internships can start now (he is free from January), so a "start now / immediately" choice is right and an immediate-start internship is only a note; full-time roles start in May (the summer option; `immediate_start_target: "May 2027"`). He is open to Spring 2027 work and co-ops anywhere, including school-year hours (Vatsal, 2026-11-16; `free_from: "January 2027"`); only fall terms clash with classes.
   - **Salary boxes** get the plain number ("36", "71000"): iCIMS rejects "$36 per hour".
   - **Commuting, on-site and hybrid attendance:** always Yes (Vatsal, 2026-11-15).
   - **Military service questions** (his, or a spouse's or partner's): "No", or the never-served choice (Vatsal, 2026-11-16). Protected-veteran questions keep the profile answer.

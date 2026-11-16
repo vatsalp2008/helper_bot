@@ -535,7 +535,55 @@ def degree_aliases(degree: str) -> tuple[str, ...]:
     return DEGREE_ALIASES["master"] if d.startswith("master") else DEGREE_ALIASES["bachelor"] if d.startswith("bachelor") else ()
 
 
+_DEGREE_OF = re.compile(r"(?i)\b(?:master|bachelor)(?:['’]?s)?\s+of\s+([a-z]+)")
+_OTHER_DEGREES = re.compile(r"(?i)\b(?:MBA|MFA|LLM|LLB|JD|MD|MPH|MEd|BBA)\b")
+_DEGREE_ABBREVIATIONS = {"science": ("msc", "ms", "bsc", "bs"), "engineering": ("beng", "meng", "be", "btech", "mtech")}
+
+
+def degree_score(degree: str, option: str) -> float:
+    """How well a Workday degree choice fits. A choice naming another degree never wins: on Visa, "Master of Business
+    Administration - MBA (ISCED 7)" tied "Master's or Equivalent (ISCED 7: MA, MSc, ...)" for "Master of Science" and
+    won as the shorter one (2026-11-16)."""
+    score = match_option(degree, [option], degree_aliases(degree))[1]
+    # "(ISCED 7: MA, MSc, MEng, MBA, LLM, et cetera)" is a list of examples, not the choice's own name
+    examples = " ".join(re.findall(r"\(([^()]*,[^()]*)\)?", option))
+    name = re.sub(r"\([^()]*,[^()]*\)?", " ", option)
+    mine, theirs = _DEGREE_OF.search(degree), _DEGREE_OF.search(name)
+    if theirs and mine and theirs.group(1).lower() != mine.group(1).lower():
+        return min(score, 0.5)
+    if _OTHER_DEGREES.search(name) and not _OTHER_DEGREES.search(degree):
+        return min(score, 0.5)
+    words = set(re.findall(r"[a-z]+", f"{name} {examples}".lower()))
+    level = "master" if degree.lower().startswith("master") else "bachelor"
+    abbreviations = _DEGREE_ABBREVIATIONS.get(mine.group(1).lower(), ()) if mine else ()
+    if score >= 0.85 and any(a in words and a[0] == level[0] for a in abbreviations):
+        score = max(score, 0.93)  # "(ISCED 7: MA, MSc, MEng ...)" lists his degree
+    return score
+
+
 DEBUG_DIR: Optional[Path] = None  # set per run by apply.py: where field markup goes when something won't fill
+SCHOOL_KEYS = ("schoolName", "school")
+_SCHOOL_FILLER = {"university", "of", "the", "college", "institute", "school", "state", "and", "at", "technology"}
+
+
+def school_search_terms(school: str) -> list[str]:
+    """Searches to try, shortest first: 'Northeastern' then 'Northeastern University' (Vatsal, 2026-11-16: typing
+    'northeastern' and Enter brings up 'Northeastern University' on Visa)."""
+    words = [w for w in re.findall(r"[A-Za-z]+", school) if w.lower() not in _SCHOOL_FILLER]
+    short = max(words, key=len) if words else ""
+    return [t for t in dict.fromkeys([short, school]) if t]
+
+
+def _norm(text: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
+
+
+def _section_text(page: Any) -> str:
+    try:
+        group = page.locator("[role=group][aria-labelledby='Education-section']")
+        return group.first.inner_text() if group.count() else ""
+    except Exception:
+        return ""
 
 
 def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], None]) -> list[FieldResult]:
@@ -550,17 +598,30 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
                 continue
             used.add(i)
             base = f"education-{i}--"
-            notes = []
-            school = _field_of(page, base + "schoolName")
-            if school.locator("[data-automation-id=multiselectInputContainer]").count():
-                ok, shown, why = choose_prompt(page, school, [s.school], lambda t: match_option(s.school, [t])[1],
-                                               threshold=0.85, keep_existing=False)
+            notes, detail = [], ""
+            # the box is education-N--schoolName on some sites and education-N--school on others (Visa, Analog
+            # Devices, 2026-11-16: helper looked only for schoolName, typed nothing and Workday said it was empty)
+            key = next((k for k in SCHOOL_KEYS if _by_id(page, base + k).count()), None)
+            school = _field_of(page, base + (key or SCHOOL_KEYS[0]))
+            if key is None:
+                notes.append("school: helper couldn't find the School box; choose it in the window")
+            elif school.locator("[data-automation-id=multiselectInputContainer]").count():
+                # type a short search and press Enter, then pick from the list (Vatsal's way, 2026-11-16)
+                ok, shown, why = choose_prompt(page, school, school_search_terms(s.school),
+                                               lambda t: match_option(s.school, [t])[1], threshold=0.85,
+                                               keep_existing=False)
+                if not ok and re.search(r"(?i)\btype in \W?other\b", _section_text(page)):
+                    # the site's own instruction: "If your school is not listed, please type in 'Other'" (Visa)
+                    ok, shown, why = choose_prompt(page, school, ["Other"], lambda t: 1.0 if _norm(t) == "other" else 0.0,
+                                                   threshold=0.9, keep_existing=False)
+                    if ok:
+                        detail = f"'{s.school}' isn't in this site's list, so Other (as the page asks)"
                 if not ok:
                     notes.append(f"school: {why}")
                 elif not selected_items(school):  # it clicked something, but nothing was picked (Rocket, Visa)
                     notes.append("school: the pick didn't hold; choose it (or delete the entry) in the window")
-            elif _by_id(page, base + "schoolName").count():
-                _by_id(page, base + "schoolName").first.fill(s.school)
+            else:
+                _by_id(page, base + key).first.fill(s.school)
                 # a search box that wants a pick from its list doesn't count typed text (Dexcom, Martin Marietta)
                 if school.locator("[data-automation-id=promptIcon], [data-automation-id=searchBox]").count() \
                         and not selected_items(school):
@@ -575,7 +636,8 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
             degree = _field_of(page, base + "degree")
             if degree.count() and degree.locator("button[aria-haspopup=listbox]").count():
                 options = dropdown_options(page, degree)
-                best, score = match_option(s.degree, options, degree_aliases(s.degree))
+                scored = sorted(((degree_score(s.degree, o), -len(o), o) for o in options if o.strip()), reverse=True)
+                best, score = (scored[0][2], scored[0][0]) if scored else (None, 0.0)
                 if best is not None and score >= 0.85:
                     choose_dropdown(page, degree, best)
                 else:
@@ -593,7 +655,7 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
             _date_in(page, base + "firstYearAttended", s.start)
             _date_in(page, base + "lastYearAttended", s.end)
             results.append(FieldResult(f"workday:school:{n}", label, not notes, f"{_span(s.start)} to {_span(s.end)}",
-                                       "; ".join(notes)))
+                                       "; ".join(notes) or detail))
         except Exception as exc:
             results.append(FieldResult(f"workday:school:{n}", label, False, None, f"{type(exc).__name__}: {str(exc)[:120]}"))
         pause()
@@ -677,7 +739,8 @@ def delete_education(page: Any) -> int:
     gone = 0
     for i in entry_ids(page, "education")[::-1]:
         before = len(entry_ids(page, "education"))
-        _delete_entry(page, f"education-{i}--schoolName")
+        key = next((k for k in SCHOOL_KEYS if _by_id(page, f"education-{i}--{k}").count()), SCHOOL_KEYS[0])
+        _delete_entry(page, f"education-{i}--{key}")
         if len(entry_ids(page, "education")) < before:
             gone += 1
     return gone

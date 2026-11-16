@@ -1,0 +1,115 @@
+<!doctype html>
+<!-- A small imitation of a Workday Education section where the school box is education-N--school (Visa, Analog
+     Devices, 2026-11-16), not education-N--schoolName. Typing a search and pressing Enter lists the matching schools;
+     a single match picks itself. The degree list uses ISCED names like Visa's. -->
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mock Workday education</title>
+</head>
+<body>
+<div role="group" aria-labelledby="Education-section">
+  <h4 id="Education-section">Education</h4>
+  <div data-automation-id="instructionalText"><p>To find your school, type out the name of your school and hit enter.
+    If your school is not listed, please type in "Other".</p></div>
+
+  <div role="group" aria-labelledby="Education-1-panel">
+    <h5 id="Education-1-panel">Education 1</h5>
+    <div data-automation-id="formField-school" id="education-7--school">
+      <label>School or University<abbr title="required">*</abbr></label>
+      <div data-automation-id="multiSelectContainer">
+        <div data-automation-id="multiselectInputContainer"><input type="text" id="education-7--school"
+             data-choices="Northeastern University|Northeastern Illinois University|Other"></div>
+        <ul role="listbox" data-automation-id="selectedItemList"></ul>
+      </div>
+    </div>
+    <div data-automation-id="formField-degree">
+      <label>Degree<abbr title="required">*</abbr></label>
+      <button type="button" aria-haspopup="listbox" id="education-7--degree"
+              data-options="Master of Business Administration - MBA ( (ISCED 7)|Master’s or Equivalent (ISCED 7: MA, MSc, MEng, MBA, LLM, et cetera)|Bachelor’s or Equivalent First-Degree (ISCED 6: BA, BSc, BEng, LLB, et cetera)|Doctorate (ISCED 8)">Select One</button>
+    </div>
+    <div data-automation-id="formField-fieldOfStudy">
+      <label>Field of Study<abbr title="required">*</abbr></label>
+      <div data-automation-id="multiSelectContainer">
+        <div data-automation-id="multiselectInputContainer"><input type="text" id="education-7--fieldOfStudy"
+             data-choices="Computer Science|Computer Engineering|Computer and Information Science"></div>
+        <ul role="listbox" data-automation-id="selectedItemList"></ul>
+      </div>
+    </div>
+  </div>
+
+  <div role="group" aria-labelledby="Education-2-panel">
+    <h5 id="Education-2-panel">Education 2</h5>
+    <div data-automation-id="formField-school" id="education-9--school">
+      <label>School or University<abbr title="required">*</abbr></label>
+      <div data-automation-id="multiSelectContainer">
+        <div data-automation-id="multiselectInputContainer"><input type="text" id="education-9--school"
+             data-choices="Northeastern University|Northeastern Illinois University|Other"></div>
+        <ul role="listbox" data-automation-id="selectedItemList"></ul>
+      </div>
+    </div>
+    <div data-automation-id="formField-degree">
+      <label>Degree<abbr title="required">*</abbr></label>
+      <button type="button" aria-haspopup="listbox" id="education-9--degree"
+              data-options="Master of Business Administration - MBA ( (ISCED 7)|Master’s or Equivalent (ISCED 7: MA, MSc, MEng, MBA, LLM, et cetera)|Bachelor’s or Equivalent First-Degree (ISCED 6: BA, BSc, BEng, LLB, et cetera)|Doctorate (ISCED 8)">Select One</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function closeLists() { document.querySelectorAll('.popup').forEach(p => p.remove()); }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLists(); });
+
+  // Dropdowns: a button that opens ul[role=listbox] > li[role=option]
+  document.querySelectorAll('button[aria-haspopup=listbox]').forEach(button => {
+    button.addEventListener('click', () => {
+      closeLists();
+      const list = document.createElement('ul');
+      list.setAttribute('role', 'listbox');
+      list.className = 'popup';
+      ['Select One', ...button.dataset.options.split('|')].forEach(text => {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        li.innerHTML = `<div>${text}</div>`;
+        li.addEventListener('click', () => { button.textContent = text; closeLists(); });
+        list.appendChild(li);
+      });
+      document.body.appendChild(list);
+    });
+  });
+
+  // Search boxes: Enter searches; one result is picked by itself, several are listed
+  document.querySelectorAll('[data-automation-id=multiselectInputContainer] input').forEach(input => {
+    const picked = input.closest('[data-automation-id=multiSelectContainer]').querySelector('[data-automation-id=selectedItemList]');
+    const choices = input.dataset.choices.split('|');
+    function pick(text) {
+      const li = document.createElement('li');
+      li.innerHTML = `<p data-automation-id="promptOption" data-automation-label="${text}">${text}</p>` +
+                     `<span data-automation-id="DELETE_charm">x</span>`;
+      li.querySelector('[data-automation-id=DELETE_charm]').addEventListener('click', () => li.remove());
+      picked.appendChild(li);
+      input.value = '';
+      closeLists();
+    }
+    input.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      closeLists();
+      const found = choices.filter(c => c.toLowerCase().includes(input.value.toLowerCase().trim()));
+      if (found.length === 1) { pick(found[0]); return; }
+      const box = document.createElement('div');
+      box.className = 'popup';
+      box.setAttribute('role', 'listbox');
+      box.setAttribute('data-automation-id', 'activeListContainer');
+      found.forEach(text => {
+        const option = document.createElement('div');
+        option.setAttribute('role', 'option');
+        option.innerHTML = `<div data-automation-id="promptOption">${text}</div>`;
+        option.addEventListener('click', () => pick(text));
+        box.appendChild(option);
+      });
+      document.body.appendChild(box);
+    });
+  });
+</script>
+</body>
+</html>

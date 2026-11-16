@@ -85,6 +85,12 @@ def test_citizenship_and_clearance_follow_the_profile() -> None:
     assert levels(check("Candidates must be able to obtain a security clearance."))["clearance_required"] == "blocker"
 
 
+def test_us_abbreviation_does_not_split_the_sentence() -> None:  # ICF, 2026-11-16
+    icf = check("Bachelor's degree in computer science.\n- Due to contract requirements, U.S. Citizenship is required\n"
+                "Preferred: Python.")
+    assert icf.blocked and levels(icf)["citizenship_required"] == "blocker"
+
+
 # --------------------------------------------------------------------------- 2. degree level
 
 
@@ -106,7 +112,16 @@ def test_semester_roles_raise_the_cpt_hours_question() -> None:
     fall = check("This is a full-time, on-site internship in Seattle.", title="Software Engineer Intern (Fall 2026)")
     flag = next(f for f in fall.flags if f.id == "semester_timing")
     assert flag.level == "warning" and "full-time hours" in flag.message and "on site" in flag.message
-    assert "semester_timing" in levels(check("Join our team.", title="Software Co-op, Spring 2027"))
+    assert "semester_timing" in levels(check("Join our team.", title="Software Co-op, Fall 2027"))
+
+
+def test_spring_2027_and_co_ops_are_fine_anywhere() -> None:  # Vatsal, 2026-11-16: free from January, open to co-ops
+    spring = check("Location: Milwaukee, WI (on-site)", title="Software Co-op, Spring 2027")
+    assert "semester_timing" not in levels(spring) and "far_office" not in levels(spring)
+    assert levels(spring)["relocation"] == "note" and not spring.blocked
+    co_op = check("Location: Durham, NC. 15-20 hours per week during the academic year.", title="Software Engineer Co-op")
+    assert "far_office" not in levels(co_op) and not co_op.blocked
+    assert levels(check("Location: New York, NY (on-site)", title="Data Intern (Fall 2027)"))["far_office"] == "blocker"
     assert "semester_timing" not in levels(check("Join our team."))  # summer
 
 
@@ -330,3 +345,8 @@ def test_an_internship_that_mentions_summer_without_a_year_is_next_summer() -> N
     asml = check("Interns present their findings at the end of summer.", title="Internship - EUV Data Science")
     assert (asml.season, asml.season_year, asml.grad_date) == ("summer", 2027, "December 2027")
     assert check("Join our team.", title="Intern - AI Engineer Platform").grad_date == "May 2027"  # no season named
+
+
+def test_a_title_with_words_between_season_and_year_is_read() -> None:  # Kensho, 2026-11-16
+    kensho = check("Join our team in Cambridge.", title="Machine Learning Engineer - Summer Intern 2027")
+    assert (kensho.season, kensho.season_year, kensho.grad_date) == ("summer", 2027, "December 2027")

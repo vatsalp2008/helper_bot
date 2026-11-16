@@ -172,6 +172,8 @@ _RETURNING_RE = re.compile(
 )
 _SEASON_RE = re.compile(rf"(?i)\b({_SEASONS})\s*(?:of\s+)?('?\d{{2}}|\d{{4}})\b")
 _YEAR_SEASON_RE = re.compile(rf"(?i)\b(\d{{4}})\s*[(\[-]?\s*({_SEASONS})\b")  # "2027 (Summer)" (Formlabs)
+# Titles only: a season and a year a few words apart ("Summer Intern 2027", "Summer Internship Program 2027").
+_TITLE_SEASON_GAP_RE = re.compile(rf"(?i)\b({_SEASONS})\b(?:[\s,/&-]+[A-Za-z]+){{1,3}}[\s,(-]+(20\d\d)\b")
 _DEADLINE_RE = re.compile(
     rf"(?i)(?:apply by|application deadline|deadline(?: to apply)?|applications? (?:close|closes|are due|due|will "
     rf"close)|posting (?:closes|will close|expires)|accepting applications (?:until|through))\s*(?:is|on|by|:)?\s*"
@@ -186,12 +188,24 @@ _URGENCY_RE = re.compile(r"(?i)\brolling basis\b|\bapply early\b|\bfill(?:ed)? q
                          r"|\bpriority deadline\b|\blimited (?:number of )?(?:spots|openings)\b")
 
 
+# A period after these doesn't end a sentence: "Due to contract requirements, U.S. Citizenship is required" (ICF).
+_ABBREV_END = re.compile(r"(?i)(?:\bU\.S|\bU\.K|\be\.g|\bi\.e|\bInc|\bLtd|\bCorp|\bCo|\bJr|\bSr|\bDr|\bMr|\bMs|\bSt|\bNo|"
+                         r"\bvs|\bapprox)\.$")
+
+
 def _sentences(text: str) -> list[str]:
     out: list[str] = []
     for line in text.splitlines():
         line = line.strip().lstrip("-•*·▪◦ \t").strip()
-        if line:
-            out.extend(s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z(\"'])", line) if s.strip())
+        if not line:
+            continue
+        parts: list[str] = []
+        for s in re.split(r"(?<=[.!?])\s+(?=[A-Z(\"'])", line):
+            if parts and _ABBREV_END.search(parts[-1]):
+                parts[-1] = f"{parts[-1]} {s}"
+            else:
+                parts.append(s)
+        out.extend(s.strip() for s in parts if s.strip())
     return out
 
 
@@ -318,6 +332,9 @@ def _season(title: str, text: str, today: Optional[date] = None) -> tuple[Option
         m = _YEAR_SEASON_RE.search(source)
         if m:
             return m.group(2).lower().replace("autumn", "fall"), int(m.group(1))
+    m = _TITLE_SEASON_GAP_RE.search(title)
+    if m:  # "Machine Learning Engineer - Summer Intern 2027" (Kensho)
+        return m.group(1).lower().replace("autumn", "fall"), int(m.group(2))
     if today is not None and re.search(r"(?i)\bintern", title) and re.search(r"(?i)\bsummer\b", text):
         # "an end of summer presentation" (ASML): the coming summer; from August on, next year's
         return "summer", today.year + 1 if today.month >= 8 else today.year
@@ -463,7 +480,11 @@ def check_eligibility(
     # 3. Timing.
     employment = _employment(job.role_title, text)
     season, season_year = _season(job.role_title, text, today)
-    in_semester = employment == "co_op" or (employment == "internship" and season in ("fall", "spring", "winter"))
+    # Vatsal, 2026-11-16: free from January 2027 and open to co-ops, so Spring 2027 roles and co-ops without a
+    # named term are fine anywhere; fall terms still clash with classes (back at school after the summer)
+    free = parse_month_year(cfg.free_from)
+    spring_free = bool(free and season == "spring" and season_year == free.year)
+    in_semester = not spring_free and season in ("fall", "spring", "winter") and employment in ("co_op", "internship")
     if in_semester:
         term = f"{season.title()} {season_year}" if season and season_year else "This co-op"
         extra = []
@@ -502,6 +523,9 @@ def check_eligibility(
         elif employment == "internship" and season == "summer":
             flag("relocation", "note", f"Based in {place}; relocating for the summer is fine (you said yes to "
                  "relocation).")
+        elif spring_free or employment == "co_op":
+            flag("relocation", "note", f"Based in {place}; fine, you're free from {cfg.free_from} and open to "
+                 "co-ops (you said yes to relocation).")
 
     # 6. Deadlines and urgency.
     for m in _DEADLINE_RE.finditer(text):
