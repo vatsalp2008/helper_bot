@@ -126,16 +126,18 @@ def test_immediate_start_is_checked_against_the_target() -> None:
 @pytest.mark.parametrize(
     "text,title,expected",
     [
-        ("Join our team.", SUMMER, "May 2027"),
+        ("Join our team.", SUMMER, "December 2027"),  # Vatsal, 2026-11-15: summer internships
         ("Candidates must be graduating between December 2027 and June 2028.", SUMMER, "December 2027"),
         ("Must have a graduation date between December 2026 and June 2027.", SUMMER, "May 2027"),
         ("You must be returning to school after the internship.", SUMMER, "December 2027"),
         ("You must be returning to school after the internship.", "Software Engineer Intern (Summer 2026)", "May 2027"),
-        ("Open to the class of 2027.", SUMMER, "May 2027"),
+        ("Open to the class of 2027.", SUMMER, "December 2027"),
+        ("Open to the class of 2027.", "New Grad Software Engineer", "May 2027"),
         ("Expected graduation in Fall 2027.", SUMMER, "December 2027"),
         ("Graduating before or in June 2027.", "Systems Engineer, New Grad 2027", "May 2027"),
         ("Looking for engineers graduating before or by June 2027.", "New Grad 2027", "May 2027"),
-        ("Must graduate on or before December 2027.", SUMMER, "May 2027"),
+        ("Must graduate on or before December 2027.", SUMMER, "December 2027"),
+        ("Must graduate on or before June 2027.", SUMMER, "May 2027"),  # the window rules December out
     ],
 )
 def test_graduation_date(text: str, title: str, expected: str) -> None:
@@ -308,3 +310,23 @@ def test_a_limit_the_posting_states_is_flagged_but_never_blocks() -> None:
     assert levels(full)["posting_limit"] == "warning" and full.recommendation == "build"
     old = check(text, company="Figma", apps=[app(i, "Figma", when="2026-09-01") for i in range(5)])
     assert levels(old)["posting_limit"] == "note"
+
+
+def test_the_title_decides_the_role_type_and_the_season_can_come_after_the_year() -> None:  # 2026-11-15
+    sharkninja = check("Our co-op program is famous. This summer internship runs May to August.",
+                       title="Summer 2027: Data Science Intern (May to August)", location="Needham, MA")
+    assert sharkninja.employment == "internship" and not sharkninja.blocked
+    formlabs = check("Join us for the summer.", title="2027 (Summer) - Manufacturing - Manufacturing Test Software Intern")
+    assert (formlabs.season, formlabs.season_year, formlabs.grad_date) == ("summer", 2027, "December 2027")
+
+
+def test_a_calendar_year_graduation_window_is_read() -> None:  # Riot, 2026-11-15
+    riot = check("Graduating during the 2028 calendar year with an MS or PhD.",
+                 title="Machine Learning Engineering Intern (Masters/PhD) - Summer 2027")
+    assert riot.blocked and "grad_window" in levels(riot)
+
+
+def test_an_internship_that_mentions_summer_without_a_year_is_next_summer() -> None:  # ASML, 2026-11-16
+    asml = check("Interns present their findings at the end of summer.", title="Internship - EUV Data Science")
+    assert (asml.season, asml.season_year, asml.grad_date) == ("summer", 2027, "December 2027")
+    assert check("Join our team.", title="Intern - AI Engineer Platform").grad_date == "May 2027"  # no season named

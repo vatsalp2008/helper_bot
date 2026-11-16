@@ -105,9 +105,10 @@ def company_name(data: dict[str, Any], ref: WorkdayRef) -> str:
     name = ((data.get("hiringOrganization") or {}).get("name") or "").strip()
     name = re.sub(r"\s*\([^)]*\)\s*$", "", name)  # "(US01)"
     name = re.sub(r"^(?:[A-Z]{2,6}\d*|\d{2,6})\s*[-_:]\s*", "", name)  # an internal company code: "ADUS-"
-    name = re.sub(r"^\d{2,6}\s+", "", name)  # "100 Salesforce"
+    name = re.sub(r"^\d{1,6}\s+", "", name)  # "100 Salesforce", "1 DexCom"
     for _ in range(3):
-        name = re.sub(r"[,\s]+(Inc|LLC|L\.L\.C|Ltd|Limited|Corp|Corporation|Co|N\.V|B\.V|GmbH|plc|S\.A|AG|SE|LP|L\.P)\.?$",
+        name = re.sub(r"[,\s]+(Inc|LLC|L\.L\.C|Ltd|Limited Partnership|Limited|Corp|Corporation|Co|N\.V|B\.V|GmbH|plc|S\.A|AG"
+                      r"|SE|LP|L\.P)\.?$",
                       "", name, flags=re.I).strip(" ,.")
         name = re.sub(r"\s+(US|USA|U\.S\.|America|Americas|North America)$", "", name).strip(" ,.")
     return name or ref.tenant.replace("-", " ").title()
@@ -134,6 +135,9 @@ def job_from_api(data: dict[str, Any], url: str, ref: WorkdayRef) -> Job:
 class Credentials:
     email: str
     password: str
+    long_password: Optional[str] = None  # for sites that need a longer one (APPLICATION_PASSWORD_LONG)
+    uses_long: bool = False  # this company's account was made with the long one (data/accounts.yaml)
+    note_long: Optional[Callable[[], None]] = None  # records that it was
 
     def __repr__(self) -> str:  # never shows the password
         return f"Credentials({self.email!r}, password=***)"
@@ -189,6 +193,8 @@ def is_submit_request(url: str, method: str) -> bool:
 
 
 submit_clicked = wp.submit_clicked
+submit_review = wp.submit_review
+page_errors = wp.errors_shown
 
 
 def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
@@ -423,9 +429,9 @@ def fill_answer(page: Any, a: PlannedAnswer, found: wp.Found, ctx: FlowContext) 
         elif a.type == "boolean":
             if value.strip().lower() in ("yes", "true", "i agree", "agree", "checked") or value == a.label:
                 box = where.locator("input[type=checkbox]").first
-                if not box.is_checked():
-                    box.check(force=True)
-                ok, shown, detail = True, "checked", ""
+                # click-and-wait with the label as a fallback: Workday's consent box ignored check() (Camping World)
+                ticked = common.tick(box)
+                ok, shown, detail = ticked, "checked" if ticked else None, "" if ticked else "the box didn't stay ticked"
             else:
                 ok, shown, detail = True, None, "left unchecked"
         elif a.type == "date":
@@ -532,10 +538,26 @@ def _submit_account_form(page: Any, button: str) -> None:
         page.locator(f"[data-automation-id={button}]").first.click(force=True)
 
 
+def _min_password_length(page: Any) -> Optional[int]:
+    """The site's minimum password length, from its "Password Requirements" list (Visa: "A minimum of 12 characters")."""
+    try:
+        text = page.locator("body").inner_text(timeout=3000)
+    except Exception:
+        return None
+    m = re.search(r"(?i)\b(?:minimum of|at least)\s+(\d{1,2})\s+characters", text)
+    return int(m.group(1)) if m else None
+
+
 def _create_account(page: Any, creds: Credentials) -> None:
+    password = creds.password
+    need = _min_password_length(page)
+    if need and len(password) < need and creds.long_password and len(creds.long_password) >= need:
+        password = creds.long_password  # Vatsal, 2026-11-16: the long one wherever the usual one is too short
+        if creds.note_long:
+            creds.note_long()
     _type_secret(page, "[data-automation-id=email]:visible", creds.email)
-    _type_secret(page, "[data-automation-id=password]:visible", creds.password)
-    _type_secret(page, "[data-automation-id=verifyPassword]:visible", creds.password)
+    _type_secret(page, "[data-automation-id=password]:visible", password)
+    _type_secret(page, "[data-automation-id=verifyPassword]:visible", password)
     consent = page.locator("[data-automation-id=createAccountCheckbox]:visible")
     if consent.count() and not consent.first.is_checked():
         consent.first.check(force=True)
@@ -543,8 +565,9 @@ def _create_account(page: Any, creds: Credentials) -> None:
 
 
 def _sign_in(page: Any, creds: Credentials) -> None:
+    password = creds.long_password if creds.uses_long and creds.long_password else creds.password
     _type_secret(page, "[data-automation-id=email]:visible", creds.email)
-    _type_secret(page, "[data-automation-id=password]:visible", creds.password)
+    _type_secret(page, "[data-automation-id=password]:visible", password)
     _submit_account_form(page, "signInSubmitButton")
 
 

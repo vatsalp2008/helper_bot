@@ -142,6 +142,19 @@ def click_next(page: Any) -> None:
     page.locator(NEXT_BUTTON).first.click()
 
 
+def submit_review(page: Any) -> bool:
+    """Auto-submit (Vatsal, 2026-11-16): click Submit on the Review page, once. Only on the Review page, only when
+    exactly one visible Submit button is there."""
+    if step_kind(current_step(page)) != "review":
+        return False
+    button = page.locator(NEXT_BUTTON)
+    visible = [button.nth(i) for i in range(button.count()) if button.nth(i).is_visible()]
+    if len(visible) != 1 or not re.search(r"submit", visible[0].inner_text(timeout=2000), re.I):
+        return False
+    visible[0].click()
+    return True
+
+
 def errors_shown(page: Any) -> list[str]:
     texts = []
     for selector in ("[data-automation-id=inputAlert]", "[data-automation-id=errorMessage]", "[data-automation-id=errorHeading]"):
@@ -197,7 +210,8 @@ def discover(page: Any, *, skip_special: bool = False, section: str = "questions
         if re.search(r"(?i)^(please select your )?(gender|race|ethnicity|veteran|disabilit|hispanic)", f["label"]):
             sect = "eeoc"
         questions.append(FormQuestion(label=f["label"], field_name=f["key"], type=f["type"], required=f["required"],
-                                      options=options, section=sect))
+                                      options=options, section=sect,
+                                      description=(f["section"] or "").replace("-", " ") or None))
         found[f["key"]] = Found(section=f["section"] or "", current=f["current"], selected=f["selected"], dates=f["dates"])
     return questions, found
 
@@ -521,6 +535,9 @@ def degree_aliases(degree: str) -> tuple[str, ...]:
     return DEGREE_ALIASES["master"] if d.startswith("master") else DEGREE_ALIASES["bachelor"] if d.startswith("bachelor") else ()
 
 
+DEBUG_DIR: Optional[Path] = None  # set per run by apply.py: where field markup goes when something won't fill
+
+
 def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], None]) -> list[FieldResult]:
     results = []
     used: set[str] = set()
@@ -540,8 +557,21 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
                                                threshold=0.85, keep_existing=False)
                 if not ok:
                     notes.append(f"school: {why}")
+                elif not selected_items(school):  # it clicked something, but nothing was picked (Rocket, Visa)
+                    notes.append("school: the pick didn't hold; choose it (or delete the entry) in the window")
             elif _by_id(page, base + "schoolName").count():
                 _by_id(page, base + "schoolName").first.fill(s.school)
+                # a search box that wants a pick from its list doesn't count typed text (Dexcom, Martin Marietta)
+                if school.locator("[data-automation-id=promptIcon], [data-automation-id=searchBox]").count() \
+                        and not selected_items(school):
+                    notes.append("school: this site's school list didn't offer it; pick it (or delete the entry) in "
+                                 "the window")
+            if notes and DEBUG_DIR is not None:  # the field's markup, so Claude can see why (run folder, git-ignored)
+                try:
+                    (DEBUG_DIR / f"education_{n}_school.html").write_text(school.evaluate("e => e.outerHTML")[:60000],
+                                                                         encoding="utf-8")
+                except Exception:
+                    pass
             degree = _field_of(page, base + "degree")
             if degree.count() and degree.locator("button[aria-haspopup=listbox]").count():
                 options = dropdown_options(page, degree)

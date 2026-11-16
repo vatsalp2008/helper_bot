@@ -3,7 +3,10 @@
 
 projects_per_resume: 5
 bullets_per_item: 2             # per project and per experience entry
-submit_mode: review             # review | auto
+submit_mode: auto               # review | auto (Vatsal, 2026-11-16: auto-submit where every condition holds)
+answer_review: in_form          # before_fill | in_form: drafted answers go straight into the form; you review them there (Vatsal, 2026-11-15)
+drafts_need_review: false       # Claude's drafted answers count as approved, so auto-submit may send them (Vatsal, 2026-11-15)
+auto_submit_min_clean_runs_by_site: {workday: 0}   # Workday auto-submits from now on (Vatsal, 2026-11-16)
 auto_submit_min_clean_runs: 5
 default_grad_date: "May 2027"
 alt_grad_date: "December 2027"

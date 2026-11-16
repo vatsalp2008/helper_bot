@@ -358,7 +358,7 @@ def stats(weeks: Annotated[int, typer.Option("--weeks", min=1, max=104, help="We
     conn = open_db(paths, cfg)
     try:
         typer.echo(format_stats(repo.stats(conn, weeks=weeks)))
-        typer.echo(readiness(conn, cfg.auto_submit_min_clean_runs))
+        typer.echo(readiness(conn, cfg.auto_submit_min_clean_runs, cfg.auto_submit_min_clean_runs_by_site))
     finally:
         conn.close()
 

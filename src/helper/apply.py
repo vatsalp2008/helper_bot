@@ -222,6 +222,25 @@ def answers_step(paths: Paths, cfg: Config, run_id: str, approve: bool = False) 
             write_json(folder / PLAN, plan.model_dump(mode="json"))
     missing = [a for a in plan.answers if a.kind == "unknown" and a.required]
     review = plan.needs_review()
+    if cfg.answer_review == "in_form" and not approve:  # drafts go into the form; Vatsal reviews them there
+        saved = remember(paths, review)  # choice answers are reused on later postings
+        if not cfg.drafts_need_review:  # Claude's drafts count as approved (Vatsal, 2026-11-15); helper's own unsure
+            for a in review:            # matches still wait for him
+                if a.source.startswith("Claude"):
+                    a.status = "approved"
+        write_json(folder / PLAN, plan.model_dump(mode="json"))
+        set_step(state, "answers", "done", f"{len(review)} drafted answer(s) go into the form for review")
+        save_state(paths, state)
+        lines = [f"Answers ready. Fill the form with `helper fill {run_id}`."]
+        if review:
+            lines.append("Drafted answers that go into the form for you to check before Submit:")
+            lines += [f"  {a.label}\n    -> {a.value}" for a in review]
+        if missing:
+            lines.append("Only you can answer these; they're left for you in the window:")
+            lines += [f"  {a.label}{' (options: ' + ', '.join(a.options) + ')' if a.options else ''}" for a in missing]
+        if saved:
+            lines.append(f"Remembered {saved} choice answer(s) for later postings.")
+        return "\n".join(lines)
     if (missing or review) and not approve:
         lines = ["Paused for Vatsal (exit 4): review the form answers below (spec 10.4)."]
         if review:
@@ -337,6 +356,14 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
             _say(f"Filled {sum(r.ok for r in results)} of {len(results)} field(s); helper clicked Submit once.")
         else:
             _say(_fill_summary(results, failed_required, wait))
+            drafted = [a for a in plan.needs_review() if a.value]
+            yours = [a for a in plan.answers if a.kind == "unknown" and a.required]
+            if drafted:
+                _say("Claude drafted these; check them in the window:\n"
+                     + "\n".join(f"  {a.label[:90]} -> {a.value[:120]}" for a in drafted))
+            if yours:
+                _say("Only you can answer these; fill them in the window:\n"
+                     + "\n".join(f"  {a.label[:120]}" for a in yours))
         outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, form, seen)
         shot = None
         if outcome in ("confirmed", "unverified"):
@@ -385,6 +412,10 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
 
     def ask_claude(answers: list[PlannedAnswer], moved_on: Any) -> None:
         _ask_claude_midfill(paths, state, job, answers, moved_on, wait * 60, poll_seconds)
+        if not cfg.drafts_need_review:  # Vatsal, 2026-11-15: Claude's drafts need no review
+            for a in answers:
+                if a.status == "needs_review" and a.source.startswith("Claude"):
+                    a.status = "approved"
         write_json(folder / PLAN, AnswerPlan(answers=planned).model_dump(mode="json"))
 
     go_flag = folder / "go_on"
@@ -403,18 +434,22 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
             pauses.append(text.splitlines()[0][:120])
         _say(text)
 
-    if mode == "auto":
-        _say(f"Auto-submit is off for this run: {REVIEW_ONLY.get(job.ats, 'this site is review-only')}.")
+    if mode == "auto" and job.ats in REVIEW_ONLY:
+        _say(f"Auto-submit is off for this run: {REVIEW_ONLY[job.ats]}.")
     with browser_session(paths, cfg, headless=headless) as context:
         page = context.pages[0] if context.pages else context.new_page()
         page.on("request", lambda req: submit_seen.update(value=True) if adapter.is_submit_request(req.url, req.method)
                 else None)
         page.goto(job.apply_url or job.url, wait_until="domcontentloaded")
+        if job.ats == "workday":
+            from .adapters import workday_page
+
+            workday_page.DEBUG_DIR = folder
         flow = adapter.FlowContext(
             company=job.company, plan=plan_page, ask_claude=ask_claude, resume_pdf=pdf, work=work, schools=schools,
             skills=_resume_skills(folder), certifications=_certifications(paths) if cfg.fill_certifications else [],
             websites=[profile.tier1.linkedin_url, profile.tier1.github_url, profile.tier1.portfolio_url],
-            say=say, pause=make_pause(cfg), credentials=_credentials(paths, job.ats),
+            say=say, pause=make_pause(cfg), credentials=_credentials(paths, job.ats, job),
             has_account=job.ats == "workday" and _has_workday_account(paths, cfg, state, job), go_on=go_on,
             wait_seconds=wait * 60,
             poll_seconds=poll_seconds,
@@ -427,15 +462,61 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
                                         + ("; stopped on the Review page" if result.reached_review else ""))
         save_state(paths, state)
         _say(_flow_summary(result, planned, wait))
+        submitted_by_helper = False
+        if mode == "auto" and job.ats not in REVIEW_ONLY:
+            reasons = _flow_blockers(paths, cfg, folder, job, planned, result, page, adapter, pauses)
+            if reasons:
+                _say("Auto-submit is off for this run, so it waits on the Review page for you. Why:\n"
+                     + "\n".join(f"  - {r}" for r in reasons))
+            else:
+                _say("Auto-submit: every condition holds. Clicking Submit once; helper never retries.")
+                submitted_by_helper = bool(adapter.submit_review(page))
+                if submitted_by_helper:
+                    submit_seen["value"] = True
+                else:
+                    _say("helper couldn't click Submit after all: submit it yourself on the Review page.")
         outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, None)
         shot = None
         if outcome in ("confirmed", "unverified"):
             shot = folder / "confirmation.png"
             if not _snapshot(page, None, shot):
                 shot = None
-    return _log_outcome(paths, cfg, state, outcome, shot, result.results, mode="review", ats=job.ats,
+    return _log_outcome(paths, cfg, state, outcome, shot, result.results, ats=job.ats,
+                        mode="auto" if submitted_by_helper else "review",
                         problems=run_problems(result.results, False, pauses + ([] if result.reached_review else
                                                                                 ["stopped before the Review page"])))
+
+
+def _flow_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, planned: list[PlannedAnswer], result: Any,
+                   page: Any, adapter: Any, pauses: list[str]) -> list[str]:
+    """Why a multi-page run must not submit by itself on the Review page (Workday, Vatsal 2026-11-16): every field
+    filled, nothing left for Vatsal, no errors, no eligibility warnings or duplicates. Best guesses don't stop it."""
+    from .tracker.commands import open_db
+
+    if not result.reached_review:
+        return ["it didn't reach the Review page"]
+    conn = open_db(paths, cfg)
+    try:
+        clean = clean_review_runs(conn, job.ats)
+    finally:
+        conn.close()
+    eligibility = read_json(folder / "eligibility.json") if (folder / "eligibility.json").is_file() else {}
+    errors = adapter.page_errors(page) if hasattr(adapter, "page_errors") else []
+    if job.ats == "workday":
+        # Vatsal, 2026-11-16: on Workday's Review page, submit whether or not he stepped in along the way. Workday only
+        # shows Review once every required field is filled; an error on the page or an unclear button still stops it.
+        reasons = ["the Review page shows errors: " + "; ".join(e[:80] for e in errors[:3])] if errors else []
+        if not hasattr(adapter, "submit_review"):
+            reasons.append("helper can't click this site's Submit button")
+        return reasons
+    gate = Gate(ats=job.ats, clean_runs=clean,
+                min_clean_runs=cfg.auto_submit_min_clean_runs_by_site.get(job.ats, cfg.auto_submit_min_clean_runs),
+                answers=planned, results=result.results, eligibility=eligibility, captcha_seen=False,
+                page_errors=errors, has_submit_button=hasattr(adapter, "submit_review"), best_guesses_ok=True)
+    reasons = blockers(gate)
+    reasons += [f"not filled: {r.label[:70]}" for r in result.results if not r.ok]
+    reasons += [f"you had to step in: {p[:90]}" for p in pauses if re.search(r"(?i)answer these|fix it in the window", p)]
+    return list(dict.fromkeys(reasons))
 
 
 def _ask_claude_midfill(paths: Paths, state: Any, job: Job, answers: list[PlannedAnswer], moved_on: Any,
@@ -570,21 +651,44 @@ def _certifications(paths: Paths) -> list[dict[str, Any]]:
     return [c for c in (data or {}).get("certifications", []) if isinstance(c, dict) and c.get("name")]
 
 
-def _credentials(paths: Paths, ats: str) -> Optional[Any]:
+def _credentials(paths: Paths, ats: str, job: Optional[Job] = None) -> Optional[Any]:
     """The application login from .env for sites where helper signs in (rule 8's exceptions). Never printed."""
     if ats == "icims":
         from .adapters.icims import Credentials
 
         email, password = env_value(paths, "ICIMS_EMAIL"), env_value(paths, "ICIMS_PASSWORD")
         return Credentials(email, password, env_value(paths, "ICIMS_USERNAME")) if email and password else None
-    return _workday_credentials(paths)
+    return _workday_credentials(paths, job)
 
 
-def _workday_credentials(paths: Paths) -> Optional[Any]:
-    from .adapters.workday import Credentials
+def _workday_credentials(paths: Paths, job: Optional[Job] = None) -> Optional[Any]:
+    from .adapters.workday import Credentials, parse_ref
 
     email, password = env_value(paths, "WORKDAY_EMAIL"), env_value(paths, "WORKDAY_PASSWORD")
-    return Credentials(email, password) if email and password else None
+    if not (email and password):
+        return None
+    ref = (parse_ref(job.url or "") or parse_ref(job.apply_url or "")) if job else None
+    key = ref.account_key if ref else None
+    return Credentials(email, password, long_password=env_value(paths, "APPLICATION_PASSWORD_LONG"),
+                       uses_long=bool(key and key in _long_password_accounts(paths)),
+                       note_long=(lambda: _note_long_password(paths, key)) if key else None)
+
+
+def _long_password_accounts(paths: Paths) -> set[str]:
+    """Accounts made with the long password (data/accounts.yaml, git-ignored; it holds no secrets)."""
+    path = paths.data / "accounts.yaml"
+    data = load_yaml(path) if path.is_file() else None
+    return set((data or {}).get("long_password", []))
+
+
+def _note_long_password(paths: Paths, key: str) -> None:
+    import yaml
+
+    keys = sorted(_long_password_accounts(paths) | {key})
+    (paths.data / "accounts.yaml").write_text(
+        "# Application accounts created with APPLICATION_PASSWORD_LONG because the usual password was too short\n"
+        "# (Vatsal, 2026-11-16). No secrets here: helper signs in to these with the long password.\n"
+        + yaml.safe_dump({"long_password": keys}, sort_keys=False), encoding="utf-8")
 
 
 def _has_workday_account(paths: Paths, cfg: Config, state: Any, job: Job) -> bool:
@@ -620,8 +724,8 @@ def _flow_summary(result: Any, planned: list[PlannedAnswer], wait: float) -> str
         lines.append("Best guesses (check them on the Review page):")
         lines += [f"  {a.label}: {a.value}" for a in guesses]
     if result.reached_review:
-        lines.append("Stopped on Workday's Review page. Check everything there, then click Submit yourself; helper never "
-                     f"clicks it (review mode). It watches for the confirmation for up to {wait:g} minutes.")
+        lines.append("Reached Workday's Review page. Unless auto-submit goes ahead (below), check everything there and "
+                     f"click Submit yourself. helper watches for the confirmation for up to {wait:g} minutes.")
     else:
         lines.append("helper stopped before the Review page (see above). Finish the application in the window and "
                      f"submit it yourself; helper watches for the confirmation for up to {wait:g} minutes.")
@@ -694,14 +798,14 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
         if not warned_captcha and captcha_visible(page):
             _say("A CAPTCHA appeared: solve it in the browser window; helper keeps watching.")
             warned_captcha = True
-            if seen is not None:
-                seen["captcha"] = True
+            if seen is not None:  # at Submit: Vatsal solves it; the fill itself still counts as clean (Vatsal,
+                seen["at_submit"] = True  # 2026-11-16). One that blocks the page before filling still counts.
         if not warned_code and asks_for_emailed_code(page, form):
             _say("The site emailed you a verification code: enter it in the browser window and submit. helper never "
                  "does that step, and it keeps watching for the confirmation.")
             warned_code = True
-            if seen is not None:
-                seen["captcha"] = True  # a verification step: the run isn't hands-off
+            if seen is not None:  # Greenhouse's emailed code at Submit: not a problem with the fill (Vatsal, 2026-11-16)
+                seen["at_submit"] = True
         try:
             page.wait_for_timeout(poll * 1000)
         except Exception:

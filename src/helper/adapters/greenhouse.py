@@ -254,6 +254,11 @@ def choose_option(root: Any, dom: str, wanted: str, *, search: Optional[str] = N
     return True, best
 
 
+# A follow-up that only appears after a certain answer ("If you selected other, please specify"; SharkNinja): when it
+# isn't shown, it isn't needed, even though the form marks it required.
+FOLLOW_UP_RE = re.compile(r"(?i)^\W*if (you (selected|answered|chose|checked)|yes|no|other|so|applicable)\b")
+
+
 def fill_form(page: Any, answers: list[Any], resume_pdf: Path, *, country: Optional[str], city: Optional[str],
               pause: Callable[[], None]) -> list[FieldResult]:
     """Fill every planned answer in `page` (a Page or the Frame find_form returned). Never touches Submit."""
@@ -268,8 +273,9 @@ def fill_form(page: Any, answers: list[Any], resume_pdf: Path, *, country: Optio
         dom = dom_id(a.field)
         target = page.locator(css_id(dom))
         if not target.count():  # optional fields can be hidden (Race shows only after some Hispanic/Latino answers)
-            results.append(FieldResult(a.field, a.label, not a.required, None,
-                                       "not shown on this form" if not a.required else "field not found on the page"))
+            hidden_ok = not a.required or bool(FOLLOW_UP_RE.match(a.label))  # "If you selected other, please specify"
+            results.append(FieldResult(a.field, a.label, hidden_ok, None,
+                                       "not shown on this form" if hidden_ok else "field not found on the page"))
             continue
         try:
             if a.type == "file":

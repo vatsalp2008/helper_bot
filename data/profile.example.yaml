@@ -40,6 +40,8 @@ tier1:                        # auto-filled without asking
   expected_graduation: per_run
   how_did_you_hear: null
   nuid: null
+  citizenship: null
+  citizenship_since: null
   willing_to_relocate: null
   work_location_preferences: null
 

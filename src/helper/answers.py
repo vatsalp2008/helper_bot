@@ -76,6 +76,15 @@ def _negative(text: str) -> bool:
     return bool(re.match(r"\s*(?:no\b|not\b|i am not\b|i'm not\b|i do not\b|i don't\b)", text, re.I))
 
 
+_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+def _other_year(value: str, option: str) -> bool:
+    """Both name a year, and not the same one."""
+    years = set(_YEAR_RE.findall(value))
+    return bool(years) and bool(set(_YEAR_RE.findall(option))) and not years & set(_YEAR_RE.findall(option))
+
+
 def match_option(value: str, options: list[str], aliases: tuple[str, ...] | list[str] = ()) -> tuple[Optional[str], float]:
     """The option that says the same as `value`, with a score from 0 to 1."""
     if not value or not options:
@@ -88,10 +97,10 @@ def match_option(value: str, options: list[str], aliases: tuple[str, ...] | list
             continue
         if n == v:
             return option, 1.0
+        if _other_year(value, option):  # "May 2027" is never "Spring 2028"
+            continue
         if v and (n.startswith(v + " ") or v.startswith(n + " ")):
             score = 0.95
-        elif aliases and any(_norm(a) and (_norm(a) == n or re.search(rf"\b{re.escape(_norm(a))}\b", n)) for a in aliases):
-            score = 0.9
         else:
             tv, to = _tokens(value), _tokens(option)
             score = len(tv & to) / len(tv | to) if tv and to else 0.0
@@ -99,6 +108,10 @@ def match_option(value: str, options: list[str], aliases: tuple[str, ...] | list
                 score = max(score, 0.85)
             if _negative(value) != _negative(option):
                 score *= 0.5
+            # an alias ("Asian") counts, but a closer match ("South Asian" for "Asian (South Asian)") still wins
+            if aliases and any(_norm(a) and (_norm(a) == n or re.search(rf"\b{re.escape(_norm(a))}\b", n))
+                               for a in aliases):
+                score = max(score, 0.9)
         if score > best_score or (score == best_score and best is not None and len(option) < len(best)):
             best, best_score = option, score  # on a tie the closer (shorter) option wins
     return best, round(best_score, 3)
@@ -124,7 +137,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("transcript", r"\btranscripts?\b|\bacademic record\b", 0.95),
     ("hiring_manager_note", r"\b(note|message)\b.{0,25}\b(hiring manager|recruiter|hiring team)\b", 0.9),
     ("cover_letter", r"\bcover letter\b", 0.95),
-    ("resume", r"\bresume\b|\bcv\b", 0.95),
+    ("resume", r"\bresume\b|\bcv\b|^\W*upload (a |your )?files?\b(?!.*\b(additional|other|supporting)\b)", 0.95),
+    # ^ Workday's resume box can say only "Upload a file (5MB max)" (ASML, 2026-11-16)
     ("preferred_first_name", r"\bpreferred (first )?name\b|\bnickname\b", 0.95),
     ("first_name", r"\bfirst name\b|\bgiven name\b", 0.95),
     ("last_name", r"\blast name\b|\bsurname\b|\bfamily name\b", 0.95),
@@ -133,22 +147,37 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("phone_extension", r"\bextension\b|^\s*ext\.?\s*$", 0.9),
     ("phone_type", r"\bphone (device )?type\b|\bdevice type\b|\btype of phone\b", 0.9),
     ("phone_country_code", r"\bcountry (phone )?code\b|\bdialing code\b", 0.9),
-    ("phone", r"\bphone\b|\bmobile\b|\bcell\b", 0.9),
+    ("phone", r"\bphone\b|(?<!t-)\bmobile\b|\bcell\b", 0.9),  # not "T-Mobile" (2026-11-16)
     ("linkedin_url", r"\blinked ?in\b", 0.95),
     ("github_url", r"\bgit ?hub\b", 0.95),
     ("portfolio_url", r"\bportfolio\b|\bpersonal (web)?site\b|\bwebsite\b|\bweb ?site\b|\bblog\b", 0.88),
+    # "authorized to work without sponsorship?" asks about authorization (Yes); any other mention of sponsorship asks
+    # whether you need it (No), even when it also says "work authorization" (Fanatics, 2026-11-15)
+    ("work_authorization", r"\b(authori[sz]ed|eligible|permitted) to work\b.{0,80}\bwithout\b.{0,40}\bsponsor", 0.95),
+    ("sponsorship", r"\bsponsor", 0.95),
+    ("citizenship_country", r"\bcountry of citizenship\b|\bcitizenship country\b|\bcountry (of|where you hold) "
+                            r"citizenship\b|\bwhat is your citizenship\b|^\W*citizenship\W*$", 0.9),
+    # a list of statuses ("US Citizen / Lawful Permanent Resident / Protected Person / None"; Muon Space, 2026-11-15)
+    ("us_citizen", r"\b(immigration|citizenship)\b.{0,60}\bstatus\b|\bU\.?\s?S\.? persons?\b|"
+                   r"^\W*please indicate your current status\W*$", 0.9),
     ("work_authorization", r"\b(legally )?(authori[sz]ed|eligible|permitted) to work\b|\bwork authori[sz]ation\b"
                            r"|\bright to work\b", 0.95),
-    ("sponsorship", r"\bsponsor", 0.95),
-    ("us_citizen", r"\bcitizen\b|\bpermanent resident\b|\bgreen card\b", 0.9),
+    ("us_citizen", r"\bcitizen\b|\bpermanent resident\b|\bgreen card\b|\bU\.?\s?S\.? persons?\b", 0.9),
+    # commuting to the office, on-site or hybrid attendance: always yes (Vatsal, 2026-11-15)
+    ("onsite_ok", r"\b(willing|able|can you|comfortable|confirm|meet this requirement)\b.{0,120}\b(commut\w*|on-?site|"
+                  r"in[- ]office|in the office|in person|in-person|hybrid)\b|\b(commut\w*|on-?site|in[- ]office|"
+                  r"in person|in-person|hybrid)\b.{0,160}\b(willing|able to|can you|meet this requirement|comfortable)\b",
+     0.9),
     ("graduation_date", r"\bgraduat\w*\b.*\b(date|when|year|term|semester)\b|\bexpected graduation\b|\bgraduation\b"
                         r"|\bclass of\b|\bwhen (do|will) you graduate\b|\b(term|semester|season)\b.*\bgraduat", 0.9),
     ("enrolled", r"\bcurrently enrolled\b.*\?\s*$|\bare you (currently )?(a )?(student|enrolled)\b", 0.9),
     ("school_status", r"\bbest describes your (current )?(status|situation)\b|\byear of (school|study)\b|"
                       r"\bclass standing\b|\bacademic (status|standing)\b", 0.85),
-    ("previous_employee", r"\b(ever|previously|before|formerly)\b.*\b(work(ed)?|employ\w*|contractor|consultant)\b"
-                          r"|\b(work(ed)?|employ\w*)\b.*\bin the past\b", 0.9),
-    ("major", r"\bmajor\b|\bdiscipline\b|\bfield of study\b|\barea of study\b", 0.9),
+    ("previous_employee", r"\b(ever|previously|before|formerly|former)\b.*\b(work(ed)?|employ\w*|contractor|consultant)\b"
+                          r"|\b(work(ed)?|employ\w*)\b.*\bin the past\b"
+                          r"|\b(have you been|are you currently|are you now)\b.{0,40}\b(employed|working|a contractor)\b"
+                          r".{0,20}\b(with|for|by|at)\b", 0.9),
+    ("major", r"\bmajor\b(?! life)|\bdiscipline\b|\bfield of study\b|\barea of study\b", 0.9),  # not "major life activities"
     ("degree", r"^\s*degree( type| level)?\s*\??\s*$|\bhighest degree\b|\b(type|level) of degree\b|"
                r"\bhighest (level of )?education\b|\beducation level\b", 0.95),
     ("degree", r"\bdegree\b", 0.85),
@@ -166,8 +195,12 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("age_18", r"\b18\b|\beighteen\b|\blegal age\b", 0.9),
     ("background_check", r"\bbackground (check|screen)", 0.9),
     ("clearance", r"\bclearance\b", 0.9),
+    # military service, his or a spouse's or partner's: always No (Vatsal, 2026-11-16). Before the veteran rule.
+    ("military_service", r"\b(spouse|domestic partner|partner)\b.{0,80}\b(military|armed forces|served)\b|"
+                         r"\b(served|serving|affiliated)\b.{0,60}\b(military|armed forces|national guard|reserves?)\b",
+     0.95),
     ("eeo_hispanic", r"\bhispanic\b|\blatin[oax]\b", 0.9),
-    ("eeo_race", r"\brace\b|\bethnicit", 0.85),
+    ("eeo_race", r"\brace\b|\bracial\b|\bethnicit|\bethnic (background|identity|origin)\b", 0.85),  # "racial/ethnic"
     ("eeo_gender", r"\bgender\b|^\s*sex\s*\??\s*$", 0.9),
     ("eeo_veteran", r"\bveteran\b", 0.9),
     ("eeo_disability", r"\bdisabilit", 0.9),
@@ -204,11 +237,19 @@ _US_STATES = {"WA": "Washington", "CA": "California", "NY": "New York", "OR": "O
               "IL": "Illinois", "NJ": "New Jersey", "CO": "Colorado", "GA": "Georgia", "FL": "Florida", "VA": "Virginia"}
 
 
+_FILE_KEYS = ("resume", "cover_letter", "transcript")
+
+
 def key_for(q: FormQuestion) -> tuple[Optional[str], float]:
     if q.field_name in FIELD_KEYS:
         return FIELD_KEYS[q.field_name], 1.0
     text = q.label
     for key, pattern, confidence in LABEL_RULES:
+        if q.type == "file" and key not in _FILE_KEYS:  # an upload takes a document, never a zip code (Riot: ".zip")
+            continue
+        if q.type == "file" and key == "resume" and not re.search(r"(?i)\bresume|\bcv\b", q.label) and \
+                re.search(r"(?i)additional|attachment|supporting|other", q.description or ""):
+            continue  # "Upload a file" under Additional Attachments isn't the resume box (Camping World, 2026-11-16)
         if re.search(pattern, text, re.IGNORECASE):
             if key.startswith("eeo_") and q.section in ("eeoc", "demographic"):
                 confidence = max(confidence, 0.95)  # a question in the EEO survey means what it says
@@ -391,7 +432,8 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     if key == "major":
         return Value(t1.major, "profile major")
     if key == "graduation_date":
-        return Value(ctx.grad_date, "this run's graduation date", candidates=_grad_candidates(ctx.grad_date))
+        return Value(ctx.grad_date, "this run's graduation date", candidates=_grad_candidates(ctx.grad_date),
+                     fallback_other=True)  # no option for it: "Other", then the date in the follow-up box
     current = next((e for e in ctx.profile.education if e.end == "per_run"), None)
     if key == "enrolled":
         return Value("Yes" if current else None, "profile education (a program in progress)")
@@ -411,8 +453,28 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
             return Value(None, "rule: sponsorship and CPT/OPT",
                          note="names CPT/OPT/F-1 (in the question or its choices) without saying they count")
         return tier2(t2.sponsorship, "sponsorship")
+    if key == "citizenship_country":  # from the profile (Vatsal, 2026-11-16)
+        if not t1.citizenship:
+            return Value(None, "profile citizenship")
+        year = re.search(r"\byear\b", q.label, re.I) and t1.citizenship_since
+        text = f"{t1.citizenship}, since {t1.citizenship_since} (by birth)" if year and not q.options else t1.citizenship
+        return Value(text, "profile citizenship")
     if key == "us_citizen":
-        return tier2(t2.us_citizen_or_permanent_resident, "us_citizen_or_permanent_resident")
+        given = tier2(t2.us_citizen_or_permanent_resident, "us_citizen_or_permanent_resident")
+        yes_no = any(_norm(o) in ("yes", "no") for o in q.options)
+        if q.options and not yes_no and (given.text or "").strip().lower() in ("no", "false"):
+            # a list of statuses (US Citizen, Permanent Resident, Protected Person, None): none of them (Vatsal,
+            # 2026-11-15)
+            none = [o for o in q.options if re.search(r"(?i)^\W*none\b|none of (the )?(above|these)|^\W*neither\b|"
+                                                       r"not an? u\.?\s?s\.? (citizen|person)|non-u\.?\s?s|"
+                                                       r"^\W*all others\b.{0,40}\bvisa holder", o)]  # ASML
+            if len(none) == 1:
+                return Value(none[0], "profile us_citizen_or_permanent_resident (none of these statuses)",
+                             confidence=given.confidence)
+        return given
+    if key == "onsite_ok":
+        return Value("Yes", "rule: commuting and on-site work, always yes (Vatsal, 2026-11-15)",
+                     aliases=("yes", "i can", "i am willing", "i am able"))
     open_to_all = "all" in (t1.work_location_preferences or "").lower()
     if key in ("relocate", "work_location") and q.type == "multi_select" and q.options and open_to_all:
         return Value("; ".join(q.options), "profile work_location_preferences (open to all)", confidence=0.95)
@@ -442,6 +504,12 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return tier2(t2.salary_expectation, "salary_expectation")
     if key == "employment_restrictions":
         return tier2(t2.employment_restrictions, "employment_restrictions")
+    if key == "military_service":
+        if q.options:
+            never = [o for o in q.options if re.search(r"(?i)^\W*no\b|never served|have not served", o)]
+            if len(never) == 1:
+                return Value(never[0], "rule: military service questions are No (Vatsal, 2026-11-16)")
+        return Value("No", "rule: military service questions are No (Vatsal, 2026-11-16)")
     if key == "relatives_at_company":  # Vatsal, 2026-11-15: none, always ("N/A" where a written answer is asked)
         given = tier2(t2.relatives_at_company, "relatives_at_company",
                       aliases=("no", "none", "n/a", "not applicable", "i do not", "no relatives"))
@@ -494,10 +562,11 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     if key in ("eeo_hispanic", "eeo_other"):
         return Value(eeo.default_for_other, "profile eeo.default_for_other", aliases=tuple(DECLINE), confidence=eeo_conf)
     if key == "previous_employee":
-        mentioned = contains_word(q.label, ctx.job.company) or re.search(r"\b(us|this company|our company)\b", q.label, re.I)
-        if any(same_company(e, ctx.job.company) for e in ctx.past_employers):
-            return Value(None, "master list", note=f"you worked at {ctx.job.company}: answer it yourself")
-        return Value("No", "master list: never worked here", confidence=1.0 if mentioned else 0.8,
+        # all of Vatsal's work history is in the master list (Vatsal, 2026-11-16): an employer that isn't there, this
+        # company or its affiliates, dealers and contractors, gets "No"
+        if any(same_company(e, ctx.job.company) or contains_word(q.label, e) for e in ctx.past_employers):
+            return Value(None, "master list", note="the question names an employer in your master list: answer it yourself")
+        return Value("No", "master list: no work there (it holds all your experience)", confidence=1.0,
                      aliases=("i have not", "have not worked", "never worked", "never been employed", "none of the above"))
     if key == "location_city":
         state = _US_STATES.get((t1.address.state or "").upper(), t1.address.state or "")
@@ -733,6 +802,8 @@ def _decide(q: FormQuestion, value: Value, label_conf: float, cfg: Config) -> di
         best, score = None, 0.0
         for candidate in value.candidates or (value.text,):
             opt, s = match_option(candidate, q.options, value.aliases)
+            if opt is not None and _other_year(value.text, opt):  # a year-less form ("Spring") of a dated value
+                continue
             if s > score:
                 best, score = opt, s
             if s >= 0.95:

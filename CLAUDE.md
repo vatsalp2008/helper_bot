@@ -15,7 +15,7 @@ helper is Vatsal's local job-application tool. The full spec is `helper_claude_c
 |---|---|---|
 | `tailor_input.json` | `tailor_output.json` | Schema in spec 7.6. Optional extras: `fit_paragraph`, per-project `reason`. Mark a bullet with no number with a flag `"qualitative: <item_id> bullet <n>: <why>"`. |
 | `cover_letter_input.json` | `cover_letter_output.json` | `{hook, stories, paragraphs, flags}`: four paragraphs, 400 to 450 words, bold key words (at most 4 per paragraph). Facts only from the resume's 7 items; helper checks each sentence against the item it names. `hook` must be the posting's own words. |
-| `questions_needed.json` | `answers_provided.json` | Use only master-list facts and the job description. Every draft is `needs_review` until Vatsal approves it, then offer to save it to `data/answers.yaml`. |
+| `questions_needed.json` | `answers_provided.json` | Use only master-list facts and the job description. Every draft stays `needs_review`; Vatsal sees it in the form (or approves it first with `answer_review: before_fill`). Free-text drafts go to `data/answers.yaml` only when he asks. |
 
 The resume loop:
 1. `helper resume --jd-file F --company C --role R` writes `tailor_input.json`. It holds the rules, the posting's keywords, and each item's allowed tech, numbers and wording rules.
@@ -69,6 +69,10 @@ Enforce these in code, not only in instructions.
   - **Relatives at the company:** none, always (Vatsal, 2026-11-15; `tier2.relatives_at_company`): "N/A" in a written box, "No" or "None" in a choice question.
   - **Start dates** (Vatsal, 2026-11-15): internships can start now (he is free from January), so a "start now / immediately" choice is right and an immediate-start internship is only a note; full-time roles start in May (the summer option; `immediate_start_target: "May 2027"`).
   - **Salary boxes** get the plain number ("36", "71000"): iCIMS rejects "$36 per hour".
+  - **Commuting, on-site and hybrid attendance:** always Yes (Vatsal, 2026-11-15).
+  - **Military service questions** (his, or a spouse's or partner's): "No", or the never-served choice (Vatsal, 2026-11-16). Protected-veteran questions keep the profile answer.
+  - **Citizenship:** from the profile (`tier1.citizenship` / `citizenship_since`, git-ignored). **Past employers:** all his experience is in the master list, so any other employer (the company, its affiliates, dealers or contractors) gets "No".
+  - **Immigration or citizenship status lists** (US Citizen / Permanent Resident / Protected Person / None): "None"; "Are you a U.S. person?": No (Vatsal, 2026-11-15). A list without a "None" choice (naming visa types) goes to him.
   - **Transcripts:** `documents.transcript` (master's) and `documents.undergrad_transcript` are uploaded only when a form requires a transcript; the undergraduate one when the question asks for it. They're PDFs in the repo's top folder, which git ignores.
 - **Cover letters** (Vatsal, 2026-11-14): one with every resume, saved as `<Name>_CoverLetter.pdf` next to the resume, and uploaded wherever a form has a cover letter field (a text box gets the plain text). Once it passes helper's checks it needs no separate review, so it never holds up auto-submit (Vatsal, 2026-11-15).
   - **Format:** his template (`templates/cover_letter.tex.j2`): resume header, thin cyan line, 14pt paragraph spacing. Bold key words. Always "Dear Hiring Team,"; Northeastern campus jobs get "Dear Career Team," and his NUID after the name (`tier1.nuid`, profile only).
@@ -81,7 +85,7 @@ Enforce these in code, not only in instructions.
   - **Certifications:** `data/certifications.yaml` (git-ignored, read from his certificate images) lists his 13 certificates. Each is added with its ID and issue date only when the company's preset list has it; the rest are reported as not on that company's list.
 - **Company limits never block** (Vatsal, 2026-11-14). `data/caps.yaml` limits are flagged first, then helper still builds the resume and applies. `enforced: true` (Google, TikTok) means the company's site may refuse it; `enforced: false` (Salesforce) is a recommendation.
 - **`~` prints centered on the line** as `$\sim$` (bold inside bold phrases). Vatsal chose this on 2026-11-14; spec 6's `\textasciitilde{}` prints a raised tilde in this font encoding.
-- **Graduation date** (spec 8 item 4): May 2027 by default. Use December 2027 when the posting's graduation window or a "returning to school" requirement needs it. Use May 2027 when a full-time start date needs it. The run's chosen date also fills the form's expected-graduation field.
+- **Graduation date** (spec 8 item 4): May 2027 by default and for full-time roles. **Summer 2027 internships always use December 2027** (Vatsal, 2026-11-15: he's back at school after the summer), unless the posting's window rules it out. December 2027 also when a "returning to school" requirement needs it. The run's chosen date fills the resume and the form's expected-graduation field.
 - **Sponsorship answer** is "No", except "Yes" when the question explicitly says sponsorship includes CPT/OPT. If CPT/OPT is mentioned but it's unclear whether it counts, pause.
 - **Profile values:** "ask" means ask Vatsal every time. "per_run" means decided per application. `data/profile.yaml` is git-ignored.
 - **Location data:** experience locations and project display names live in `data/resume_meta.yaml`, because the master list doesn't have them.
@@ -97,7 +101,7 @@ Supported sites: Greenhouse, Lever, Ashby, Workday and iCIMS, plus the generic a
 2. After the resume is built, the answers handoff starts: read `questions_needed.json` and write `answers_provided.json`, as `{"answers": [{"field", "answer"}]}`.
    - Drafts use master-list facts and the job description only. Dropdown answers must be one of the options.
    - Leave out anything only Vatsal can answer.
-3. `helper continue` then pauses (exit 4) so Vatsal can review. Show him every draft. Run `helper continue <run_id> --approve-answers` only after he approves. When every answer came from the profile or a rule, helper approves the plan itself and there is no pause.
+3. **Reviewing drafts in the form** (Vatsal, 2026-11-15; `answer_review: in_form` in config.yaml): `helper continue` puts Claude's drafts straight into the plan and lists them, with the questions only Vatsal can answer (left blank in the window). There is no approval pause; he checks everything in the window before Submit. With `drafts_need_review: false` (Vatsal, 2026-11-15) Claude's drafts count as approved, so auto-submit may send them; helper's own unsure matches (kind `confirm`) still block it. With `answer_review: before_fill` (spec 10.4), `helper continue` pauses (exit 4): show him every draft and run `--approve-answers` only after he approves.
 4. Then run `helper fill <run_id>` in the background (run_in_background). It opens a visible Chromium window on Vatsal's screen, fills the form, and never clicks Submit. It waits up to `fill_wait_timeout_minutes` for him to submit, then logs to SQLite, Notion and CSV. Report the result when the task exits.
 - **Workday and iCIMS runs** differ: `helper continue` ends right after the resume, because these sites show their questions page by page.
   - **iCIMS** (Vatsal, 2026-11-15): helper enters `ICIMS_EMAIL`, then signs in or creates the account (`ICIMS_USERNAME` where a username is asked). It types the login only inside iCIMS's own frame (`in_iframe=1`), never on the company's page around it (City National's has an online-banking login). It fills each page by its labels and stops at any button that says Submit; Vatsal clicks it, and helper carries on if more pages follow. hCaptcha checks and emailed codes are Vatsal's: every iCIMS sign-in has hCaptcha. Some sites (City National) kept re-asking in helper's window; Cotiviti went through. The veteran and disability self-identification forms (IForms) open as a whole page at `.../form?form=...`; helper reads and fills those, but types the login only inside the in_iframe=1 frame.
@@ -111,12 +115,12 @@ Supported sites: Greenhouse, Lever, Ashby, Workday and iCIMS, plus the generic a
 - **Off by default** (`submit_mode: review` in config.yaml). Turn it on only when Vatsal asks: `helper apply <url> --mode auto` for one run, or `submit_mode: auto` in config.yaml for every run.
 - **The gate:** in auto mode helper clicks Submit itself, once and never again (rule 10), only if every spec 10.5 condition holds:
   - the site has at least `auto_submit_min_clean_runs` (5) clean review-mode runs;
-  - every required answer came from the profile, a fixed rule or an approved answer, and nothing still needs review;
+  - every required answer came from the profile, a fixed rule, an approved answer or (with `drafts_need_review: false`) a Claude draft, and nothing still needs review;
   - there are no eligibility warnings or blockers, and no duplicates;
   - no CAPTCHA or verification step appeared, and the form shows no errors.
   Otherwise the run falls back to review mode and says why.
 - **Clean runs:** every fill is logged in SQLite (`fill_runs`). A review run is clean when the submit was confirmed and helper filled every field with nothing for Vatsal to fix. `helper stats` shows each site's count.
-- **Workday is always review-only.** The generic adapter never auto-submits either.
+- **Workday auto-submits on its Review page** (Vatsal, 2026-11-16, `submit_mode: auto`): whether or not Vatsal stepped in along the way, since Workday shows Review only when every required field is filled. It still stops if the Review page shows errors or there isn't exactly one Submit button. iCIMS and the generic adapter never auto-submit.
 
 ## Tracker and Notion
 - `helper.db` (SQLite) is the system of record, and it holds Vatsal's imported Notion history.
@@ -126,6 +130,6 @@ Supported sites: Greenhouse, Lever, Ashby, Workday and iCIMS, plus the generic a
 ## Working conventions
 - Python 3.12 venv at `.venv`. Run `.venv/bin/helper ...` and `.venv/bin/pytest`.
 - The spec 13 build is complete (milestones 1 to 11, 2026-11-15). Commit only when Vatsal asks; pushing to `origin/main` is approved (2026-11-13). Run the tests before every commit.
-- Run one `helper fill` at a time: it uses the single browser profile in `~/.helper/browser-profile`. Resumes for several postings can be tailored in parallel; their fills go one after another.
+- Several `helper fill` runs can go side by side (Vatsal, 2026-11-15): each claims its own browser profile slot (`~/.helper/browser-profile`, `-2`, `-3`... up to 6) and opens its own window. Start them a few seconds apart. Workday and iCIMS logins live in the first slot's cookies, so other slots sign in again. Resumes can be tailored in parallel too.
 - The GitHub repo is public by Vatsal's choice. `data/profile.yaml` stays git-ignored.
 - Never edit `data/master.yaml` by hand. It is generated by `helper convert`.

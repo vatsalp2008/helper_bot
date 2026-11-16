@@ -177,3 +177,21 @@ def test_the_jobs_on_the_resume_fill_the_employment_section(browser: Any) -> Non
     assert page.evaluate("() => window.submitted") is False
     assert gh.fill_employment(page, [], lambda: None) == []
     page.close()
+
+
+def test_a_hidden_follow_up_question_is_not_a_failure(browser: Any, tmp_path: Path) -> None:  # SharkNinja
+    from helper.answers import PlannedAnswer
+
+    pdf = tmp_path / "AlexExample_Resume.pdf"
+    pdf.write_bytes(b"%PDF-1.4 test")
+    page = browser.new_page()
+    page.goto(f"file://{(FIXTURES / 'greenhouse_employment.html').resolve()}")
+    follow_up = PlannedAnswer(field="question_999", label="If you selected other, please specify which one", type="text",
+                              required=True, kind="auto", value="Northeastern University", confidence=1.0, source="x")
+    missing = PlannedAnswer(field="question_998", label="Why do you want to work here?", type="textarea", required=True,
+                            kind="auto", value="Because.", confidence=1.0, source="x")
+    results = {r.field: r for r in gh.fill_form(page, [follow_up, missing], pdf, country=None, city=None,
+                                                 pause=lambda: None)}
+    assert results["question_999"].ok and results["question_999"].detail == "not shown on this form"
+    assert not results["question_998"].ok  # a required question that's really missing still counts
+    page.close()

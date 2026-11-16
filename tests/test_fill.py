@@ -112,8 +112,9 @@ def test_filling_the_form_never_submits_it(browser: Any, tmp_path: Path) -> None
     page.close()
 
 
-@pytest.mark.parametrize("page_file", ["greenhouse_mini_form.html#autosubmit", "greenhouse_company_page.html"],
-                         ids=["greenhouse page", "form embedded in a company page"])
+@pytest.mark.parametrize("page_file", ["greenhouse_mini_form.html#autosubmit", "greenhouse_company_page.html",
+                                       "greenhouse_mini_form.html#autosubmit-code"],
+                         ids=["greenhouse page", "form embedded in a company page", "emailed code after Submit"])
 def test_fill_run_waits_for_the_submit_and_logs_it(repo: Path, page_file: str) -> None:
     (repo / "data" / "profile.yaml").write_text(SEATTLE, encoding="utf-8")
     paths = Paths(repo)
@@ -143,6 +144,10 @@ def test_fill_run_waits_for_the_submit_and_logs_it(repo: Path, page_file: str) -
     outcome = fill_run(paths, cfg, run_id, headless=True, wait_minutes=0.5, poll_seconds=0.3)
     assert outcome.status == "applied", outcome.message
     assert "Notion: not set up" in outcome.message
+    conn = open_db(paths, cfg)
+    clean = conn.execute("SELECT clean FROM fill_runs WHERE run_id = ?", (run_id,)).fetchone()[0]
+    conn.close()
+    assert clean == 1  # an emailed code at Submit doesn't make the run unclean (Vatsal, 2026-11-16)
     conn = open_db(paths, cfg)
     row = tracker_repo.get(conn, app_id)
     conn.close()

@@ -54,9 +54,15 @@
   document.getElementById('application-form').addEventListener('submit', e => {
     e.preventDefault();
     window.submitted = true;
-    document.body.innerHTML = '<h1>Thank you for applying.</h1><p>Your application has been submitted.</p>';
+    const thanks = '<h1>Thank you for applying.</h1><p>Your application has been submitted.</p>';
+    if (location.hash === '#autosubmit-code') {  // Greenhouse emails a code after Submit; "the person" enters it
+      document.body.innerHTML = '<h2>Enter the verification code we sent to your email</h2><input id="code">';
+      setTimeout(() => { document.body.innerHTML = thanks; }, 2500);
+    } else {
+      document.body.innerHTML = thanks;
+    }
   });
-  if (location.hash === '#autosubmit') {  // "the person" submits once the last field is filled
+  if (location.hash.startsWith('#autosubmit')) {  // "the person" submits once the last field is filled
     const timer = setInterval(() => {
       if (document.getElementById('hispanic_ethnicity').dataset.selected) {
         clearInterval(timer);

@@ -42,7 +42,7 @@ def test_every_condition_holds() -> None:
 
 @pytest.mark.parametrize("change,reason", [
     ({"clean_runs": 3}, "greenhouse has 3 clean review-mode run(s) so far; auto-submit needs 5"),
-    ({"ats": "workday"}, "Workday runs always stop on Workday's Review page for you"),
+    ({"ats": "icims"}, "iCIMS runs always stop before Submit for you"),
     ({"ats": "unknown"}, "unfamiliar forms always stop before Submit"),
     ({"answers": [answer("why", status="needs_review")]}, "'Why' still needs your review"),
     ({"answers": [answer("why", kind="confirm")]}, "'Why' wasn't answered from your profile or an approved answer"),
@@ -77,8 +77,9 @@ def test_clean_runs_are_counted_per_site(repo: Path) -> None:
         assert record_fill_run(conn, "r5", "lever", "review", "applied", [])
         assert (clean_review_runs(conn, "greenhouse"), clean_review_runs(conn, "lever"),
                 clean_review_runs(conn, "ashby")) == (1, 1, 0)
-        assert readiness(conn, 5) == ("Auto-submit readiness (clean review-mode runs): greenhouse 1/5, lever 1/5, "
-                                      "ashby 0/5; workday: review only")
+        assert readiness(conn, 5, {"workday": 0}) == (
+            "Auto-submit readiness (clean review-mode runs): greenhouse 1/5, lever 1/5, ashby 0/5, workday ready "
+            "(no count needed); iCIMS and unfamiliar sites: review only")
     finally:
         conn.close()
     assert run_problems([FieldResult("a", "Phone", False, None)], True, ["Answer these yourself"]) == [
@@ -164,3 +165,13 @@ def test_auto_mode_falls_back_to_review_and_says_why(repo: Path, capsys: pytest.
         conn.close()
     saved = json.loads((paths.runs / run_id / "state.json").read_text(encoding="utf-8"))
     assert saved["options"]["submit_mode"] == "auto"
+
+
+def test_workday_can_submit_with_best_guesses_but_not_with_gaps() -> None:  # Vatsal, 2026-11-16
+    guess = answer("disability", kind="confirm", value="No, I do not have a disability")
+    ok = gate(ats="workday", clean_runs=0, min_clean_runs=0, best_guesses_ok=True,
+              answers=[answer("first_name"), guess], results=[FieldResult("first_name", "First Name", True, "x"),
+                                                              FieldResult("disability", "Disability", True, "x")])
+    assert blockers(ok) == []
+    assert blockers(gate(ats="workday", clean_runs=0, min_clean_runs=0, answers=[guess],
+                         results=[FieldResult("disability", "Disability", True, "x")]))  # Greenhouse-style: blocks

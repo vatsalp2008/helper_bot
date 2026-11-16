@@ -416,3 +416,34 @@ def test_skills_and_certifications_match_only_the_same_thing(tmp_path: Path) -> 
         "certifications:\n  - name: Example Cert\n    issuer: Example\n  - issuer: no name\n")
     assert [c["name"] for c in _certifications(Paths(tmp_path))] == ["Example Cert"]
     assert _certifications(Paths(tmp_path / "nowhere")) == []
+
+
+def test_company_names_lose_codes_and_legal_suffixes() -> None:  # Dexcom, Rocket, 2026-11-16
+    from helper.adapters.workday import company_name, parse_ref
+
+    ref = parse_ref("https://dexcom.wd1.myworkdayjobs.com/Dexcom/job/Remote-California/SW-Development-Engineer-1_JR121398")
+    for raw, clean in (("1 DexCom", "DexCom"), ("Rocket Limited Partnership", "Rocket"), ("100 Salesforce, Inc.", "Salesforce")):
+        assert company_name({"hiringOrganization": {"name": raw}}, ref) == clean
+
+
+def test_a_site_that_needs_a_longer_password_gets_the_long_one() -> None:  # Visa, 2026-11-16
+    from helper.adapters.workday import Credentials, _min_password_length
+
+    class Body:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+        def inner_text(self, timeout: int = 0) -> str:
+            return self.text
+
+    class Page:
+        def __init__(self, text: str) -> None:
+            self.body = Body(text)
+
+        def locator(self, selector: str) -> Body:
+            return self.body
+
+    assert _min_password_length(Page("Password Requirements: A minimum of 12 characters. A numeric character")) == 12
+    assert _min_password_length(Page("Create Account")) is None
+    creds = Credentials("x@mockmail.test", "short-pw", long_password="a-much-longer-password")
+    assert "longer" not in repr(creds) and "short" not in repr(creds)

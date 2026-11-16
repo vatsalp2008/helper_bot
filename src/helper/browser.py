@@ -4,8 +4,10 @@ default and separate from your everyday Chrome. Small human-like pauses; no stea
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
+import socket
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -24,24 +26,89 @@ CAPTCHA_SELECTORS = (
 )
 
 
+PROFILE_SLOTS = 6
+_CLAIM = "helper-fill.pid"
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _in_use(profile: Path) -> bool:
+    """Another helper fill or Chrome has this profile open. Locks left by a crashed run are cleared."""
+    claim = profile / _CLAIM
+    try:
+        if _alive(int(claim.read_text(encoding="utf-8").strip())):
+            return True
+        claim.unlink(missing_ok=True)
+    except (OSError, ValueError):
+        pass
+    try:
+        host, _, pid = os.readlink(profile / "SingletonLock").rpartition("-")
+    except OSError:
+        return False
+    if host != socket.gethostname() or not pid.isdigit() or _alive(int(pid)):
+        return True
+    for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):  # Chrome's lock from a crashed run
+        (profile / name).unlink(missing_ok=True)
+    return False
+
+
+def claim_profile(base: Path, slots: int = PROFILE_SLOTS) -> Path:
+    """helper's browser profile, or the next numbered one (browser-profile-2, -3...) when other fills have it open,
+    so several applications can fill side by side, each in its own window. Claimed for this process."""
+    from .errors import HelperError
+
+    for i in range(slots):
+        profile = base if i == 0 else base.with_name(f"{base.name}-{i + 1}")
+        profile.mkdir(parents=True, exist_ok=True)
+        if _in_use(profile):
+            continue
+        try:  # atomic: two fills starting together can't take the same profile
+            fd = os.open(profile / _CLAIM, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            continue
+        with os.fdopen(fd, "w") as f:
+            f.write(str(os.getpid()))
+        return profile
+    raise HelperError(f"{slots} helper fills are already open. Finish or close one, then try again.")
+
+
+def release_profile(profile: Path) -> None:
+    try:
+        if (profile / _CLAIM).read_text(encoding="utf-8").strip() == str(os.getpid()):
+            (profile / _CLAIM).unlink()
+    except (OSError, ValueError):
+        pass
+
+
 @contextmanager
 def browser_session(paths: Paths, cfg: Config, *, headless: Optional[bool] = None) -> Iterator[Any]:
     from playwright.sync_api import sync_playwright
 
-    profile = paths.browser_profile(cfg)
-    profile.mkdir(parents=True, exist_ok=True)
-    no_password_saving(profile)
-    with sync_playwright() as pw:
-        context = pw.chromium.launch_persistent_context(
-            str(profile), headless=cfg.headless if headless is None else headless, viewport={"width": 1280, "height": 900},
-        )
-        try:
-            yield context
-        finally:
+    profile = claim_profile(paths.browser_profile(cfg))
+    try:
+        no_password_saving(profile)
+        with sync_playwright() as pw:
+            context = pw.chromium.launch_persistent_context(
+                str(profile), headless=cfg.headless if headless is None else headless,
+                viewport={"width": 1280, "height": 900},
+            )
             try:
-                context.close()
-            except Exception:
-                pass
+                yield context
+            finally:
+                try:
+                    context.close()
+                except Exception:
+                    pass
+    finally:
+        release_profile(profile)
 
 
 def no_password_saving(profile: Path) -> None:

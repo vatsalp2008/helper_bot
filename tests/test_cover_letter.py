@@ -106,7 +106,9 @@ def test_every_resume_gets_a_cover_letter(ready: Path) -> None:
     assert started.exit_code == EXIT_WAITING_FOR_CLAUDE, started.output
     (run_id,) = [p.name for p in (ready / "runs").iterdir()]
     folder = ready / "runs" / run_id
-    shutil.copy(FIXTURES / "tailor_output_northwind.json", folder / "tailor_output.json")
+    data = json.loads((FIXTURES / "tailor_output_northwind.json").read_text(encoding="utf-8"))
+    data["grad_date"] = json.loads((folder / "tailor_input.json").read_text(encoding="utf-8"))["run"]["grad_date"]
+    (folder / "tailor_output.json").write_text(json.dumps(data), encoding="utf-8")
     built = runner.invoke(app, ["continue", run_id])
     assert built.exit_code == EXIT_WAITING_FOR_CLAUDE, built.output
     assert f"Resume: resumes/{run_id}/AlexExample_Resume.pdf" in built.output

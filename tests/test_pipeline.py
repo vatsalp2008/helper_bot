@@ -32,6 +32,13 @@ def ready(repo: Path, sample_profile_text: str) -> Path:
     return repo
 
 
+def northwind_for(folder: Path) -> str:
+    """The sample resume, with the graduation date this run chose (Summer 2027 internships use December 2027)."""
+    data = json.loads((FIXTURES / "tailor_output_northwind.json").read_text(encoding="utf-8"))
+    data["grad_date"] = json.loads((folder / "tailor_input.json").read_text(encoding="utf-8"))["run"]["grad_date"]
+    return json.dumps(data)
+
+
 def start(repo: Path) -> str:
     result = runner.invoke(app, ["resume", "--jd-file", str(FIXTURES / "jd_backend_intern.txt"),
                                  "--company", "Northwind Labs", "--role", "Backend SWE Intern"])
@@ -64,7 +71,7 @@ def test_continue_waits_until_the_output_exists_then_reports_problems(ready: Pat
     assert early.exit_code == EXIT_WAITING_FOR_CLAUDE
     assert "isn't there yet" in early.output
 
-    bad = json.loads((FIXTURES / "tailor_output_northwind.json").read_text(encoding="utf-8"))
+    bad = json.loads(northwind_for(folder))
     bad["projects"][0]["bullets"][0] = bad["projects"][0]["bullets"][0].replace("10,000", "12,000")
     bad["summary"] = "Motivated engineer"
     (folder / "tailor_output.json").write_text(json.dumps(bad), encoding="utf-8")
@@ -85,7 +92,7 @@ def test_continue_waits_until_the_output_exists_then_reports_problems(ready: Pat
 def test_a_valid_output_becomes_a_one_page_pdf(ready: Path) -> None:
     run_id = start(ready)
     folder = ready / "runs" / run_id
-    shutil.copy(FIXTURES / "tailor_output_northwind.json", folder / "tailor_output.json")
+    (folder / "tailor_output.json").write_text(northwind_for(folder), encoding="utf-8")
     result = runner.invoke(app, ["continue", run_id])
     assert result.exit_code == EXIT_WAITING_FOR_CLAUDE, result.output  # the cover letter comes next
     assert f"read runs/{run_id}/cover_letter_input.json" in result.output
@@ -139,7 +146,8 @@ def test_a_to_apply_row_from_notion_is_reused(ready: Path) -> None:
     assert result.exit_code == EXIT_WAITING_FOR_CLAUDE, result.output
     assert "already in your tracker" in result.output
     (run_id,) = [p.name for p in (ready / "runs").iterdir()]
-    shutil.copy(FIXTURES / "tailor_output_northwind.json", ready / "runs" / run_id / "tailor_output.json")
+    (ready / "runs" / run_id / "tailor_output.json").write_text(northwind_for(ready / "runs" / run_id),
+                                                                 encoding="utf-8")
     done = runner.invoke(app, ["continue", run_id])
     assert done.exit_code == EXIT_WAITING_FOR_CLAUDE, done.output  # resume built; the cover letter comes next
     assert f"Tracked as application #{app_id} (drafted)" in done.output

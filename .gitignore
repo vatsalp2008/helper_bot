@@ -36,3 +36,6 @@ dist/
 
 # OS
 .DS_Store
+
+# Which application accounts use the long password (no secrets)
+data/accounts.yaml

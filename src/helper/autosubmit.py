@@ -21,10 +21,9 @@ from typing import Any, Optional
 
 from .tracker.db import now_iso
 
-REVIEW_ONLY = {"workday": "Workday runs always stop on Workday's Review page for you",
-               "icims": "iCIMS runs always stop before Submit for you",
+REVIEW_ONLY = {"icims": "iCIMS runs always stop before Submit for you",
                "generic": "company career sites and other unfamiliar forms always stop before Submit for you"}
-AUTO_CAPABLE = ("greenhouse", "lever", "ashby")
+AUTO_CAPABLE = ("greenhouse", "lever", "ashby", "workday")  # Workday from 2026-11-16 (Vatsal)
 
 
 @dataclass
@@ -38,6 +37,7 @@ class Gate:
     captcha_seen: bool = False
     page_errors: list[str] = field(default_factory=list)
     has_submit_button: bool = True
+    best_guesses_ok: bool = False  # Workday (Vatsal, 2026-11-16): filled best guesses don't stop it
 
 
 def blockers(g: Gate) -> list[str]:
@@ -57,7 +57,9 @@ def blockers(g: Gate) -> list[str]:
             reasons.append(f"'{label}' still needs your review")
         if not a.required or a.kind == "skip":
             continue
-        if a.kind not in ("auto", "file") or (a.kind == "auto" and a.value is None):
+        if a.kind == "confirm" and g.best_guesses_ok and a.value is not None:
+            pass
+        elif a.kind not in ("auto", "file") or (a.kind == "auto" and a.value is None):
             reasons.append(f"'{label}' wasn't answered from your profile or an approved answer")
         result = filled.get(a.field)
         if result is None or not result.ok:
@@ -100,7 +102,12 @@ def clean_review_runs(conn: sqlite3.Connection, ats: Optional[str]) -> int:
     return int(row[0])
 
 
-def readiness(conn: sqlite3.Connection, min_clean_runs: int) -> str:
+def readiness(conn: sqlite3.Connection, min_clean_runs: int, by_site: Optional[dict[str, int]] = None) -> str:
     """One line for `helper stats`: how close each site is to auto-submit."""
-    parts = [f"{ats} {min(clean_review_runs(conn, ats), min_clean_runs)}/{min_clean_runs}" for ats in AUTO_CAPABLE]
-    return ("Auto-submit readiness (clean review-mode runs): " + ", ".join(parts) + "; workday: review only")
+    parts = []
+    for ats in AUTO_CAPABLE:
+        need = (by_site or {}).get(ats, min_clean_runs)
+        parts.append(f"{ats} ready (no count needed)" if need == 0 else
+                     f"{ats} {min(clean_review_runs(conn, ats), need)}/{need}")
+    return ("Auto-submit readiness (clean review-mode runs): " + ", ".join(parts)
+            + "; iCIMS and unfamiliar sites: review only")

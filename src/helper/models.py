@@ -44,6 +44,14 @@ class Config(StrictModel):
     projects_per_resume: int = Field(5, ge=1, le=8)
     bullets_per_item: int = Field(2, ge=1, le=4)
     submit_mode: Literal["review", "auto"] = "review"
+    # before_fill: Claude's drafted answers wait for Vatsal's OK in the session (spec 10.4). in_form: they go straight
+    # into the form and Vatsal reviews them in the window before Submit (Vatsal, 2026-11-15).
+    answer_review: Literal["before_fill", "in_form"] = "before_fill"
+    # True: Claude's drafted answers count as unreviewed, so auto-submit waits for Vatsal (spec 10.5). False: they count
+    # as approved, and auto-submit may send them (Vatsal, 2026-11-15).
+    drafts_need_review: bool = True
+    # sites with their own clean-run minimum for auto-submit (Vatsal, 2026-11-16: Workday starts now, 0)
+    auto_submit_min_clean_runs_by_site: dict[str, int] = Field(default_factory=dict)
     auto_submit_min_clean_runs: int = Field(5, ge=1)
     default_grad_date: str = "May 2027"
     alt_grad_date: str = "December 2027"
@@ -132,6 +140,8 @@ class Tier1(StrictModel):
     expected_graduation: Optional[str] = None  # "per_run" = the grad date chosen for each application
     how_did_you_hear: Optional[str] = None
     nuid: Optional[str] = None  # Northeastern ID: only on Northeastern campus job letters
+    citizenship: Optional[str] = None  # country of citizenship
+    citizenship_since: Optional[str] = None  # the year it was granted (by birth: the birth year)
     willing_to_relocate: Optional[str] = None
     work_location_preferences: Optional[str] = None
 

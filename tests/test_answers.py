@@ -381,3 +381,113 @@ def test_icims_address_2_gets_the_unit_and_line_1_the_street() -> None:  # Cotiv
     answers = plan_answers([q("Address", name="a1"), q("Address 2", required=False, name="a2")], ctx(profile=profile)).answers
     assert [(a.key, a.value) for a in answers] == [("address_street", profile.tier1.address.street),
                                                    ("address_line2", "Apt 1")]
+
+
+def test_sponsorship_wins_over_the_words_work_authorization() -> None:  # Fanatics, 2026-11-15: it said "Yes"
+    future = one(q("Will you in future require visa sponsorship to maintain work authorization?", "select", ["Yes", "No"]))
+    assert (future.key, future.value) == ("sponsorship", "No")
+    without = one(q("Are you legally authorized to work in the United States without the need for sponsorship?",
+                    "select", ["Yes", "No"]))
+    assert (without.key, without.value) == ("work_authorization", "Yes")
+
+
+def test_a_closer_option_beats_an_alias_and_years_must_agree() -> None:
+    from helper.answers import match_option
+
+    options = ["East Asian", "South Asian", "Southeast Asian", "White"]  # Affirm, 2026-11-15: it chose "East Asian"
+    assert match_option("Asian (South Asian)", options, aliases=("Asian",))[0] == "South Asian"
+    assert match_option("Asian (South Asian)", ["White", "Asian"], aliases=("Asian",))[0] == "Asian"
+    assert match_option("May 2027", ["Spring 2028", "Fall 2027"])[0] in (None, "Fall 2027")  # never another year
+    grad = one(q("What is your anticipated graduation year?", "select",
+                 ["Fall/Winter 2027", "Spring 2028", "Fall/Winter 2028", "Other"]))
+    assert grad.value == "Other"  # Fanatics: May 2027 isn't offered, and "Spring" mustn't land on 2028
+    assert one(q("Expected graduation", "select", ["Spring 2027", "Fall 2027", "Spring 2028"])).value == "Spring 2027"
+
+
+def test_commuting_and_on_site_questions_are_always_yes() -> None:  # Vatsal, 2026-11-15
+    for label in ("Are you willing and able to commute to our Cambridge office three times per week?",
+                  "This internship is designated as on-site and requires working from the office five days per week. "
+                  "Can you meet this requirement?",
+                  "Please confirm you are willing to be on-site for the duration of the internship in San Jose, CA."):
+        answer = one(q(label, "select", ["Yes", "No"]))
+        assert (answer.key, answer.kind, answer.value) == ("onsite_ok", "auto", "Yes"), label
+    assert one(q("Do you require remote work?", "select", ["Yes", "No"])).key != "onsite_ok"
+
+
+def test_a_list_of_immigration_statuses_gets_none() -> None:  # Muon Space, 2026-11-15
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.us_citizen_or_permanent_resident.auto_answer = True
+    profile.tier2.us_citizen_or_permanent_resident.value = "No"
+    status = one(q("U.S. Export Control laws require that access to certain technical information be limited to U.S. "
+                   "Persons. Please indicate your current Immigration and Work Authorization status.", "select",
+                   ["US Citizen", "Lawful Permanent Resident", "Protected Person", "None"]), profile=profile)
+    assert (status.key, status.value) == ("us_citizen", "None")
+    assert one(q("Are you a U.S. person?", "select", ["Yes", "No"]), profile=profile).value == "No"
+    visas = one(q("What is your current work authorization status?", "select", ["US Citizen", "F-1 Student Visa"]),
+                profile=profile)
+    assert visas.value is None  # no "None" to pick: which visa is Vatsal's call
+
+
+def test_survey_wording_variants_reach_the_right_eeo_rule() -> None:  # SharkNinja, 2026-11-15
+    race = one(q("How would you describe your racial/ethnic background? (mark all that apply)", "select",
+                 ["East Asian", "Hispanic, Latinx or of Spanish Origin", "South Asian", "White or European"]))
+    assert race.key == "eeo_race"
+    disability = one(q("Do you have a disability or chronic condition that substantially limits one or more of your "
+                       "major life activities?", "select", ["Yes", "No", "I don't wish to answer"]))
+    assert disability.key == "eeo_disability"
+    upload = one(q("Please attach any additional documents here (if you have multiple files please .zip them)", "file",
+                   required=False))
+    assert upload.key != "address_zip"  # Riot: an upload is never a zip code
+
+
+def test_t_mobile_in_a_question_is_not_a_phone_number() -> None:  # T-Mobile, 2026-11-16
+    question = q("Have you previously or are you currently working as a contractor for T-Mobile?", "select", ["Yes", "No"])
+    assert one(question).key != "phone"
+    assert one(q("Mobile phone number")).key == "phone"
+
+
+def test_questions_about_past_employers_follow_the_master_list() -> None:  # T-Mobile, 2026-11-16
+    for label in ("Have you been employed or are you currently employed with an authorized dealer of T-Mobile or "
+                  "Metro by T-Mobile?",
+                  "Have you previously or are you currently working as a contractor for T-Mobile?",
+                  "Have you previously been DIRECTLY employed with Deutsche Telekom AG or Softbank?"):
+        answer = one(q(label, "select", ["Yes", "No"]))
+        assert (answer.key, answer.kind, answer.value) == ("previous_employee", "auto", "No"), label
+    kalini = one(q("Have you ever worked for Kalini Industries?", "select", ["Yes", "No"]))
+    assert kalini.value is None  # an employer in the master list: Vatsal answers
+    age = one(q("In order to be employed at T-Mobile, you must be at least 18 years of age. Can you meet this "
+                "requirement?", "select", ["Yes", "No"]))
+    assert age.key == "age_18"
+
+
+def test_a_plain_upload_box_is_the_resume() -> None:  # ASML's Workday, 2026-11-16
+    assert one(q("Upload a file (5MB max)", "file")).key == "resume"
+    attachments = one(q("Upload a file (5MB max)", "file", required=False, description="Additional Attachments section"))
+    assert attachments.key != "resume" and attachments.kind == "skip"  # Camping World, 2026-11-16
+    assert one(q("Please attach any additional documents here", "file", required=False)).key != "resume"
+
+
+def test_country_of_citizenship_comes_from_the_profile() -> None:  # ASML, 2026-11-16
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier1.citizenship, profile.tier1.citizenship_since = "Freedonia", "2001"
+    text = one(q("Please provide country of citizenship and/or permanent residency and the year granted.", "textarea"),
+               profile=profile)
+    assert (text.key, text.value) == ("citizenship_country", "Freedonia, since 2001 (by birth)")
+    assert one(q("Country of Citizenship", "select", ["Freedonia", "Sylvania"]), profile=profile).value == "Freedonia"
+    assert one(q("Country of Citizenship", "select", ["Freedonia", "Sylvania"])).kind == "unknown"  # not set: ask
+
+
+def test_military_service_questions_are_no() -> None:  # Vatsal, 2026-11-16
+    spouse = one(q("Has your spouse or domestic partner ever served in the U.S. Military?", "select",
+                   ["Yes", "No", "I do not wish to answer"]))
+    assert (spouse.key, spouse.value) == ("military_service", "No")
+    rocket = one(q("Have you or your spouse ever been affiliated with any branch of the U.S. or Canadian Armed Forces?",
+                   "select", ["Yes", "No", "Prefer not to answer"]))
+    assert rocket.value == "No"
+    tmobile = one(q("Please take the time to self-identify your Veterans status with the following questions. Do you "
+                    "currently or have you ever served in the U.S. Military?", "select",
+                    ["Yes, I am either currently serving or have served", "No, I have never served in the U.S. Armed "
+                     "Forces, reserves or national guard", "I do not wish to answer"]))
+    assert tmobile.value.startswith("No, I have never served")
+    assert one(q("Veteran Status", "select", ["I am not a protected veteran", "I identify as a protected veteran"]),
+               ).key == "eeo_veteran"

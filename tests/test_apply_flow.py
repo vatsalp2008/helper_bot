@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,9 @@ runner = CliRunner()
 @pytest.fixture
 def ready(repo: Path, sample_profile_text: str, monkeypatch: pytest.MonkeyPatch) -> Path:
     (repo / "data" / "profile.yaml").write_text(sample_profile_text, encoding="utf-8")
+    config = repo / "config.yaml"  # spec 10.4: drafts wait for Vatsal's OK (the in_form setting is tested below)
+    config.write_text(re.sub(r"(?m)^answer_review:.*$", "answer_review: before_fill", config.read_text(encoding="utf-8")),
+                      encoding="utf-8")
     run_convert(Paths(repo), load_config(Paths(repo)))
     data = json.loads((FIXTURES / "greenhouse_figma_job.json").read_text(encoding="utf-8"))
     monkeypatch.setattr(greenhouse, "fetch_job", lambda url, session=None: greenhouse.job_from_api(data, url, "figma"))
@@ -101,3 +105,51 @@ def test_apply_until_the_answers_are_approved(ready: Path) -> None:
     assert all(a["status"] != "needs_review" for a in plan["answers"])
     dry = runner.invoke(app, ["fill", run_id, "--dry-run"])
     assert dry.exit_code == 0 and "Would fill https://job-boards.greenhouse.io/figma/jobs/6178851004" in dry.output
+
+
+
+@pytest.mark.skipif(find_binary("pdflatex") is None, reason="needs pdflatex")
+def test_with_in_form_review_drafts_go_straight_into_the_form(ready: Path) -> None:  # Vatsal, 2026-11-15
+    config = ready / "config.yaml"
+    text = re.sub(r"(?m)^answer_review:.*$", "answer_review: in_form", config.read_text(encoding="utf-8"))
+    config.write_text(re.sub(r"(?m)^drafts_need_review:.*$", "drafts_need_review: true", text), encoding="utf-8")
+    assert runner.invoke(app, ["apply", URL]).exit_code == EXIT_WAITING_FOR_CLAUDE
+    (run_id,) = [p.name for p in (ready / "runs").iterdir()]
+    folder = ready / "runs" / run_id
+    shutil.copy(FIXTURES / "tailor_output_northwind.json", folder / "tailor_output.json")
+    runner.invoke(app, ["continue", run_id])
+    shutil.copy(FIXTURES / "cover_letter_northwind.json", folder / "cover_letter_output.json")
+    runner.invoke(app, ["continue", run_id])
+    needed = json.loads((folder / "questions_needed.json").read_text(encoding="utf-8"))
+    everything = answer_everything(needed)
+    own = next(q for q in needed["questions"] if q["required"] and q["options"])
+    first = {"answers": [a for a in everything["answers"] if a["field"] != own["field"]]}
+    (folder / "answers_provided.json").write_text(json.dumps(first), encoding="utf-8")
+    ready_to_fill = runner.invoke(app, ["continue", run_id])
+    assert ready_to_fill.exit_code == 0, ready_to_fill.output  # no approval pause
+    assert "go into the form for you to check before Submit" in ready_to_fill.output
+    assert "I use Figma every day" in ready_to_fill.output
+    assert "Only you can answer these" in ready_to_fill.output and own["label"] in ready_to_fill.output
+    plan = json.loads((folder / "answers_plan.json").read_text(encoding="utf-8"))
+    drafted = [a for a in plan["answers"] if a["source"] == "Claude draft"]
+    assert drafted and all(a["status"] == "needs_review" for a in drafted)  # auto-submit still won't send them
+
+
+@pytest.mark.skipif(find_binary("pdflatex") is None, reason="needs pdflatex")
+def test_drafts_can_count_as_approved_for_auto_submit(ready: Path) -> None:  # Vatsal, 2026-11-15
+    config = ready / "config.yaml"
+    text = re.sub(r"(?m)^answer_review:.*$", "answer_review: in_form", config.read_text(encoding="utf-8"))
+    config.write_text(re.sub(r"(?m)^drafts_need_review:.*$", "drafts_need_review: false", text), encoding="utf-8")
+    assert runner.invoke(app, ["apply", URL]).exit_code == EXIT_WAITING_FOR_CLAUDE
+    (run_id,) = [p.name for p in (ready / "runs").iterdir()]
+    folder = ready / "runs" / run_id
+    shutil.copy(FIXTURES / "tailor_output_northwind.json", folder / "tailor_output.json")
+    runner.invoke(app, ["continue", run_id])
+    shutil.copy(FIXTURES / "cover_letter_northwind.json", folder / "cover_letter_output.json")
+    runner.invoke(app, ["continue", run_id])
+    needed = json.loads((folder / "questions_needed.json").read_text(encoding="utf-8"))
+    (folder / "answers_provided.json").write_text(json.dumps(answer_everything(needed)), encoding="utf-8")
+    assert runner.invoke(app, ["continue", run_id]).exit_code == 0
+    plan = json.loads((folder / "answers_plan.json").read_text(encoding="utf-8"))
+    drafted = [a for a in plan["answers"] if a["source"].startswith("Claude")]
+    assert drafted and all(a["status"] == "approved" for a in drafted)

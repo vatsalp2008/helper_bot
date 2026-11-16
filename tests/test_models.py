@@ -34,7 +34,7 @@ def test_config_matches_spec_values() -> None:
     cfg = load_config(Paths(REPO))
     assert cfg.projects_per_resume == 5
     assert cfg.bullets_per_item == 2
-    assert cfg.submit_mode == "review"
+    assert Config().submit_mode == "review"  # spec 10.5: off by default (Vatsal turned it on in config.yaml, 2026-11-16)
     assert cfg.auto_submit_min_clean_runs == 5
     assert cfg.default_grad_date == "May 2027"
     assert cfg.alt_grad_date == "December 2027"

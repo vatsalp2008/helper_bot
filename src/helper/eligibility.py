@@ -171,6 +171,7 @@ _RETURNING_RE = re.compile(
     r"|\b(?:remain|still be) enrolled\b|\bat least one (?:semester|quarter|term) (?:of school )?(?:remaining|left)"
 )
 _SEASON_RE = re.compile(rf"(?i)\b({_SEASONS})\s*(?:of\s+)?('?\d{{2}}|\d{{4}})\b")
+_YEAR_SEASON_RE = re.compile(rf"(?i)\b(\d{{4}})\s*[(\[-]?\s*({_SEASONS})\b")  # "2027 (Summer)" (Formlabs)
 _DEADLINE_RE = re.compile(
     rf"(?i)(?:apply by|application deadline|deadline(?: to apply)?|applications? (?:close|closes|are due|due|will "
     rf"close)|posting (?:closes|will close|expires)|accepting applications (?:until|through))\s*(?:is|on|by|:)?\s*"
@@ -252,7 +253,8 @@ def _grad_window(sentences: list[str]) -> tuple[Optional[tuple[int, int]], Optio
         if not found:
             # Longest phrases first: "before or in June 2027" is an upper bound, not "in June 2027".
             for m in re.finditer(rf"(?i)\b(before or (?:in|by|on)|on or before|by or before|no later than|prior to"
-                                 rf"|on or after|no earlier than|by|before|in|during|after)\s+({_WHEN})"
+                                 rf"|on or after|no earlier than|by|before|in|during|after)\s+(?:the\s+)?"
+                                 rf"(?:calendar\s+year\s+(?:of\s+)?)?({_WHEN})"  # "during the 2028 calendar year" (Riot)
                                  rf"|\bclass of\s+(\d{{4}})", s):
                 if m.group(3):
                     r = _when_range(m.group(3))
@@ -292,16 +294,20 @@ def _fmt(ym: tuple[int, int]) -> str:
 
 def _employment(title: str, text: str) -> Employment:
     head = f"{title}\n{text[:1500]}"
+    if re.search(r"(?i)\bco-?op\b", title):  # the title decides first: SharkNinja's intern posting mentions co-ops
+        return "co_op"
+    if re.search(r"(?i)\bintern(?:ship)?s?\b", title):
+        return "internship"
     if re.search(r"(?i)\bco-?op\b", head):
         return "co_op"
-    if re.search(r"(?i)\bintern(?:ship)?s?\b", title) or re.search(r"(?i)\binternship\b", head):
+    if re.search(r"(?i)\binternship\b", head):
         return "internship"
     if re.search(r"(?i)\bnew grad|\bfull[- ]time\b|\bentry[- ]level\b|\buniversity grad", head):
         return "full_time"
     return "unknown"
 
 
-def _season(title: str, text: str) -> tuple[Optional[str], Optional[int]]:
+def _season(title: str, text: str, today: Optional[date] = None) -> tuple[Optional[str], Optional[int]]:
     for source in (title, text[:1500]):
         m = _SEASON_RE.search(source)
         if m:
@@ -309,6 +315,12 @@ def _season(title: str, text: str) -> tuple[Optional[str], Optional[int]]:
             year = int(raw) + 2000 if len(raw) == 2 else int(raw)
             season = m.group(1).lower().replace("autumn", "fall")
             return season, year
+        m = _YEAR_SEASON_RE.search(source)
+        if m:
+            return m.group(2).lower().replace("autumn", "fall"), int(m.group(1))
+    if today is not None and re.search(r"(?i)\bintern", title) and re.search(r"(?i)\bsummer\b", text):
+        # "an end of summer presentation" (ASML): the coming summer; from August on, next year's
+        return "summer", today.year + 1 if today.month >= 8 else today.year
     return None, None
 
 
@@ -450,7 +462,7 @@ def check_eligibility(
 
     # 3. Timing.
     employment = _employment(job.role_title, text)
-    season, season_year = _season(job.role_title, text)
+    season, season_year = _season(job.role_title, text, today)
     in_semester = employment == "co_op" or (employment == "internship" and season in ("fall", "spring", "winter"))
     if in_semester:
         term = f"{season.title()} {season_year}" if season and season_year else "This co-op"
@@ -587,6 +599,13 @@ def _choose_grad_date(cfg: Config, sentences: list[str], employment: Employment,
     if employment == "full_time" and default in allowed:
         reasons.append("full-time start")
     chosen = default if default in allowed else allowed[0]
+    alt_year = options[alt].year if options.get(alt) else None
+    if employment == "internship" and season == "summer" and alt in allowed and season_year in (None, alt_year) \
+            and chosen != alt:
+        # Vatsal, 2026-11-15: always December 2027 for Summer 2027 internships (back at school after the summer),
+        # unless the posting's window rules it out
+        chosen = alt
+        reasons.append("a Summer 2027 internship: back at school after the summer")
     reason = "default" if not reasons else "; ".join(reasons)
     flags.append(Flag(id="grad_date", level="note", message=f"Graduation date: {chosen} ({reason})."))
     return chosen, reason, flags
