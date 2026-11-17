@@ -536,7 +536,8 @@ def degree_aliases(degree: str) -> tuple[str, ...]:
 
 
 _DEGREE_OF = re.compile(r"(?i)\b(?:master|bachelor)(?:['’]?s)?\s+of\s+([a-z]+)")
-_OTHER_DEGREES = re.compile(r"(?i)\b(?:MBA|MFA|LLM|LLB|JD|MD|MPH|MEd|BBA)\b")
+_OTHER_DEGREES = re.compile(r"(?i)\b(?:MBA|MFA|LLM|LLB|JD|MD|MPH|MEd|BBA)\b|\bof (?:business administration|laws?|fine "
+                            r"arts|public health|education|medicine)\b")
 _DEGREE_ABBREVIATIONS = {"science": ("msc", "ms", "bsc", "bs"), "engineering": ("beng", "meng", "be", "btech", "mtech")}
 
 
@@ -549,10 +550,12 @@ def degree_score(degree: str, option: str) -> float:
     examples = " ".join(re.findall(r"\(([^()]*,[^()]*)\)?", option))
     name = re.sub(r"\([^()]*,[^()]*\)?", " ", option)
     mine, theirs = _DEGREE_OF.search(degree), _DEGREE_OF.search(name)
-    if theirs and mine and theirs.group(1).lower() != mine.group(1).lower():
-        return min(score, 0.5)
     if _OTHER_DEGREES.search(name) and not _OTHER_DEGREES.search(degree):
-        return min(score, 0.5)
+        return min(score, 0.5)  # a professional degree (MBA, law, medicine) is never his
+    if theirs and mine and theirs.group(1).lower() != mine.group(1).lower():
+        # another field of the same level: only when nothing closer is offered (KLA has no Master of Science, so
+        # "Masters of Technology (Masters)"; 2026-11-16)
+        return min(score, 0.86)
     words = set(re.findall(r"[a-z]+", f"{name} {examples}".lower()))
     level = "master" if degree.lower().startswith("master") else "bachelor"
     abbreviations = _DEGREE_ABBREVIATIONS.get(mine.group(1).lower(), ()) if mine else ()

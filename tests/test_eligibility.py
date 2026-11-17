@@ -85,6 +85,19 @@ def test_citizenship_and_clearance_follow_the_profile() -> None:
     assert levels(check("Candidates must be able to obtain a security clearance."))["clearance_required"] == "blocker"
 
 
+def test_a_us_person_requirement_blocks_a_visa_holder() -> None:  # Anduril, 2026-11-16
+    text = ("Must be a U.S. Person due to required access to U.S. export-controlled information or facilities; U.S. "
+            "clearance eligibility may be required depending on program.")
+    anduril = check(text)
+    assert anduril.blocked and levels(anduril)["us_person_required"] == "blocker"
+    citizen = PROFILE.model_copy(deep=True)
+    citizen.tier2.us_citizen_or_permanent_resident.value = "Yes"
+    assert "us_person_required" not in levels(check(text, profile=citizen))
+    # a mention without a requirement stays a warning
+    assert levels(check("This role involves export-controlled data; deemed export rules may apply."))["export_control"] \
+        == "warning"
+
+
 def test_us_abbreviation_does_not_split_the_sentence() -> None:  # ICF, 2026-11-16
     icf = check("Bachelor's degree in computer science.\n- Due to contract requirements, U.S. Citizenship is required\n"
                 "Preferred: Python.")
@@ -350,3 +363,17 @@ def test_an_internship_that_mentions_summer_without_a_year_is_next_summer() -> N
 def test_a_title_with_words_between_season_and_year_is_read() -> None:  # Kensho, 2026-11-16
     kensho = check("Join our team in Cambridge.", title="Machine Learning Engineer - Summer Intern 2027")
     assert (kensho.season, kensho.season_year, kensho.grad_date) == ("summer", 2027, "December 2027")
+
+
+def test_a_phd_only_posting_pauses() -> None:  # ASML, 2026-11-16
+    asml = check("We are seeking a PhD research intern to explore AI methods.\n- Currently pursuing a PhD in Physics, "
+                 "Computer Science, or a related field.", title="Internship- AI Research and Development")
+    assert asml.blocked and levels(asml)["phd_only"] == "blocker"
+    both = check("Currently pursuing a Master's or PhD degree in Computer Science.", title="ML Intern")
+    assert "phd_only" not in levels(both)
+    assert levels(check("Join our team.", title="[2027] Data Scientist - PhD Intern"))["phd_only"] == "blocker"
+
+
+def test_graduating_no_sooner_than_is_a_lower_bound() -> None:  # Micron, 2026-11-16
+    micron = check("Must be graduating no sooner than September 2027.", title="Intern - Segment Marketing Data Analyst")
+    assert micron.grad_date == "December 2027" and not micron.blocked

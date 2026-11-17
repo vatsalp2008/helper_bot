@@ -182,6 +182,11 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                         # "When do you expect to complete your current degree program?" (Analog Devices, 2026-11-16)
                         r"|\bwhen (do|will) you (expect to )?(complete|finish)\b.{0,40}\b(degree|program|studies)\b"
                         r"|\b(expected|anticipated) (degree )?completion\b", 0.9),
+    # "Do you intend to return to a college or university for at least one additional semester or quarter after the
+    # internship ends?" (T-Mobile, 2026-11-16): yes when the run's graduation date comes after the internship
+    ("returning_to_school", r"\b(return|returning|go back|going back) to (a |an |your )?(college|university|school|"
+                            r"studies|degree program)\b|\b(additional|remaining) (semester|quarter|term)s?\b.{0,60}\bafter\b",
+     0.9),
     ("enrolled", r"\bcurrently enrolled\b.*\?\s*$|\bare you (currently )?(a )?(student|enrolled)\b", 0.9),
     ("school_status", r"\bbest describes your (current )?(status|situation)\b|\byear of (school|study)\b|"
                       r"\bclass standing\b|\bacademic (status|standing)\b", 0.85),
@@ -373,6 +378,13 @@ def affirmative_option(options: list[str]) -> Optional[str]:
     return agree[0] if len(agree) == 1 else None
 
 
+def _term_end_of(season: Optional[str], year: Optional[int]) -> Optional[tuple[int, int]]:
+    """(year, month) an internship term ends."""
+    if not season or not year:
+        return None
+    return {"spring": (year, 5), "summer": (year, 8), "fall": (year, 12), "winter": (year, 3)}.get(season)
+
+
 def count_option(n: int, options: list[str]) -> Optional[str]:
     """The choice a count falls in: 26 -> "10+", 2 -> "1-3" ("0", "1-3", "4-6", "10+", "More than 5", "5 or more")."""
     for option in options:
@@ -479,6 +491,12 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value(ctx.grad_date, "this run's graduation date", candidates=_grad_candidates(ctx.grad_date),
                      fallback_other=True)  # no option for it: "Other", then the date in the follow-up box
     current = next((e for e in ctx.profile.education if e.end == "per_run"), None)
+    if key == "returning_to_school":
+        grad, end = parse_month_year(ctx.grad_date), _term_end_of(ctx.season, ctx.season_year)
+        if ctx.employment != "internship" or not grad or not end:
+            return Value(None, "this run's graduation date", note="no internship term to compare with")
+        back = (grad.year, grad.month) > end
+        return Value("Yes" if back else "No", f"this run's graduation date ({ctx.grad_date}) and the internship term")
     if key == "enrolled":
         return Value("Yes" if current else None, "profile education (a program in progress)")
     if key == "school_status" and current:
@@ -740,9 +758,35 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
         value = value_for(key, q, ctx)
         planned = _decide(q, value, label_conf, cfg)
         answers.append(PlannedAnswer(**base, **planned))
+    _generic_uploads(answers, questions, ctx)
     _split_street(answers, ctx)
     _apply_remembered(answers, ctx)
     return AnswerPlan(answers=answers)
+
+
+_GENERIC_UPLOAD = re.compile(r"(?i)^\W*(file|upload( a)?( file)?|attach(ment)?( a)?( file)?|choose (a )?file|browse)\W*$")
+
+
+def _generic_uploads(answers: list[PlannedAnswer], questions: list[FormQuestion], ctx: AnswerContext) -> None:
+    """A form whose upload boxes are only labelled "File" (Laborie on Jobvite, 2026-11-16: both were skipped and the
+    resume never went in): with no box named for the resume, the first gets the resume, the second the cover letter."""
+    if any(a.key == "resume" or (a.kind == "file" and a.type == "file") for a in answers):
+        return
+    generic = [a for a in answers if a.type == "file" and a.key is None and _GENERIC_UPLOAD.match(a.label or "")]
+    if not generic:
+        return
+    first = generic[0]
+    first.key, first.kind, first.confidence, first.source, first.note = (
+        "resume", "file", 0.9, "the tailored resume PDF (first unlabelled upload box)", None)
+    if len(generic) > 1:
+        second = generic[1]
+        q = next((q for q in questions if q.field_name == second.field), None)
+        if q is not None:
+            letter = _cover_letter(q, dict(field=second.field, label=second.label, type=second.type,
+                                           required=second.required, options=second.options, section=second.section,
+                                           key="cover_letter", max_length=second.max_length,
+                                           description=second.description), ctx)
+            answers[answers.index(second)] = letter
 
 
 CHOICE_TYPES = ("select", "radio", "multi_select", "yesno", "boolean", "prompt")

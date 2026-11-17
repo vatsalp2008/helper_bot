@@ -292,7 +292,16 @@ def test_degree_choices_never_pick_another_named_degree() -> None:
     assert best.startswith("Master’s or Equivalent")
     assert wp.degree_score("Master of Science", "Master of Science (MS)") > wp.degree_score("Master of Science",
                                                                                             "Master's Degree")
-    assert wp.degree_score("Bachelor of Engineering", "Bachelor of Arts") < 0.85
+    assert wp.degree_score("Bachelor of Engineering", "Bachelor of Arts") < wp.degree_score("Bachelor of Engineering",
+                                                                                         "Bachelor's Degree")
+    # KLA offers no Master of Science: the closest master's still wins over nothing, never an MBA
+    kla = ["Associates", "Masters of Technology (Masters)", "Bachelors of Arts or Science (Bachelors)",
+           "Master of Business Administration"]
+    pick = lambda d: max(kla, key=lambda o: (wp.degree_score(d, o), -len(o)))  # noqa: E731
+    assert pick("Master of Science") == "Masters of Technology (Masters)"
+    assert wp.degree_score("Master of Science", "Masters of Technology (Masters)") >= 0.85
+    assert pick("Bachelor of Engineering") == "Bachelors of Arts or Science (Bachelors)"
+    assert wp.degree_score("Master of Science", "Master of Business Administration") < 0.85
 
 
 def test_a_question_only_vatsal_can_answer_waits_for_him(browser: Any, tmp_path: Path) -> None:

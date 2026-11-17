@@ -137,6 +137,10 @@ _EXPORT_RE = re.compile(
     r"(?i)\bexport[- ]control|\bITAR\b|\bexport administration regulations|\bU\.?S\.? persons?\b|\bdeemed export"
     r"|\bgovernment authori[sz]ation|\bexport licen[cs]e"
 )
+_US_PERSON_RE = re.compile(
+    r"(?i)\b(?:must be|required to be|need to be|candidates? must be)\b[^.\n]{0,20}?\bU\.?S\.? persons?\b"
+    r"|\bU\.?S\.? persons? (?:status )?(?:is |are )?(?:required|only)\b|\bonly (?:open to )?U\.?S\.? persons\b"
+)
 _CITIZEN_RE = re.compile(
     r"(?i)\b(?:must be|requires?|required to be|only|open to)\b[^.\n]{0,40}?\bU\.?S\.? citizens?(?:hip)?\b"
     r"|\bU\.?S\.? citizens?(?:hip)? (?:is |are )?(?:required|only)\b"
@@ -151,6 +155,12 @@ _UNDERGRAD_RE = re.compile(
     r"|\bundergraduate (?:students?|candidates?) only\b|\bonly (?:open to )?undergraduates?\b"
     r"|\b(?:rising )?(?:sophomores?|juniors? or seniors?|sophomore or junior)\b"
 )
+_PHD_ONLY_RE = re.compile(
+    r"(?i)\b(?:pursuing|enrolled in|candidates? for|currently in|working towards?)\s+(?:a |an |your )?"
+    r"(?:Ph\.?D|doctora)|\bPh\.?D\.?\s*(?:research\s+)?(?:intern|internship|students?|candidates?)\b"
+)
+_MASTERS_RE = re.compile(r"(?i)\b(?:master['’]?s|M\.?S\.?(?!\w)|MSc|graduate students?)")
+_DEGREE_ASK_RE = re.compile(r"(?i)\b(?:pursuing|enrolled|degree|students?)\b")
 _GRAD_LEVEL_RE = re.compile(r"(?i)\b(?:master['’]?s|M\.?S\.?|graduate (?:students?|degree|program)|Ph\.?D\.?|MBA)\b")
 _IMMEDIATE_RE = re.compile(
     r"(?i)\bimmediate(?:ly)? start|\bstart immediately\b|\bstart(?:ing)? (?:ASAP|as soon as possible)\b"
@@ -267,7 +277,8 @@ def _grad_window(sentences: list[str]) -> tuple[Optional[tuple[int, int]], Optio
         if not found:
             # Longest phrases first: "before or in June 2027" is an upper bound, not "in June 2027".
             for m in re.finditer(rf"(?i)\b(before or (?:in|by|on)|on or before|by or before|no later than|prior to"
-                                 rf"|on or after|no earlier than|by|before|in|during|after)\s+(?:the\s+)?"
+                                 rf"|on or after|no (?:earlier|sooner) than|not (?:earlier than|before)|by|before|in|during"
+                                 rf"|after)\s+(?:the\s+)?"
                                  rf"(?:calendar\s+year\s+(?:of\s+)?)?({_WHEN})"  # "during the 2028 calendar year" (Riot)
                                  rf"|\bclass of\s+(\d{{4}})", s):
                 if m.group(3):
@@ -283,7 +294,8 @@ def _grad_window(sentences: list[str]) -> tuple[Optional[tuple[int, int]], Optio
                     upper = min(upper, r[1]) if upper else r[1]
                 if word in ("before", "prior to"):
                     upper = min(upper, _month_before(r[0])) if upper else _month_before(r[0])
-                if word in ("in", "during", "after", "no earlier than", "on or after"):
+                if word in ("in", "during", "after", "no earlier than", "no sooner than", "not earlier than",
+                            "not before", "on or after"):  # "graduating no sooner than September 2027" (Micron)
                     start = r[0] if word != "after" else _month_after(r[1])
                     lower = max(lower, start) if lower else start
                 found = True
@@ -453,11 +465,17 @@ def check_eligibility(
         if unclear:
             flag("cpt_opt_mentioned", "warning", "It mentions CPT/OPT without saying clearly whether they count. Read "
                  "the wording; the form's sponsorship question may pause the run.", unclear)
-    export = _matching(sentences, _EXPORT_RE)
+    is_citizen = bool(profile and (profile.tier2.us_citizen_or_permanent_resident.value or "").lower() == "yes")
+    # "Must be a U.S. Person due to required access to U.S. export-controlled information" (Anduril, 2026-11-16):
+    # a U.S. person is a citizen, permanent resident, refugee or asylee, which a visa holder isn't
+    us_person = _matching(sentences, _US_PERSON_RE)
+    if us_person and not is_citizen:
+        flag("us_person_required", "blocker", "It requires U.S. person status (citizen, permanent resident, refugee "
+             "or asylee), which your profile says you don't have.", us_person)
+    export = [s for s in _matching(sentences, _EXPORT_RE) if s not in us_person or is_citizen]
     if export:
         flag("export_control", "warning", "Export control: the role may require government authorization.", export)
     citizen = _matching(sentences, _CITIZEN_RE)
-    is_citizen = bool(profile and (profile.tier2.us_citizen_or_permanent_resident.value or "").lower() == "yes")
     if citizen and not is_citizen:
         flag("citizenship_required", "blocker", "It requires U.S. citizenship, which your profile says you don't have.",
              citizen)
@@ -472,6 +490,10 @@ def check_eligibility(
     if undergrad:
         flag("undergrad_only", "warning", "It asks for undergraduates; as an MS student you may be screened out.",
              undergrad)
+    # "We are seeking a PhD research intern ... Currently pursuing a PhD in ..." (ASML, 2026-11-16)
+    phd_only = [s for s in _matching([job.role_title, *sentences], _PHD_ONLY_RE) if not _MASTERS_RE.search(s)]
+    if phd_only and not any(_MASTERS_RE.search(s) for s in _matching(sentences, _DEGREE_ASK_RE)):
+        flag("phd_only", "blocker", "It's for PhD students; you're in a master's program.", phd_only[:2])
     grad_ok = _matching(sentences, re.compile(_GRAD_LEVEL_RE.pattern + r"[^.\n]{0,60}?\b(?:students?|candidates?|"
                                               r"degree|program|rate|/hr|per hour)\b", re.I))
     if grad_ok and not undergrad:

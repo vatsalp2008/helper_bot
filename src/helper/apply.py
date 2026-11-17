@@ -19,7 +19,7 @@ from pydantic import ValidationError
 
 from .adapters.common import asks_for_emailed_code, visible_errors
 from .answers import NOTE_STYLE, AnswerContext, AnswerPlan, PlannedAnswer, format_plan, match_option, plan_answers
-from .autosubmit import REVIEW_ONLY, Gate, blockers, clean_review_runs, record_fill_run, run_problems
+from .autosubmit import REVIEW_ONLY, Gate, blockers, clean_review_runs, record_fill_run, run_problems, site_kind
 from .browser import browser_session, captcha_visible, make_pause
 from .config import Paths, env_value, load_yaml
 from .errors import HelperError, NeedsUser, WaitingForClaude, problems
@@ -381,7 +381,7 @@ def _auto_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, plan: Answ
     """Spec 10.5: the reasons helper must not submit this run by itself (none means it may)."""
     from .tracker.commands import open_db
 
-    if job.ats == "generic":  # Vatsal, 2026-11-16: company sites submit once everything is filled
+    if site_kind(job.ats) == "generic":  # Vatsal, 2026-11-16: company sites submit once everything is filled
         reasons = []
         empty = [a.label[:60] for a in plan.answers if a.required and a.kind in ("unknown", "skip")]
         empty += [r.label[:60] for r in results if not r.ok and _required(plan, r.field)]

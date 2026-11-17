@@ -24,6 +24,15 @@ from .tracker.db import now_iso
 REVIEW_ONLY = {"icims": "iCIMS runs always stop before Submit for you",
 }
 AUTO_CAPABLE = ("greenhouse", "lever", "ashby", "workday", "generic")  # Workday and company sites from 2026-11-16
+DEDICATED = ("greenhouse", "lever", "ashby", "workday", "icims")  # sites with their own adapter
+STOPPED = ("taleo", "smartrecruiters", "successfactors")  # never filled (rule 8)
+
+
+def site_kind(ats: Optional[str]) -> str:
+    """The auto-submit site a run belongs to. Pages the company-site (generic) adapter fills keep their system's name
+    (jobvite, oracle, rippling...), but they follow the company-site rule (Laborie, Fortinet, 2026-11-16)."""
+    a = (ats or "").lower() or "unknown"
+    return a if a in DEDICATED or a in STOPPED or a == "unknown" else "generic"
 
 
 @dataclass
@@ -45,7 +54,7 @@ def blockers(g: Gate) -> list[str]:
     reasons: list[str] = []
     if g.ats in REVIEW_ONLY:
         return [REVIEW_ONLY[g.ats]]
-    if g.ats not in AUTO_CAPABLE:
+    if site_kind(g.ats) not in AUTO_CAPABLE:
         return [f"{g.ats} runs stop before Submit for you"]
     if g.clean_runs < g.min_clean_runs:
         reasons.append(f"{g.ats} has {g.clean_runs} clean review-mode run(s) so far; auto-submit needs "

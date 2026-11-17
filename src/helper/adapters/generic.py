@@ -116,7 +116,10 @@ SUBMIT_WATCH_JS = r"""
   window.__helperSubmitWatch = true;
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('button, input[type=submit], [role=button]');
-    if (b && /submit|send application|apply/i.test(b.innerText || b.value || '')) window.__helperSubmitClicked = true;
+    // the whole label, so "Apply With LinkedIn", "Apply with Indeed" and "Apply Now" aren't Submit (Fortinet, 2026-11-16)
+    const label = (b && (b.innerText || b.value || '')).trim();
+    if (b && /^(submit( (my |your )?application)?|send( (my )?application)?|complete application|finish|apply)$/i.test(label))
+      window.__helperSubmitClicked = true;
   }, true);
 }
 """
@@ -196,6 +199,20 @@ def discover(root: Any) -> list[FormQuestion]:
     return questions
 
 
+_GENERIC_SITE_NAME = re.compile(r"(?i)^\s*(candidate experience( site)?|careers?( site| page| portal)?|jobs?|job search|"
+                                r"job board|career opportunities|recruiting|talent)\s*$")
+_COPYRIGHT_RE = re.compile(r"(?:©|\(c\)|Copyright)\s*(?:©\s*)?(?:\d{4}(?:\s*[-–]\s*\d{4})?\s*)?"
+                           r"([A-Z][A-Za-z0-9&'. -]{1,60}?)(?:,?\s+(?:Inc|LLC|Ltd|Corp|Corporation|Co)\b\.?|\.|\s+All rights)",
+                           re.IGNORECASE)
+
+
+def copyright_owner(text: str) -> str:
+    """'Copyright © 2023 Fortinet, Inc. All Rights Reserved.' -> 'Fortinet'."""
+    m = _COPYRIGHT_RE.search(text or "")
+    name = m.group(1).strip(" ,.") if m else ""
+    return "" if not name or name.lower() in ("all", "the") or _GENERIC_SITE_NAME.match(name) else name
+
+
 def read_posting(page: Any) -> tuple[str, str, str]:
     """(role title, company, description) from the page itself."""
     data = page.evaluate(r"""() => {
@@ -203,19 +220,26 @@ def read_posting(page: Any) -> tuple[str, str, str]:
       const meta = n => (document.querySelector(`meta[property="${n}"], meta[name="${n}"]`) || {}).content || '';
       const main = document.querySelector('main, article, [role=main], #content, .job-description, [class*=description]');
       const blocks = [...document.querySelectorAll('div, section')].map(d => [t(d).length, d]).sort((a, b) => b[0] - a[0]);
+      const foot = t(document.querySelector('footer')) || (t(document.body) || '').slice(-3000);
       return {h1: t(document.querySelector('h1')), title: document.title, site: meta('og:site_name'),
-              ogtitle: meta('og:title'), text: t(main) || (blocks[0] ? t(blocks[0][1]) : t(document.body))};
+              ogtitle: meta('og:title'), text: t(main) || (blocks[0] ? t(blocks[0][1]) : t(document.body)),
+              footer: foot};
     }""")
     title = data["h1"] or data["ogtitle"] or data["title"]
     host = (urlparse(page.url).hostname or "").removeprefix("www.").removeprefix("careers.").removeprefix("jobs.")
     company = data["site"] or (host.split(".")[0].replace("-", " ").title() if host else "")
+    if _GENERIC_SITE_NAME.match(company) or "oraclecloud" in host:
+        # Oracle's "Candidate Experience site" is no employer (Fortinet, 2026-11-16): use the copyright line
+        owner = copyright_owner(data.get("footer") or "")
+        company = owner or ("" if _GENERIC_SITE_NAME.match(company) else company)
     text = data["text"].strip()
     try:
         ld = job_posting_ld(page.evaluate(_LD_JS))
     except Exception:
         ld = None
     if ld:  # the page's own JobPosting data names the employer, and its description has no menus or ads
-        return ld.title or title.strip(), ld.company or company.strip(), ld.description if readable(
+        ld_company = "" if _GENERIC_SITE_NAME.match(ld.company or "") else ld.company  # Oracle names itself
+        return ld.title or title.strip(), ld_company or company.strip(), ld.description if readable(
             ld.title, ld.description) else text
     return title.strip(), company.strip(), text
 

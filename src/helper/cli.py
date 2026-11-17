@@ -246,6 +246,18 @@ def fill(
         raise typer.Exit(EXIT_NEEDS_USER)
 
 
+@app.command()
+@guarded
+def assist(
+    run_id: Annotated[str, typer.Argument(help="Run folder name under runs/.")],
+    no_open: Annotated[bool, typer.Option("--no-open", help="Only print the paste sheet; open nothing.")] = False,
+) -> None:
+    """You apply, helper prepares: open the posting in your normal browser, show the files, print a paste sheet."""
+    from .assist import assist as run_assist
+
+    typer.echo(run_assist(_paths(), run_id, open_browser=not no_open))
+
+
 @app.command("continue")
 @guarded
 def continue_(
@@ -279,6 +291,8 @@ def continue_(
         typer.echo(answers_step(paths, cfg, run_id, approve=approve_answers))
     elif done is None and not letter:
         typer.echo(f"Run {run_id} is finished: its resume and cover letter are built.")
+    if letter and load_state(paths, run_id).command == "resume":
+        typer.echo(f"To apply yourself: `helper assist {run_id}` opens the posting in your browser with a paste sheet.")
 
 
 @app.command("cover-letter")

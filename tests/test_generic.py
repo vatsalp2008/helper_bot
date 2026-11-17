@@ -292,3 +292,33 @@ def test_an_apply_link_that_opens_a_new_tab_is_followed(browser: Any) -> None:
     assert scan.title == "Data Engineer Intern" and scan.apply_url == FORM
     assert [q.label for q in scan.questions][:3] == ["First name", "Last name", "Email address"]
     page.context.close()  # and the tab the Apply link opened
+
+
+def test_a_generic_site_name_is_not_the_employer() -> None:  # Fortinet on Oracle, 2026-11-16
+    from helper.adapters.generic import _GENERIC_SITE_NAME, copyright_owner
+    assert _GENERIC_SITE_NAME.match("Candidate Experience site") and not _GENERIC_SITE_NAME.match("Fortinet")
+    assert copyright_owner("Contact Us\nCopyright © 2023 Fortinet, Inc. All Rights Reserved. Terms") == "Fortinet"
+    assert copyright_owner("© 2019-2026 Laborie Medical Technologies Corp.") == "Laborie Medical Technologies"
+    assert copyright_owner("All rights reserved") == ""
+
+
+def test_only_a_final_submit_button_counts_as_submitting() -> None:  # Fortinet on Oracle, 2026-11-16
+    from playwright.sync_api import sync_playwright
+
+    from helper.adapters.generic import SUBMIT_WATCH_JS, submit_clicked
+    html = ("<button id=a>Apply With LinkedIn</button><button id=b>Apply Now</button><button id=c>Next</button>"
+            "<button id=d>Submit Application</button>")
+    with sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch(headless=True)
+        except Exception as exc:
+            pytest.skip(f"Chromium isn't installed: {exc}")
+        page = browser.new_page()
+        page.set_content(html)
+        page.evaluate(SUBMIT_WATCH_JS)
+        for b in ("#a", "#b", "#c"):
+            page.click(b)
+        assert not submit_clicked(page)
+        page.click("#d")
+        assert submit_clicked(page)
+        browser.close()

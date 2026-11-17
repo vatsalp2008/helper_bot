@@ -563,3 +563,22 @@ def test_two_digit_year_terms() -> None:  # Direct Supply, 2026-11-16: "Winter '
     grad = q("What is your anticipated graduation date?", "select", terms)
     assert one(grad, grad_date="December 2027").value == "Winter '27"
     assert one(grad, grad_date="May 2027").value == "Spring '27"
+
+
+def test_returning_to_school_follows_the_graduation_date() -> None:  # T-Mobile, 2026-11-16
+    back = q("To be eligible, students must plan to return to school. Do you intend to return to a college or university "
+             "for at least one additional semester or quarter after the internship ends?", "select", ["Yes", "No"])
+    assert key_for(back)[0] == "returning_to_school"
+    summer = dict(employment="internship", season="summer", season_year=2027)
+    assert one(back, grad_date="December 2027", **summer).value == "Yes"
+    assert one(back, grad_date="May 2027", **summer).value == "No"
+
+
+def test_unlabelled_upload_boxes_get_the_resume_then_the_letter() -> None:  # Laborie on Jobvite, 2026-11-16
+    boxes = [q("File", "file", required=False, name="file-0"), q("File", "file", required=False, name="file-1")]
+    plan = plan_answers(boxes, ctx()).answers
+    assert plan[0].key == "resume" and plan[0].kind == "file"
+    assert plan[1].key == "cover_letter"
+    labelled = [q("Resume/CV", "file", name="resume"), q("File", "file", required=False, name="file-1")]
+    plan = plan_answers(labelled, ctx()).answers
+    assert plan[0].key == "resume" and plan[1].key is None  # a named resume box: the extra box stays empty

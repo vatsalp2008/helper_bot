@@ -175,3 +175,9 @@ def test_workday_can_submit_with_best_guesses_but_not_with_gaps() -> None:  # Va
     assert blockers(ok) == []
     assert blockers(gate(ats="workday", clean_runs=0, min_clean_runs=0, answers=[guess],
                          results=[FieldResult("disability", "Disability", True, "x")]))  # Greenhouse-style: blocks
+
+
+def test_company_sites_named_by_their_system_follow_the_company_site_rule() -> None:  # Laborie, Fortinet, 2026-11-16
+    from helper.autosubmit import site_kind
+    assert site_kind("jobvite") == "generic" and site_kind("oracle") == "generic" and site_kind("generic") == "generic"
+    assert site_kind("workday") == "workday" and site_kind("icims") == "icims" and site_kind("taleo") == "taleo"
