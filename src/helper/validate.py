@@ -131,7 +131,9 @@ def in_text(phrase: str, text: str) -> bool:
         return True
     if phrase.endswith("s") and len(phrase) > 3 and phrase_regex(phrase[:-1]).search(text):
         return True
-    parts = [p for p in re.split(r"[-/]", phrase) if p]
+    # "PyTorch/TensorFlow" names two things, so both being there counts. A hyphen joins one name, and phrase_regex
+    # already reads hyphens and spaces alike: "scikit-image" isn't Scikit-learn plus an "image" (Syngenta, 2026-11-18)
+    parts = [p for p in phrase.split("/") if p.strip()]
     return len(parts) > 1 and all(phrase_regex(p).search(text) for p in parts)
 
 

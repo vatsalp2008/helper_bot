@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -77,6 +78,27 @@ def test_marking_applied_and_resume_only_runs(repo: Path) -> None:
         assert queue.add(conn, url="https://x.test/2", company="B", title="T") is None  # already listed
     finally:
         conn.close()
+
+
+def test_a_link_listed_without_details_takes_its_runs_details(repo: Path) -> None:  # Akuna, Disney, 2026-11-18
+    paths, cfg = _setup(repo)
+    link = "https://akunacapital.com/careers/job/8018853/?gh_jid=8018853"
+    hunt.add(paths, cfg, [link])
+    assert (_row(paths, cfg, link)["company"], _row(paths, cfg, link)["title"]) == ("?", "?")
+    (paths.runs / "r5").mkdir(parents=True)
+    (paths.runs / "r5" / "job.json").write_text(json.dumps({
+        "company": "Akuna Capital", "role_title": "Software Engineer Intern - Python, Summer 2027",
+        "location": "Chicago, IL", "ats": "greenhouse", "job_id": "8018853"}), encoding="utf-8")
+    hunt.on_run_started(paths, cfg, link, SimpleNamespace(run_id="r5", application_id=None, options={}))
+    row = _row(paths, cfg, link)
+    assert (row["company"], row["title"], row["location"]) == (
+        "Akuna Capital", "Software Engineer Intern - Python, Summer 2027", "Chicago, IL")
+    # a row the search named keeps its own details
+    (paths.runs / "r6").mkdir()
+    (paths.runs / "r6" / "job.json").write_text(json.dumps({"company": "Acme Corp", "role_title": "Other"}),
+                                                encoding="utf-8")
+    hunt.on_run_started(paths, cfg, URL, SimpleNamespace(run_id="r6", application_id=None, options={}))
+    assert (_row(paths, cfg)["company"], _row(paths, cfg)["title"]) == ("Acme", "Software Engineer Intern")
 
 
 def test_marking_applied_finds_a_posting_listed_by_its_run_only(repo: Path) -> None:

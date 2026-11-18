@@ -98,6 +98,19 @@ def test_a_company_page_that_links_to_lever(browser: Any) -> None:
     page.close()
 
 
+def test_a_video_player_and_a_get_notified_box_are_not_an_application_form(browser: Any) -> None:
+    # Disney's posting page (2026-11-18): a "get notified" email box plus a video player's seek and volume sliders
+    # passed for a form, and helper filled the job-alert sign-up and asked for Submit
+    page = browser.new_page()
+    page.set_content("<body><h1>Data Engineering Intern</h1><p>" + "Build data pipelines for content analytics. " * 20
+                     + "</p><form><label>Get notified about similar jobs <input type=email id=notifiedEmail></label>"
+                     "</form><div class=plyr><input type=range id=plyr-seek-1><input type=range id=plyr-volume-1>"
+                     "</div></body>")
+    assert generic._form_frame(page) is None
+    assert generic.scan_page(page).questions == []
+    page.close()
+
+
 def test_a_sign_in_wall_is_left_to_vatsal(browser: Any) -> None:
     page = browser.new_page()
     page.goto(f"file://{(FIXTURES / 'generic_sign_in_wall.html').resolve()}")

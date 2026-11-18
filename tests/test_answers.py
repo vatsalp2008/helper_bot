@@ -158,6 +158,18 @@ def test_checkbox_groups() -> None:
     assert (degree.kind, degree.value) == ("auto", "Master's")
 
 
+def test_status_questions_that_ask_for_a_date_or_details_go_to_vatsal() -> None:  # Akuna, 2026-11-18
+    expiry = one(q("If you have a current work authorization/status, when does it expire? (Please enter N/A if you do "
+                   "not require work authorization.)", "text"))
+    assert expiry.value is None and "date or details" in (expiry.note or "")  # was "Yes"
+    detail = one(q("Please provide additional detail about your sponsorship needs, current work authorization status, "
+                   "or eligibility for a work authorization status.", "textarea"))
+    assert detail.value is None  # was "No"
+    # the yes/no questions keep their answers, in a text box too
+    assert one(q("Will you now or in the future require visa sponsorship?", "text")).value == "No"
+    assert one(q("Are you legally authorized to work in the US without sponsorship?", "text")).value == "Yes"
+
+
 def test_sponsorship_choices_that_name_a_student_visa_pause() -> None:
     choices = ["None", "F1 Visa (CPT/OPT/STEM OPT)", "H-1B", "Other"]
     answer = one(q("Will you require any of the below sponsorship for employment?", "radio", choices))

@@ -364,3 +364,61 @@ synonyms:
       - "already claimable: Workflow Orchestration"
     approved: true
     note: Added 2026-11-18 for DriveWealth's AI Consulting Associate Program (AI CAP) People Analytics Intern ("Build working solutions for the People team that combine LLMs, APIs, and automation frameworks. Solutions might be AI assistants, automated workflows, dashboards").
+
+  - term: Experimental Design
+    evidence:
+      - "experimentiq: end-to-end A/B testing and causal inference platform; statistical engine with power analysis, sequential testing (O'Brien-Fleming) and CUPED; FastAPI assignment service with consistent-hashing variant assignment"
+      - "already claimable: A/B Testing, Causal Inference; already approved: Hypothesis Testing"
+    approved: true
+    note: Added 2026-11-18 for Zillow's Data Science Intern ("Exposure to A/B testing, experimental design, or causal inference").
+
+  - term: Object Detection
+    evidence:
+      - "perceptnet: real-time 3D detection, classification and multi-object tracking with a YOLO v8 camera branch and a PointPillars LiDAR branch; ~77% Car mAP@0.7 on KITTI (7,481 frames)"
+      - "transitlens: on-device TFLite object detector alongside a MobileNetV3-Small scene classifier"
+      - "scenarioforge: closed-loop evaluation coupling detection to a PID controller, with IoU matching and a 23% mAP degradation in fog"
+    approved: true
+    note: Added 2026-11-18 for Syngenta's Data Science Intern ("projects that may comprise image segmentation, object detection, image processing, statistical analysis").
+
+  - term: Image Segmentation
+    evidence:
+      - "wardrobe: computer-vision closet scanner using Apple Vision + Core ML for on-device segmentation, background removal and classification (6 categories) of clothing photos; 85% reduction in manual tagging effort"
+      - "already claimable: Segmentation, Computer Vision"
+    approved: true
+    note: Added 2026-11-18 for Syngenta's Data Science Intern ("projects that may comprise image segmentation, object detection, image processing").
+
+  - term: Model Evaluation
+    evidence:
+      - "perceptnet: benchmarked on KITTI (7,481 frames) + nuScenes; ~77% Car mAP@0.7, MOTA >75%, <8% mAP drop under LiDAR dropout"
+      - "scenarioforge: evaluation engine with IoU matching and a SOTIF-aligned failure taxonomy; closed-loop perception evaluation"
+      - "traffic_accident: benchmarked 3 baselines, tuned XGBoost via GridSearchCV targeting Recall >0.70, F1 >0.65; ROC-AUC 0.818"
+      - "recommendation_engine: Precision@10 0.64, Recall@10 0.76, MAP 0.59 on evaluation datasets, with a benchmarking suite"
+      - "echocoach: LLM-as-judge evaluation harness with a labeled test set and statistical significance testing"
+    approved: true
+    note: Added 2026-11-18 for Syngenta's Data Science Intern ("Exposure to pretrained or foundation vision models, transfer learning, model evaluation, or experiment tracking").
+
+  - term: Geospatial Analysis
+    evidence:
+      - "traffic_accident: Folium geographic heatmap of US accident records (49 states) validated against WSDOT data"
+      - "pnwer: D3.js maps; a user picks a jurisdiction on a map to see trade volume, jobs, GDP and tariff costs"
+      - "transitlens: constraint-weighted Dijkstra routing over GTFS + OpenStreetMap data"
+      - "skills: Folium; D3.js (geographic/choropleth mapping)"
+    approved: true
+    note: Added 2026-11-18 for Syngenta's Data Science Intern ("statistical analysis, data visualization, geospatial analysis, and workflow automation").
+
+  - term: Digital Signal Processing
+    evidence:
+      - "afterglow: a signal-processing layer of One Euro, Kalman and EMA filters behind a common interface, on the real-time hand-tracking signal"
+      - "afterglow: a benchmarking page that replays recorded fixture sessions headlessly to measure filter jitter/lag, and a Filter Lab comparing raw vs. EMA vs. Kalman vs. One Euro signals side by side with live metrics"
+      - "perceptnet: AB3DMOT tracker built on a 3D Kalman filter"
+      - "skills: signal filtering (One Euro, Kalman, EMA)"
+    approved: true
+    note: Added 2026-11-18 for Bose's Software Engineer Co-op ("Basic knowledge of digital signal processing through coursework or projects"). The filtering is on hand-tracking and sensor signals, not audio.
+
+  - term: Large Language Models
+    evidence:
+      - "echocoach: an LLM in a real-time voice coaching loop; LoRA fine-tuned a small open-source LLM; LLM-as-judge evaluation harness"
+      - "themanager: Gemma 4 ingests PRDs/SRS and generates structured user stories"
+      - "skills: LLM Integration (Claude API, Gemini API, Ollama, LangChain, RAG); LLM is the master list's own abbreviation"
+    approved: true
+    note: Added 2026-11-18 for Bose's Software Engineer Co-op ("Interest in applying AI and large language models to engineering work").

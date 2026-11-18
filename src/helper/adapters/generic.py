@@ -39,7 +39,9 @@ DISCOVER_JS = r"""
 () => {
   const text = el => el ? (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim() : '';
   const visible = el => !!(el.offsetParent || el.getClientRects().length);
-  const skipType = t => ['hidden', 'submit', 'button', 'reset', 'image', 'search', 'password'].includes(t);
+  // range sliders are a video player's seek and volume bars, not questions (Disney's posting page, 2026-11-18)
+  const skipType = t => ['hidden', 'submit', 'button', 'reset', 'image', 'search', 'password', 'range', 'color']
+    .includes(t);
   // ARIA widgets with no <input> of their own are questions too: Rippling's dropdowns are role=combobox divs, and its
   // rating questions are role=radio divs in a role=radiogroup (apexanalytix, Raptor Maps, 2026-11-18)
   const CONTROLS = 'input, select, textarea, [role=combobox], [role=radiogroup]';
@@ -318,7 +320,7 @@ _FORM_SIZE_JS = r"""
   const visible = el => !!(el.offsetParent || el.getClientRects().length);
   const fields = [...document.querySelectorAll('input, select, textarea')].filter(c => {
     const t = (c.type || '').toLowerCase();
-    return !['hidden', 'submit', 'button', 'reset', 'image', 'search', 'password'].includes(t)
+    return !['hidden', 'submit', 'button', 'reset', 'image', 'search', 'password', 'range', 'color'].includes(t)
       && !c.closest('header, nav, footer, [role=search], [role=navigation]') && (visible(c) || t === 'file');
   });
   const key = fields.some(c => c.type === 'email' || c.type === 'file' || /mail|resume|cv/i.test(c.name || c.id || ''));

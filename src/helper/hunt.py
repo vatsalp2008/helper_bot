@@ -124,6 +124,11 @@ def on_run_started(paths: Paths, cfg: Any, url: str, state: Any) -> None:
         blockers = [f["message"] for f in flags if f.get("level") == "blocker"]
         if not queue.link_run(conn, url, state.run_id, state.application_id):
             return
+        job_file = paths.runs / state.run_id / "job.json"
+        if job_file.exists():  # a link Vatsal sent was listed as "?" (Akuna, Disney, 2026-11-18)
+            job = json.loads(job_file.read_text(encoding="utf-8"))
+            queue.fill_details(conn, url, company=job.get("company"), title=job.get("role_title"),
+                               location=job.get("location"), ats=job.get("ats"), job_id=job.get("job_id"))
         if blockers:
             queue.set_status(conn, state.run_id, "skipped", f"ineligible: {blockers[0][:200]}")
         conn.commit()

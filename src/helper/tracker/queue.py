@@ -73,6 +73,18 @@ def set_status(conn: sqlite3.Connection, key: str, status: str, reason: Optional
     return cur.rowcount > 0
 
 
+def fill_details(conn: sqlite3.Connection, url: str, *, company: Optional[str] = None, title: Optional[str] = None,
+                 location: Optional[str] = None, ats: Optional[str] = None, job_id: Optional[str] = None) -> bool:
+    """A posting put on the list by its link alone ("?" for company and title) takes the details its run read."""
+    cur = conn.execute(
+        "UPDATE postings SET company = CASE WHEN COALESCE(company, '') IN ('', '?') THEN COALESCE(?, company) "
+        "ELSE company END, title = CASE WHEN COALESCE(title, '') IN ('', '?') THEN COALESCE(?, title) ELSE title END, "
+        "location = COALESCE(NULLIF(location, ''), ?), ats = COALESCE(NULLIF(ats, ''), ?), "
+        "job_id = COALESCE(NULLIF(job_id, ''), ?) WHERE url = ?",
+        (company or None, title or None, location or None, ats or None, job_id or None, clean_url(url)))
+    return cur.rowcount > 0
+
+
 def link_run(conn: sqlite3.Connection, url: str, run_id: str, application_id: Optional[int] = None) -> bool:
     """A run started for a listed posting: it's being applied to now."""
     cur = conn.execute("UPDATE postings SET run_id = ?, application_id = COALESCE(?, application_id), "

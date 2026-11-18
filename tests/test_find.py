@@ -122,6 +122,22 @@ def test_dedupe_matches_a_lists_application_link_to_the_feeds_posting() -> None:
     assert dedupe([listed], known_urls={feed.url}, known_ids=set()) == []
 
 
+def test_dedupe_keeps_new_postings_behind_a_page_address_every_job_shares() -> None:  # 0 new postings, 2026-11-18
+    known = {"https://boards.greenhouse.io/embed/job_app?for=acme&token=4606014005",
+             "https://www.jumptrading.com/hr/job?jid=7", "https://www.vantage.sh/careers?gh_jid=5551234"}
+    new = [Found(url="https://boards.greenhouse.io/embed/job_app?for=beta&token=4608584101", company="Beta",
+                 title="SWE Intern", location="NY", ats="greenhouse", source="list: x"),
+           Found(url="https://www.jumptrading.com/hr/job?jid=8", company="Jump Trading", title="Quant Dev Intern",
+                 location="Chicago, IL", ats="generic", source="list: x"),
+           Found(url="https://www.example.com/careers?gh_jid=7771234", company="Example", title="Data Intern",
+                 location="Remote", ats="generic", source="list: x")]
+    assert [f.url for f in dedupe(new, known_urls=known, known_ids=set())] == [f.url for f in new]
+    # a path that names the job is still the same posting on another host
+    moved = Found(url="https://boards.greenhouse.io/acme/jobs/4606014005", company="Acme", title="SWE Intern",
+                  location="NY", ats="generic", source="list: x")
+    assert dedupe([moved], known_urls={"https://job-boards.greenhouse.io/acme/jobs/4606014005"}, known_ids=set()) == []
+
+
 def test_noise_from_the_first_live_run_is_filtered() -> None:  # 2026-11-16
     assert not wanted("Water Resources Engineer – Entry Level (Hybrid)", "Minneapolis, MN")
     assert not wanted("Associate Scientist, Combination Product Characterization", "USA - New Jersey - Rahway")

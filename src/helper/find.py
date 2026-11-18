@@ -373,11 +373,22 @@ def _safe(job: Callable[[], list[Found]]) -> list[Found]:
         return []
 
 
+_JOB_IN_PATH = re.compile(r"\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}-", re.I)
+
+
+def _path_key(url: str) -> str:
+    """The link's path when it names one job (a job number or id in it), else ''. A page address that every job on a
+    site shares, with the job in the query (/embed/job_app?token=, /careers?gh_jid=, /hr/job?jid=), matched any
+    posting on any site with that address, so one known link hid every new one (0 new postings, 2026-11-18)."""
+    path = urlparse(url).path.rstrip("/").lower()
+    return path if _JOB_IN_PATH.search(path) else ""
+
+
 def dedupe(found: list[Found], known_urls: set[str], known_ids: set[str]) -> list[Found]:
     """Drop what he applied to or listed already (by job id or link), and repeats across sources (a feed's link wins
     over a list's)."""
     ids = {i.lower() for i in known_ids}
-    paths_known = {urlparse(u).path.rstrip("/").lower() for u in known_urls if u}
+    paths_known = {key for key in (_path_key(u) for u in known_urls if u) if key}
     links_known = {normalize_url(u) for u in known_urls if u}
     out: dict[str, Found] = {}
     taken_ids: set[str] = set()
@@ -387,7 +398,7 @@ def dedupe(found: list[Found], known_urls: set[str], known_ids: set[str]) -> lis
         # the feed had already found (DriveWealth, 2026-11-18): read the id from the link and compare clean links
         key_id = (f.job_id or job_id_from_url(f.url) or "").lower()
         link = normalize_url(f.url) or ""
-        path = urlparse(f.url).path.rstrip("/").lower()
+        path = _path_key(f.url)
         if (f.url in known_urls or (key_id and key_id in ids) or (path and path in paths_known)
                 or (link and link in links_known)):
             continue

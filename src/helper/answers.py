@@ -506,6 +506,12 @@ def _start_date(ctx: AnswerContext) -> Value:
                                                                                          .replace(" 1 ", " "))))
 
 
+_YES_NO_STATUS = {"work_authorization", "sponsorship", "permanent_work", "f1_student"}
+_ASKS_DETAIL = re.compile(r"(?i)\bwhen (does|do|will|did)\b[^?]{0,60}\bexpir|\bexpir(y|ation) date\b|\bplease (provide|give|"
+                          r"share|list|explain|describe|elaborate)\b|\b(additional|more|further) (detail|information|"
+                          r"context)\b|\blist any\b")
+
+
 def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     t1, t2 = ctx.profile.tier1, ctx.profile.tier2
     text = f"{q.label} {q.description or ''}"
@@ -577,6 +583,10 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value(_school_status(ctx.grad_date), "this run's graduation date",
                      aliases=("final year", "last year", "senior") if _school_status(ctx.grad_date).endswith("final year")
                      else ())
+    if key in _YES_NO_STATUS and not q.options and _ASKS_DETAIL.search(q.label):
+        # "If you have a current work authorization/status, when does it expire?" and "Please provide additional detail
+        # about your sponsorship needs..." want a date or an explanation, not the yes/no answer (Akuna, 2026-11-18)
+        return Value(None, key, note="asks for a date or details about his status, not a yes or no: Vatsal answers it")
     if key == "work_authorization":
         return tier2(t2.work_authorization, "work_authorization")
     if key == "visa_status":

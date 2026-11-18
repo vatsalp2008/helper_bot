@@ -229,7 +229,16 @@ _FORM_ANCHORS = ("#first_name", "#email", "#application-form", "#application_for
 def find_form(page: Any, timeout_ms: int = 20000) -> Optional[Any]:
     """The frame holding the application form: the page itself, or the Greenhouse frame a company careers page
     embeds (job-boards links can forward there, like nuro.ai/careersitem?gh_jid=...)."""
-    return common.find_form(page, _FORM_ANCHORS, hosts=("greenhouse.io",), timeout_ms=timeout_ms)
+    form = common.find_form(page, _FORM_ANCHORS, hosts=("greenhouse.io",), timeout_ms=timeout_ms)
+    if form is None or form is page.main_frame or "greenhouse.io" not in (form.url or ""):
+        return form
+    # The careers page around an embedded form can cover it: Akuna's cookie banner made every dropdown click time out
+    # (2026-11-18), so the window opens the embedded form's own page, the same Greenhouse form without the site around it
+    try:
+        page.goto(form.url, wait_until="domcontentloaded")
+    except Exception:
+        return form
+    return common.find_form(page, _FORM_ANCHORS, hosts=("greenhouse.io",), timeout_ms=timeout_ms) or form
 
 
 def choose_option(root: Any, dom: str, wanted: str, *, search: Optional[str] = None,

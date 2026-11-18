@@ -244,3 +244,33 @@ def test_select_all_that_apply_questions_tick_their_boxes(browser: Any, tmp_path
     wrong = gh.fill_form(page, [multi("question_702[]", "Instagram")], pdf, country=None, city=None, pause=lambda: None)
     assert not wrong[0].ok and "no option matches 'Instagram'" in wrong[0].detail
     page.close()
+
+
+def test_an_embedded_form_opens_on_its_own_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Akuna, 2026-11-18: the job-boards link forwarded to akunacapital.com, where the embedded form sat under a cookie
+    # banner and every dropdown click timed out; the window now opens the embedded form's own page
+    embed = "https://job-boards.greenhouse.io/embed/job_app?for=akunacapital&token=8018853"
+
+    class Frame:
+        def __init__(self, url: str) -> None:
+            self.url = url
+
+    class Page:
+        def __init__(self) -> None:
+            self.main_frame = Frame("https://akunacapital.com/careers/job/8018853/?gh_jid=8018853")
+            self.visits: list[str] = []
+
+        def goto(self, url: str, wait_until: str = "") -> None:
+            self.visits.append(url)
+            self.main_frame = Frame(url)
+
+    page = Page()
+    finds = iter([Frame(embed), None])
+    monkeypatch.setattr(gh.common, "find_form", lambda p, *a, **k: next(finds) or p.main_frame)
+    form = gh.find_form(page)
+    assert page.visits == [embed] and form is page.main_frame and form.url == embed
+    # a form on Greenhouse's own page is filled where it is
+    own = Page()
+    own.main_frame = Frame("https://job-boards.greenhouse.io/acme/jobs/1")
+    monkeypatch.setattr(gh.common, "find_form", lambda p, *a, **k: p.main_frame)
+    assert gh.find_form(own) is own.main_frame and own.visits == []

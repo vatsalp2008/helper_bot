@@ -279,6 +279,11 @@ def test_phrase_matching() -> None:
     assert in_text("CEO's", "the CEO filed")
     assert not in_text("Go", "Google Cloud")
     assert not in_text("Scala", "scalable")
+    # a hyphenated name is one thing; a slash names two (Syngenta, 2026-11-18)
+    assert not in_text("scikit-image", "Scikit-learn models for image segmentation")
+    assert not in_text("end-to-end", "the end of a run, to the end")
+    assert in_text("scikit-image", "filters in OpenCV and scikit image")
+    assert in_text("PyTorch/TensorFlow", "PyTorch models with a TensorFlow port")
 
 
 # --------------------------------------------------------------------------- the compiled PDF

@@ -256,10 +256,12 @@ def test_rescan_reads_a_company_form_again_and_hands_new_questions_to_claude(
     monkeypatch.setattr(ap, "plan_answers", lambda qs, ctx: planned)
     monkeypatch.setattr(ap, "_needed", lambda *args: {"questions": [new[0].label]})
     seen: list[str] = []
+    form = "https://ats.rippling.com/acme/jobs/1/apply?step=form"  # where the scan found the form (Disney, 2026-11-18)
     with pytest.raises(WaitingForClaude):
-        ap.rescan(paths, cfg, run_id, scan=lambda url: seen.append(url) or generic.Scan(questions=new))
+        ap.rescan(paths, cfg, run_id, scan=lambda url: seen.append(url) or generic.Scan(questions=new, apply_url=form))
     assert seen == [link]
-    assert [q.label for q in Job.model_validate(read_json(folder / "job.json")).questions] == [new[0].label]
+    saved = Job.model_validate(read_json(folder / "job.json"))
+    assert [q.label for q in saved.questions] == [new[0].label] and saved.apply_url == form
     assert (folder / "answers_plan.before-rescan.json").is_file() and (folder / "questions_needed.json").is_file()
     # a form the page no longer shows leaves everything as it was
     with pytest.raises(HelperError, match="couldn't read the form's questions again"):

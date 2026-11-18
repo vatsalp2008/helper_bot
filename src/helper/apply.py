@@ -332,6 +332,8 @@ def rescan(paths: Paths, cfg: Config, run_id: str, scan: Optional[Any] = None) -
         raise HelperError("helper couldn't read the form's questions again (the posting may have closed, or the page "
                           "turned helper's hidden browser away). The old plan stays as it was.")
     job.questions = result.questions
+    if result.apply_url:  # the form behind the Apply button (Disney: .../hvhapply?jobSeqNo=..., 2026-11-18), so the
+        job.apply_url = result.apply_url  # fill opens it, not the posting page the questions aren't on
     write_json(folder / "job.json", job.model_dump(mode="json"))
     for name in (PLAN, NEEDED, PROVIDED):
         if (folder / name).is_file():
