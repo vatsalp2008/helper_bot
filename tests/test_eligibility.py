@@ -50,6 +50,9 @@ def levels(e: Eligibility) -> dict[str, str]:
     "We are unable to sponsor or take over sponsorship of an employment visa, including F-1 OPT.",
     "This role is not open to candidates on CPT/OPT.",
     "No CPT or OPT.",
+    # HP, 2026-11-18
+    "HP, Inc. will not provide any assistance or sign documentation in support of immigration sponsorship including "
+    "Curricular Practical Training (CPT) or Optional Practical Training (OPT).",
 ])
 def test_named_visa_exclusions_block(text: str) -> None:
     e = check(text)
@@ -62,6 +65,12 @@ def test_ambiguous_no_sponsorship_is_flagged_and_built() -> None:
     e = check("Applicants must be authorized to work in the U.S. without sponsorship now or in the future.")
     assert levels(e)["no_sponsorship"] == "warning"
     assert e.recommendation == "build"
+
+
+def test_no_sponsorship_with_cpt_opt_welcome_is_not_an_exclusion() -> None:  # the HP rule's near miss
+    e = check("We do not provide visa sponsorship for this role, but OPT and CPT students are welcome.")
+    assert "visa_excluded" not in levels(e)
+    assert levels(e)["visa_welcome"] == "note"
 
 
 def test_cpt_opt_welcome_and_unclear_mentions() -> None:
@@ -134,8 +143,12 @@ def test_spring_2027_and_co_ops_are_fine_anywhere() -> None:  # Vatsal, 2026-11-
     assert levels(spring)["relocation"] == "note" and not spring.blocked
     co_op = check("Location: Durham, NC. 15-20 hours per week during the academic year.", title="Software Engineer Co-op")
     assert "far_office" not in levels(co_op) and not co_op.blocked
-    assert levels(check("Location: New York, NY (on-site)", title="Data Intern (Fall 2027)"))["far_office"] == "blocker"
+    assert levels(check("Location: New York, NY (on-site)", title="Data Intern (Fall 2027)"))["far_office"] == "note"
     assert "semester_timing" not in levels(check("Join our team."))  # summer
+    # Winter 2027 runs January to March 2027, inside the free time (Atoms, 2026-11-18); a later winter still clashes
+    winter = check("This is a full-time, on-site internship.", title="Software Engineering Intern - 2027 Winter Term")
+    assert "semester_timing" not in levels(winter)
+    assert "semester_timing" in levels(check("Join our team.", title="Software Engineering Intern - 2028 Winter Term"))
 
 
 def test_immediate_start_is_checked_against_the_target() -> None:
@@ -182,9 +195,10 @@ def test_graduation_window_that_fits_neither_date_blocks() -> None:
 # --------------------------------------------------------------------------- 5. location
 
 
-def test_far_office_during_the_semester_blocks() -> None:
+def test_far_office_during_the_semester_is_only_a_note() -> None:  # Vatsal, 2026-11-17: he can relocate
     fall = "Software Engineer Intern (Fall 2026)"
-    assert levels(check("Location: New York, NY (on-site)", title=fall))["far_office"] == "blocker"
+    far = check("Location: New York, NY (on-site)", title=fall)
+    assert levels(far)["far_office"] == "note" and "far_office" not in [f.id for f in far.flags if f.level == "blocker"]
     assert "far_office" not in levels(check("Location: Bellevue, WA", title=fall))
     assert "far_office" not in levels(check("Location: Remote (US)", title=fall))
     assert levels(check("Location: New York, NY"))["relocation"] == "note"  # summer
@@ -377,3 +391,89 @@ def test_a_phd_only_posting_pauses() -> None:  # ASML, 2026-11-16
 def test_graduating_no_sooner_than_is_a_lower_bound() -> None:  # Micron, 2026-11-16
     micron = check("Must be graduating no sooner than September 2027.", title="Intern - Segment Marketing Data Analyst")
     assert micron.grad_date == "December 2027" and not micron.blocked
+
+
+def test_slash_joined_seasons_make_one_window() -> None:  # Atoms, 2026-11-18
+    atoms = check("Graduating in Summer/Fall/Winter 2027 or Spring/Summer 2028.",
+                  title="Software Engineering Intern - 2027 Winter Term")
+    assert atoms.grad_date == "December 2027" and not atoms.blocked  # May 2027 is before the window
+    assert "Jun 2027 to Aug 2028" in atoms.grad_date_reason
+    early = check("Graduating in Spring/Summer 2026.", title="Software Engineering Intern - 2027 Winter Term")
+    assert levels(early)["grad_window"] == "blocker"
+
+
+def test_a_residency_requirement_is_a_note_and_or_later_graduation_blocks() -> None:  # Quest, ServiceNow, 2026-11-17
+    quest = check("We are looking for interns who live in the Kansas City area.\nRequirements:\n- Must live in the Kansas "
+                  "City or Rolla metro area\n- Must be pursuing a degree in Computer Science")
+    assert levels(quest)["residency"] == "note" and not quest.blocked  # Vatsal, 2026-11-17: he can relocate
+    assert "residency" not in levels(check("Candidates must reside in the United States."))
+    assert "residency" not in levels(check("Must live in the Seattle area or be willing to relocate."))
+    servicenow = check("Expected Masters graduation date of May 2028 or later.", title="Solution Engineer Intern")
+    assert servicenow.blocked and "grad_window" in levels(servicenow)
+
+
+def test_bare_citizenship_and_long_clearance_requirements_block() -> None:  # Technology Service Corp, 2026-11-17
+    tsc = check("Required Qualifications\n- Coursework using C or C++.\n- U.S. citizenship.\n- Ability to obtain and "
+                "maintain a U.S. Department of Defense Secret security clearance.", title="Software Engineer I")
+    assert tsc.blocked and {"citizenship_required", "clearance_required"} <= set(levels(tsc))
+    assert "citizenship_required" not in levels(check("We value U.S. citizenship education programs."))
+    assert "clearance_required" not in levels(check("Ability to obtain results quickly is key."))
+
+
+def test_a_posting_in_another_country_is_blocked() -> None:  # GE Aerospace, 2026-11-17: "Remote, Germany"
+    ge = check("This is a remote position open only to candidates who live in Germany.", location="Remote, Germany")
+    assert ge.blocked and levels(ge)["outside_us"] == "blocker"
+    for place in ("Remote", "Boston, MA (New England)", "Albuquerque, New Mexico", "Poland, OH", "Remote - US or Canada",
+                  "Toronto, Canada; New York, NY, United States"):
+        assert "outside_us" not in levels(check("Build data tools.", location=place)), place
+
+
+def test_indefinite_work_authorization_blocks_a_visa_holder() -> None:  # Bosch, 2026-11-17
+    bosch = check("Indefinite U.S. work authorized individuals only. Future sponsorship for work authorization "
+                  "unavailable.")
+    assert levels(bosch)["permanent_auth_required"] == "note" and not bosch.blocked  # Vatsal: apply anyway
+    assert levels(check("Must be permanently authorized to work in the U.S."))["permanent_auth_required"] == "note"
+    assert "permanent_auth_required" not in levels(check("You must be authorized to work in the U.S."))
+    assert "permanent_auth_required" not in levels(check("Open to permanent residents and visa holders."))
+    citizen = PROFILE.model_copy(deep=True)
+    citizen.tier2.us_citizen_or_permanent_resident.value = "Yes"
+    assert "permanent_auth_required" not in levels(check("Indefinite U.S. work authorized individuals only.",
+                                                         profile=citizen))
+
+
+def test_class_of_two_years_spans_both() -> None:  # Duetti, 2026-11-17: "Class of 2026 or 2027"
+    duetti = check("Recent college graduate (Class of 2026 or 2027) or rising senior, with a degree in Computer Science.")
+    assert "grad_window" not in [f.id for f in duetti.flags if f.level == "blocker"]
+    assert duetti.grad_date == "December 2027"  # a Summer 2027 internship, inside the window
+    only_2026 = check("Open to the Class of 2026.")
+    assert "grad_window" in [f.id for f in only_2026.flags if f.level == "blocker"]
+
+
+def test_a_bare_citizenship_item_with_a_reason_blocks() -> None:  # Amentum, 2026-11-17
+    amentum = check("Required Qualifications\n- US Citizenship (due to project requirements)\n- Python")
+    assert amentum.blocked and "citizenship_required" in levels(amentum)
+
+
+def test_indefinite_right_to_work_and_not_eligible_for_sponsorship() -> None:  # S&P Global, Samsung, 2026-11-17
+    sp = check("This role is limited to persons with indefinite right to work in the United States.")
+    assert levels(sp)["permanent_auth_required"] == "note" and not sp.blocked
+    samsung = check("This role is not eligible for immigration sponsorship.")
+    assert levels(samsung)["no_sponsorship"] == "warning" and not samsung.blocked
+
+
+def test_public_trust_blocks_a_recent_arrival() -> None:  # Laansu, 2026-11-18
+    laansu = check("Public Trust Clearance: Must have lived in the US for at least 3 years to obtain a Public Trust "
+                   "Clearance.")
+    assert laansu.blocked and levels(laansu)["public_trust"] == "blocker"
+
+
+def test_a_june_to_august_date_range_is_a_summer_internship() -> None:  # Constellation, 2026-11-18
+    constellation = check("The internship runs from June 7th, 2027 through August 13th, 2027.",
+                          title="2027 IT Development Intern - San Diego, CA")
+    assert constellation.grad_date == "December 2027"  # a Summer 2027 internship: back at school after
+
+
+def test_rising_senior_and_bachelors_enrollment_wording_is_noticed() -> None:  # Attain Partners, 2026-11-18
+    attain = check("An eight-week paid internship program onsite for undergraduate students who are rising seniors.\n"
+                   "- Current enrollment in an accredited Bachelor's degree program")
+    assert "undergrad" in " ".join(levels(attain))

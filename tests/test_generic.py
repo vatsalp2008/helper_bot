@@ -322,3 +322,181 @@ def test_only_a_final_submit_button_counts_as_submitting() -> None:  # Fortinet 
         page.click("#d")
         assert submit_clicked(page)
         browser.close()
+
+
+def test_a_company_sites_draft_saves_are_not_a_submit() -> None:  # Boston Scientific on Eightfold, 2026-11-17
+    from helper.adapters.generic import is_submit_request
+    assert not is_submit_request("https://bostonscientific.eightfold.ai/api/apply/v2/jobs/563602813862390", "POST")
+    assert not is_submit_request("https://acme.com/careers/application/submit", "POST")  # the Submit click decides
+
+
+def test_a_rippling_posting_names_the_employer_not_the_hiring_site() -> None:  # 2026-11-18
+    from helper.adapters.generic import rippling_employer
+
+    assert rippling_employer("https://ats.rippling.com/raptor-maps-inc/jobs/be25d98e") == "Raptor Maps"
+    assert rippling_employer("https://ats.rippling.com/apexanalytix-careers/jobs/101ae05c").lower() == "apexanalytix"
+    assert rippling_employer("https://ats.rippling.com/jobs/123") == ""
+
+
+_FABRIC_SELECT = """<form>
+<div class="field"><label for="fab-select1">State *</label>
+  <div class="fab-Select"><div><button data-menu-id="fab-menu1" aria-haspopup="true" type="button">–Select–</button></div>
+  <select id="fab-select1" name="state.value" required
+          style="opacity:0;position:absolute;width:0;height:0"><option value=""></option></select></div>
+</div>
+</form>
+<div id="fab-menu1" role="menu" style="display:none">
+  <div role="menuitem" id="1">Alabama</div><div role="menuitem" id="47">Virginia</div>
+  <div role="menuitem" id="48">Washington</div>
+</div>
+<script>
+document.querySelector('button').onclick = () => { document.getElementById('fab-menu1').style.display = 'block'; };
+for (const item of document.querySelectorAll('[role=menuitem]')) item.onclick = () => {
+  const select = document.getElementById('fab-select1');
+  select.innerHTML = '<option value="' + item.id + '" selected>' + item.innerText + '</option>';
+  document.querySelector('button').innerText = item.innerText;
+  document.getElementById('fab-menu1').style.display = 'none';
+};
+</script>"""
+
+
+def test_a_styled_dropdown_with_an_empty_select_is_picked_from_its_menu(browser: Any, tmp_path: Path) -> None:
+    """BambooHR keeps a dropdown's choices in a pop-up menu, and its real <select> stays empty until a pick; its
+    state list spells the names out (All Options, 2026-11-18)."""
+    from helper.answers import PlannedAnswer
+
+    page = browser.new_page()
+    page.set_content(_FABRIC_SELECT)
+    (question,) = generic.discover(page)
+    assert (question.field_name, question.label, question.type, question.options) == (
+        "generic:state.value", "State", "select", [])
+    state = PlannedAnswer(field=question.field_name, label="State", type="select", required=True, kind="auto",
+                          value="WA", confidence=1.0, source="profile address")
+    (result,) = generic.fill_form(page, [state], tmp_path / "r.pdf", country=None, city=None, pause=lambda: None)
+    assert (result.ok, result.value) == (True, "Washington")
+    assert page.evaluate("() => document.getElementById('fab-select1').value") == "48"
+    page.set_content(_FABRIC_SELECT)
+    state.value = "Ontario"
+    (result,) = generic.fill_form(page, [state], tmp_path / "r.pdf", country=None, city=None, pause=lambda: None)
+    assert not result.ok and "no option matches 'Ontario'" in result.detail
+    page.close()
+
+
+def test_boxes_named_anew_on_every_load_are_found_by_their_label(browser: Any, tmp_path: Path) -> None:
+    """Rippling gives its inputs random names on each page load, so the names helper planned with were gone by
+    the fill (Raptor Maps, 2026-11-18)."""
+    from helper.answers import PlannedAnswer
+
+    page = browser.new_page()
+    page.set_content("""<form><div><label for="a1">First name *</label><input id="a1" name="Zq81kd" required></div>
+        <div><label for="a2">Email *</label><input id="a2" name="Pp0x7" required></div></form>""")
+    first = PlannedAnswer(field="generic:HXr2ADQd0", label="First name", type="text", required=True, kind="auto",
+                          value="Alex", confidence=1.0, source="profile")
+    email = PlannedAnswer(field="generic:JvrSJysdPe", label="Email", type="text", required=True, kind="auto",
+                          value="alex@example.com", confidence=1.0, source="profile")
+    results = generic.fill_form(page, [first, email], tmp_path / "r.pdf", country=None, city=None, pause=lambda: None)
+    assert [r.ok for r in results] == [True, True]
+    assert page.evaluate("() => [document.getElementById('a1').value, document.getElementById('a2').value]") == [
+        "Alex", "alex@example.com"]
+    page.close()
+
+
+def test_upload_boxes_named_file_input_take_the_words_beside_them(browser: Any) -> None:
+    """BambooHR's upload boxes are both aria-label="file-input"; the cover letter box got the resume (All Options,
+    2026-11-18)."""
+    page = browser.new_page()
+    page.set_content("""<form>
+        <div><p>Cover Letter*</p><div><button type="button">Upload</button><input type="file" aria-label="file-input"></div></div>
+        <div><p>Resume*</p><div><button type="button">Upload</button><input type="file" aria-label="file-input"></div></div>
+        </form>""")
+    assert [q.label for q in generic.discover(page)] == ["Cover Letter", "Resume"]
+    page.close()
+
+
+def test_the_country_is_picked_before_the_state(browser: Any, tmp_path: Path) -> None:
+    """A country pick can reset the state list (All Options' BambooHR, 2026-11-18)."""
+    from helper.answers import PlannedAnswer
+
+    page = browser.new_page()
+    page.set_content("""<form>
+        <div><label for="st">State *</label><select id="st" name="state"><option></option><option>Washington</option></select></div>
+        <div><label for="co">Country *</label><select id="co" name="country"><option></option><option>United States</option></select></div>
+        </form>
+        <script>document.getElementById('co').onchange = () => { document.getElementById('st').value = ''; };</script>""")
+
+    def choice(field: str, label: str, key: str, value: str) -> PlannedAnswer:
+        return PlannedAnswer(field=field, label=label, key=key, type="select", required=True, kind="auto", value=value,
+                             confidence=1.0, source="profile address")
+
+    results = generic.fill_form(page, [choice("generic:state", "State", "address_state", "Washington"),
+                                       choice("generic:country", "Country", "address_country", "United States")],
+                                tmp_path / "r.pdf", country=None, city=None, pause=lambda: None)
+    assert all(r.ok for r in results)
+    assert page.evaluate("() => [document.getElementById('st').value, document.getElementById('co').value]") == [
+        "Washington", "United States"]
+    page.close()
+
+
+RIPPLING = f"file://{(FIXTURES / 'rippling_form.html').resolve()}"
+
+
+def test_a_rippling_form_is_read_whole(browser: Any) -> None:
+    """Rippling's uploads sit in drop-zone labels, its dropdowns are role=combobox, and its custom questions are
+    role=radio divs with the question beside them: helper read the focus area as "Full Stack", asked Vatsal for the
+    phone code's "Search" box, and never saw the sponsorship dropdowns (Raptor Maps, apexanalytix, 2026-11-18)."""
+    page = browser.new_page()
+    page.goto(RIPPLING)
+    got = {q.label: q for q in generic.discover(page)}
+    assert list(got) == ["Résumé", "First name", "Pronouns", "Phone number", "Cover letter",
+                         "Do you currently require Visa Sponsorship?",
+                         "Are you able to work in Greensboro, NC May 2027 through August 2027?", "Gender"]
+    assert (got["Résumé"].type, got["Résumé"].required) == ("file", True)
+    assert (got["Pronouns"].type, got["Pronouns"].options) == ("select", ["He/Him", "She/Her", "They/Them"])
+    assert (got["Gender"].type, got["Gender"].options) == ("select", ["Male", "Female", "Decline to self-identify"])
+    visa = got["Do you currently require Visa Sponsorship?"]
+    assert (visa.type, visa.options) == ("radio", ["Strong No", "No", "Yes", "Strong Yes"])
+    # Rippling draws the required mark with CSS (::after "*"), so it's in no text (apexanalytix, 2026-11-18)
+    assert visa.required and not got["Gender"].required and not got["Pronouns"].required
+    where = got["Are you able to work in Greensboro, NC May 2027 through August 2027?"]
+    assert (where.type, where.options, where.required) == ("radio", ["Yes", "No", "I plan to relocate."], True)
+    # reading the dropdowns' choices picked nothing
+    assert page.evaluate("() => [document.getElementById('f20').value, document.getElementById('f78').innerText]") == [
+        "", "Select..."]
+    page.close()
+
+
+def test_a_rippling_form_is_filled(browser: Any, tmp_path: Path) -> None:
+    from helper.answers import PlannedAnswer
+
+    page = browser.new_page()
+    page.goto(RIPPLING)
+    questions = {q.label: q for q in generic.discover(page)}
+
+    def answer(label: str, value: str) -> PlannedAnswer:
+        q = questions[label]
+        return PlannedAnswer(field=q.field_name, label=label, type=q.type, required=q.required, kind="auto",
+                             value=value, confidence=1.0, source="profile")
+
+    page.goto(RIPPLING)  # a new load names the boxes anew, as Rippling does
+    results = generic.fill_form(page, [answer("Do you currently require Visa Sponsorship?", "No"),
+                                       answer("Are you able to work in Greensboro, NC May 2027 through August 2027?",
+                                              "I plan to relocate."),
+                                       answer("Gender", "Male"), answer("Pronouns", "He/Him")],
+                                tmp_path / "r.pdf", country=None, city=None, pause=lambda: None)
+    assert [(r.ok, r.value) for r in results] == [(True, "No"), (True, "I plan to relocate."), (True, "Male"),
+                                                  (True, "He/Him")], [r.detail for r in results]
+    assert page.evaluate("""() => [
+        document.querySelector('[role=radio][aria-label=No]').getAttribute('aria-checked'),
+        document.querySelector('input[value="I plan to relocate."]').checked,
+        document.getElementById('f78').innerText, document.getElementById('f20').value]""") == [
+        "true", True, "Male", "He/Him"]
+    page.close()
+
+
+def test_a_submit_button_the_site_keeps_turned_off_is_counted_apart(browser: Any) -> None:  # apexanalytix, 2026-11-18
+    page = browser.new_page()
+    page.set_content('<form><button type="submit" data-testid="Apply" aria-disabled="true">Apply</button></form>')
+    assert generic.submit_buttons(page) == [] and generic.disabled_submit_buttons(page) == 1
+    page.set_content('<form><button type="submit">Apply</button></form>')
+    assert len(generic.submit_buttons(page)) == 1 and generic.disabled_submit_buttons(page) == 0
+    page.close()

@@ -12,6 +12,7 @@ application login in .env (Vatsal, 2026-11-14). It never clicks Submit: the flow
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -100,12 +101,30 @@ def fetch_job(url: str, session: Optional[Any] = None) -> Job:
     return job_from_api(r.json(), url, ref)
 
 
+def _strip_code_word(name: str) -> str:
+    """Drop a leading internal code word: one with a digit (C01, LS3002), or capitals that are the initials or the
+    start of the words after it (GAIC Great American Insurance Company, LAB Labcorp). 'GE Vernova' keeps its GE."""
+    parts = name.split()
+    if len(parts) < 2:
+        return name
+    code, rest = parts[0], parts[1:]
+    if re.fullmatch(r"[A-Z0-9]{2,8}", code) and re.search(r"\d", code) and re.search(r"[A-Za-z]", rest[0]):
+        return " ".join(rest)
+    if re.fullmatch(r"[A-Z]{3,6}", code):
+        initials = "".join(w[0] for w in rest if w[:1].isalpha()).upper()
+        if initials.startswith(code) or rest[0].upper().startswith(code):
+            return " ".join(rest)
+    return name
+
+
 def company_name(data: dict[str, Any], ref: WorkdayRef) -> str:
     """'ADUS-Adobe Inc.' -> 'Adobe'. Falls back to the tenant name in the link."""
     name = ((data.get("hiringOrganization") or {}).get("name") or "").strip()
     name = re.sub(r"\s*\([^)]*\)\s*$", "", name)  # "(US01)"
     name = re.sub(r"^(?:[A-Z]{2,6}\d*|\d{2,6})\s*[-_:]\s*", "", name)  # an internal company code: "ADUS-"
     name = re.sub(r"^\d{1,6}\s+", "", name)  # "100 Salesforce", "1 DexCom"
+    name = re.sub(r"(?i)^company\s+\d+\s*[-_:]\s*", "", name)  # "Company 19 - John Hancock..." (2026-11-17)
+    name = _strip_code_word(name)  # "GAIC Great American...", "LAB Labcorp...", "C01 Carrier", "LS3002 GE Vernova"
     for _ in range(3):
         name = re.sub(r"[,\s]+(Inc|LLC|L\.L\.C|Ltd|Limited Partnership|Limited|Corp|Corporation|Co|N\.V|B\.V|GmbH|plc|S\.A|AG"
                       r"|SE|LP|L\.P)\.?$",
@@ -120,9 +139,14 @@ def job_from_api(data: dict[str, Any], url: str, ref: WorkdayRef) -> Job:
         raise HelperError("Workday says this posting no longer takes applications")
     html = info.get("jobDescription") or ""
     locations = [info.get("location"), *(info.get("additionalLocations") or [])]
+    location = "; ".join(l for l in locations if l) or None
+    country = ((info.get("country") or {}).get("descriptor") or "").strip()
+    # "Remote" alone hides the country: GE Aerospace's Germany-only internship (2026-11-17)
+    if country and not re.search(r"(?i)united states|\bUSA?\b", country) and country.lower() not in (location or "").lower():
+        location = f"{location}, {country}" if location else country
     return Job(
         url=url, ats="workday", company=company_name(data, ref), role_title=(info.get("title") or "").strip(),
-        location="; ".join(l for l in locations if l) or None, job_id=str(info.get("jobReqId") or "") or None,
+        location=location, job_id=str(info.get("jobReqId") or "") or None,
         description_text=html_to_text(html), description_html=html or None, questions=[], source="workday_api",
         fetched_at=now_iso(), apply_url=ref.apply_url,
     )
@@ -204,6 +228,9 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
     deadline = time.monotonic() + ctx.wait_seconds
     filled_steps: dict[str, int] = {}
     lost = 0
+    starts = 0  # Apply clicks that didn't open the application yet
+    reloads = 0  # refreshes after Workday's "Something went wrong"
+    trace: list[Any] = [None]
     while time.monotonic() < deadline:
         _settle(page)
         _dismiss_cookies(page)
@@ -211,8 +238,22 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
             ctx.say("A CAPTCHA is showing: solve it in the browser window (helper never does, rule 6). Waiting...")
             if not _wait_until(page, ctx, lambda: not captcha_visible(page)):
                 return out
+        if wp.went_wrong(page):  # "Please refresh the page and then try again": do what it says, twice at most
+            reloads += 1
+            if reloads > 2:
+                ctx.say("Workday keeps showing 'Something went wrong' after refreshing. Refresh the page in the window "
+                        "(or open the application from Candidate Home); helper continues once its pages show.")
+                if not _wait_until(page, ctx, lambda: not wp.went_wrong(page) and wp.current_step(page) is not None):
+                    return out
+                reloads = 0
+                continue
+            ctx.say("Workday showed 'Something went wrong. Please refresh the page'; helper refreshes it.")
+            page.wait_for_timeout(5000 * reloads)
+            page.reload(wait_until="domcontentloaded")
+            continue
         step = wp.current_step(page)
         kind = wp.step_kind(step)
+        _trace(page, step, kind, trace)
         if kind == "account" and not account_screen(page):
             # the step title can show before the sign-in form does (Symbotic, wd504): wait for the form, never Next
             if not _wait_until(page, ctx, lambda: bool(account_screen(page)) or wp.step_kind(wp.current_step(page))
@@ -229,6 +270,16 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
             continue
         if step is None:
             if _start_apply(page):
+                # an Apply button that never opens the application looped here silently for hours (Labcorp,
+                # 2026-11-17): after a few tries, say so and leave it to Vatsal
+                starts += 1
+                if starts > 6:
+                    ctx.say(f"helper clicked Workday's Apply button {starts} times, but the application never opened "
+                            f"(page: {_short_url(page)}). Open the application in the window; helper continues once "
+                            "its pages show.")
+                    if not _wait_until(page, ctx, lambda: wp.current_step(page) is not None):
+                        return out
+                    starts = 0
                 continue
             lost += 1
             if lost > 15:
@@ -261,6 +312,15 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
         except RuntimeError:
             out.reached_review = True
             return out
+        except Exception as exc:  # no Next button helper can click (Samsung, 2026-11-18): hand over, keep the window
+            if filled_steps[step] < 2:  # a page still loading (HPE, 2026-11-18): fill it once more and try again
+                page.wait_for_timeout(2000)
+                continue
+            ctx.say(f"helper couldn't click Workday's Next button on '{step}' ({str(exc).splitlines()[0][:100]}). "
+                    "Click it yourself in the window; helper continues on the next page." + _page_says(page))
+            if not _wait_for_new_step(page, ctx, step):
+                return out
+            continue
         if _wait_for_new_step(page, ctx, step, quiet=True, seconds=20):
             continue
         errors = wp.errors_shown(page)
@@ -282,12 +342,30 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
             ctx.say(f"Workday flagged {len(errors) or 'some'} field(s) on '{step}'"
                     + (": " + "; ".join(e[:80] for e in errors[:3]) if errors else "") + ". helper fills the page again.")
             continue
+        why = {r.field: r.detail for r in out.results if r.field.startswith("workday:school:")}  # the last pass's
+        why = [f"  - {detail}" for detail in why.values() if detail]
         ctx.say(f"Workday didn't accept '{step}'" + (":\n" + "\n".join(f"  - {e}" for e in errors) if errors else ".")
+                + ("\nWhat helper saw in the education entries:\n" + "\n".join(why) if why and kind == "experience"
+                   else "")
                 + "\nFix it in the window and click Next; helper continues on the next page.")
         if not _wait_for_new_step(page, ctx, step):
             return out
     ctx.say("helper ran out of time before the Review page; finish the application in the window.")
     return out
+
+
+def _page_says(page: Any) -> str:
+    """What the page shows, for a hand-over helper can't explain (HPE's My Information had no fields and no Next
+    button, 2026-11-18): a screenshot in the run folder and the start of the page's text. The text goes on its own
+    line: only a message's first line reaches the job-hunt list, and the page can show his name or email."""
+    try:
+        if wp.DEBUG_DIR is not None:
+            page.screenshot(path=str(wp.DEBUG_DIR / "handover.png"), full_page=True)
+        text = " ".join(page.locator("[data-automation-id=applyFlowPage], main, body").first.inner_text(
+            timeout=3000).split())
+    except Exception:
+        return ""
+    return f"\nThe page says: \"{text[:300]}{'...' if len(text) > 300 else ''}\"" if text else ""
 
 
 def _settle(page: Any) -> None:
@@ -308,11 +386,33 @@ def _dismiss_cookies(page: Any) -> None:
         pass
 
 
+def _short_url(page: Any) -> str:
+    try:
+        return str(page.url).split("?")[0]
+    except Exception:
+        return "?"
+
+
+def _trace(page: Any, step: Optional[str], kind: str, last: list[Any]) -> None:
+    """HELPER_DEBUG=1: one line each time the page, step or sign-in screen changes."""
+    if not os.environ.get("HELPER_DEBUG"):
+        return
+    try:
+        state = (_short_url(page), step, kind, account_screen(page))
+    except Exception as exc:
+        state = (_short_url(page), step, kind, f"error {type(exc).__name__}")
+    if state != last[0]:
+        last[0] = state
+        print(f"[debug] page={state[0]} step={step!r} kind={kind} account_screen={state[3]!r}", flush=True)
+
+
 def _start_apply(page: Any) -> bool:
     """On the posting itself or Workday's 'Start your application' choice: pick Apply Manually."""
     for selector in ("[data-automation-id=applyManually]:visible", "[data-automation-id=adventureButton]:visible"):
         target = page.locator(selector)
         if target.count():
+            if os.environ.get("HELPER_DEBUG"):
+                print(f"[debug] clicking {selector} on {_short_url(page)}", flush=True)
             target.first.click()
             page.wait_for_timeout(1500)
             return True
@@ -377,10 +477,27 @@ def _fill_step(page: Any, kind: str, step: str, ctx: FlowContext, out: FlowResul
         out.results += _upload_resume(page, ctx)
         vatsals += wp.required_gpa_fields(page)
     section = "eeoc" if kind in ("disclosures", "self_identify") else "questions"
-    questions, found = wp.discover(page, skip_special=kind == "experience", section=section)
-    if not questions:
-        return vatsals
-    ctx.say(f"{step}: filling {len(questions)} question(s).")
+    handled: set[str] = set()
+    missing: list[str] = []
+    # A follow-up shows only once its parent is answered, and can have its own: Marvell's export questions went three
+    # deep (U.S. person? -> citizen of Cuba, Iran...? -> select all your countries) and helper, filling a page twice
+    # at most, left the last one (2026-11-18). So after filling, look again and fill what appeared.
+    for round_no in range(4):
+        questions, found = wp.discover(page, skip_special=kind == "experience", section=section)
+        questions = [q for q in questions if q.field_name not in handled]
+        if not questions:
+            break
+        handled |= {q.field_name for q in questions}
+        ctx.say(f"{step}: filling {len(questions)} question(s)." if round_no == 0 else
+                f"{step}: {len(questions)} more question(s) appeared after those answers; filling them.")
+        missing += _fill_questions(page, questions, found, step, ctx, out)
+        page.wait_for_timeout(800)
+    return vatsals + missing
+
+
+def _fill_questions(page: Any, questions: list[Any], found: dict[str, Any], step: str, ctx: FlowContext,
+                    out: FlowResult) -> list[str]:
+    """Plan and fill one batch of a page's questions. Returns the required ones only Vatsal can answer."""
     answers = ctx.plan(questions)
     out.answers += answers
     open_items = [a for a in answers if a.kind == "free_text" or (a.kind == "unknown" and a.required)]
@@ -403,7 +520,7 @@ def _fill_step(page: Any, kind: str, step: str, ctx: FlowContext, out: FlowResul
         if not result.ok and a.required:
             missing.append(f"{a.label} ({result.detail})")
         ctx.pause()
-    return vatsals + missing
+    return missing
 
 
 def _upload_resume(page: Any, ctx: FlowContext) -> list[FieldResult]:
@@ -419,6 +536,11 @@ def phone_digits(value: str) -> str:
     """'+12062800258' -> '2062800258': Workday has its own country code box."""
     digits = re.sub(r"\D", "", value)
     return digits[1:] if len(digits) == 11 and digits.startswith("1") else digits
+
+
+def any_source_but_referral(option: str) -> float:
+    """"How did you hear" fallback: any option except a referral (CLAUDE.md)."""
+    return 0.0 if not option.strip() or re.search(r"(?i)referr", option) else 1.0
 
 
 def how_did_you_hear_terms(value: str, company: str) -> list[str]:
@@ -450,7 +572,7 @@ def fill_answer(page: Any, a: PlannedAnswer, found: wp.Found, ctx: FlowContext) 
             ok, shown, detail = wp.choose_prompt(page, where, terms, accept)
             if not ok and a.key == "how_did_you_hear":  # Vatsal, 2026-11-16: social media or any option, and move on
                 ok, shown, detail = wp.choose_prompt(page, where, ["Social Media", "LinkedIn", "Internet", "Job Board",
-                                                                   "Other"], lambda t: 1.0 if t.strip() else 0.0)
+                                                                   "Other"], any_source_but_referral)
         elif a.type == "radio":
             ok, shown, detail = wp.check_choices(where, "radio", [value])
         elif a.type == "multi_select":

@@ -173,3 +173,100 @@ def test_dry_run_opens_no_browser(repo: Path) -> None:
     save_state(paths, state)
     outcome = fill_run(paths, load_config(paths), run_id, dry_run=True)
     assert outcome.status == "dry_run" and "Would fill https://job-boards.greenhouse.io/acme/jobs/1" in outcome.message
+
+
+def test_greenhouse_demographic_questions_use_their_bare_number_as_the_id() -> None:  # Soros, 2026-11-17
+    from helper.adapters.greenhouse import css_id, dom_id
+
+    assert dom_id("demographic_4000319003") == "4000319003"  # <input id="4000319003" role="combobox">
+    assert css_id(dom_id("demographic_4000319003")) == "[id='4000319003']"  # "#4000319003" isn't valid CSS
+    assert css_id(dom_id("question_123")) == "#question_123"
+    assert dom_id("location") == "candidate-location"
+
+
+def test_replan_uses_todays_rules_and_keeps_claudes_answers(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scout, 2026-11-18: a refill reused the first fill's plan, so a rule fixed since ("highest level completed" is
+    the bachelor's) never reached the form."""
+    import helper.apply as ap
+    from helper.answers import AnswerPlan, PlannedAnswer
+    from helper.runs import read_json
+
+    paths = Paths(repo)
+    cfg = load_config(paths)
+    run_id = "20261118-000000-acme"
+    folder = paths.runs / run_id
+    folder.mkdir(parents=True)
+    questions = [FormQuestion(label="Highest level completed", field_name="q1", type="select",
+                              options=["Bachelor's", "Master's"]),
+                 FormQuestion(label="Any conflicts of interest?", field_name="q2", type="textarea")]
+    write_json(folder / "job.json", Job(url="https://job-boards.greenhouse.io/acme/jobs/1", company="Acme",
+                                        role_title="Associate", description_text="x", source="greenhouse_api",
+                                        fetched_at="now", questions=questions).model_dump(mode="json"))
+
+    def answer(field: str, label: str, value: Any, source: str, kind: str = "auto", status: str = "ready") -> Any:
+        return PlannedAnswer(field=field, label=label, type="select" if field == "q1" else "textarea", required=True,
+                             kind=kind, value=value, confidence=1.0, source=source, status=status)
+
+    old = AnswerPlan(answers=[answer("q1", "Highest level completed", "Master's", "profile degree"),
+                              answer("q2", "Any conflicts of interest?", "No conflicts.", "Claude draft",
+                                     status="approved")])
+    write_json(folder / "answers_plan.json", old.model_dump(mode="json"))
+    new = AnswerPlan(answers=[answer("q1", "Highest level completed", "Bachelor's", "profile education"),
+                              answer("q2", "Any conflicts of interest?", None, "", kind="free_text")])
+    monkeypatch.setattr(ap, "_context", lambda *args: None)
+    monkeypatch.setattr(ap, "plan_answers", lambda qs, ctx: new)
+    changes = ap.replan(paths, cfg, run_id)
+    saved = AnswerPlan.model_validate(read_json(folder / "answers_plan.json"))
+    assert [(a.value, a.status) for a in saved.answers] == [("Bachelor's", "ready"), ("No conflicts.", "approved")]
+    assert changes == ["Highest level completed: \"Master's\" -> \"Bachelor's\""]
+
+
+def test_rescan_reads_a_company_form_again_and_hands_new_questions_to_claude(
+        repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """apexanalytix on Rippling, 2026-11-18: the first read missed the form's dropdowns and rating questions, so a
+    refill needed the questions read again, not only the answers planned again."""
+    import helper.apply as ap
+    from helper.adapters import generic
+    from helper.answers import AnswerPlan, PlannedAnswer
+    from helper.errors import HelperError, WaitingForClaude
+    from helper.runs import read_json
+
+    paths = Paths(repo)
+    cfg = load_config(paths)
+    run_id = "20261118-000000-rippling"
+    folder = paths.runs / run_id
+    folder.mkdir(parents=True)
+    link = "https://ats.rippling.com/acme/jobs/1/apply"
+    write_json(folder / "job.json", Job(url="https://ats.rippling.com/acme/jobs/1", apply_url=link, company="Acme",
+                                        role_title="Intern", description_text="x", source="page", fetched_at="now",
+                                        questions=[FormQuestion(label="Search", field_name="generic:x", type="text",
+                                                                required=True)]).model_dump(mode="json"))
+    write_json(folder / "answers_plan.json", AnswerPlan(answers=[PlannedAnswer(
+        field="generic:x", label="Search", type="text", required=True, kind="unknown", value=None, confidence=0.0,
+        source="")]).model_dump(mode="json"))
+    state = RunState(run_id=run_id, created_at="now", command="apply", url=link)
+    set_step(state, "answers", "done")
+    save_state(paths, state)
+    new = [FormQuestion(label="What interests you about working at Acme?", field_name="generic:why",
+                        type="textarea", required=True)]
+    planned = AnswerPlan(answers=[PlannedAnswer(field="generic:why", label=new[0].label, type="textarea",
+                                                required=True, kind="free_text", value=None, confidence=0.0,
+                                                source="")])
+    monkeypatch.setattr(ap, "_context", lambda *args: None)
+    monkeypatch.setattr(ap, "plan_answers", lambda qs, ctx: planned)
+    monkeypatch.setattr(ap, "_needed", lambda *args: {"questions": [new[0].label]})
+    seen: list[str] = []
+    with pytest.raises(WaitingForClaude):
+        ap.rescan(paths, cfg, run_id, scan=lambda url: seen.append(url) or generic.Scan(questions=new))
+    assert seen == [link]
+    assert [q.label for q in Job.model_validate(read_json(folder / "job.json")).questions] == [new[0].label]
+    assert (folder / "answers_plan.before-rescan.json").is_file() and (folder / "questions_needed.json").is_file()
+    # a form the page no longer shows leaves everything as it was
+    with pytest.raises(HelperError, match="couldn't read the form's questions again"):
+        ap.rescan(paths, cfg, run_id, scan=lambda url: generic.Scan())
+    # forms from a known system are read from its own data, not rescanned
+    job = Job.model_validate(read_json(folder / "job.json"))
+    job.url = job.apply_url = "https://job-boards.greenhouse.io/acme/jobs/1"
+    write_json(folder / "job.json", job.model_dump(mode="json"))
+    with pytest.raises(HelperError, match="--rescan is for company-site forms"):
+        ap.rescan(paths, cfg, run_id, scan=lambda url: generic.Scan(questions=new))

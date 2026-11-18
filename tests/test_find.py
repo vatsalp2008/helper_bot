@@ -1,0 +1,141 @@
+"""`helper find` (the job hunt, 2026-11-16): the public feeds and lists, read from saved samples; nothing is fetched."""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from helper.find import (Found, dedupe, parse_list, scan_ashby, scan_greenhouse, scan_lever, scan_smartrecruiters,
+                         scan_workday, wanted, workday_req)
+
+NOW = datetime.now(timezone.utc)
+SINCE = NOW - timedelta(hours=24)
+
+
+def iso(delta_hours: float) -> str:
+    return (NOW - timedelta(hours=delta_hours)).isoformat()
+
+
+def test_only_early_career_tech_roles_in_the_us() -> None:
+    assert wanted("Software Engineer Intern (Summer 2027)", "Seattle, WA")
+    assert wanted("Data Science Intern", "Remote - US")
+    assert wanted("Machine Learning Engineer I", "")  # no location shown: kept for the eligibility check
+    assert not wanted("Senior Software Engineer", "New York, NY")
+    assert not wanted("Mechanical Engineering Intern", "Boston, MA")
+    assert not wanted("[2027] Data Scientist - PhD Intern", "San Mateo, CA")
+    assert not wanted("Software Engineer Intern", "Toronto, ON, Canada")
+    assert not wanted("Software Engineer (Platform Team)", "Palo Alto, CA")  # not early career
+    assert wanted("Software Engineer Intern", "Toronto, Canada; New York, NY, United States")
+
+
+def test_research_roles_are_left_out() -> None:  # Vatsal, 2026-11-17: no research positions
+    assert not wanted("Automated Driving Advanced Development Intern, Machine Learning Research (Cambridge)", "Cambridge, MA")
+    assert not wanted("Research Scientist Intern, LLMs", "Remote - US")
+    assert not wanted("AI Researcher Intern", "Seattle, WA")
+    assert wanted("Machine Learning Engineer Intern", "Seattle, WA")
+
+
+def test_german_style_gender_tags_mean_not_us() -> None:  # GE Aerospace, 2026-11-17: "Remote" hid Germany
+    assert not wanted("Applied AI Engineer Intern (m/f/d) – Spring 2027", "Remote")
+    assert not wanted("Data Science Intern (m/w/d)", "Remote")
+    assert not wanted("Software Engineer Intern (all genders)", "")
+    assert not wanted("Software Engineer Intern", "Remote, Germany")
+    assert wanted("Software Engineer Intern (AI/ML)", "Remote - US")
+
+
+def test_greenhouse_counts_new_postings_and_reused_ones() -> None:
+    jobs = {"jobs": [
+        {"id": 1, "title": "Software Engineer Intern", "first_published": iso(3), "updated_at": iso(3),
+         "location": {"name": "New York, NY"}, "company_name": "Acme"},
+        {"id": 2, "title": "Data Intern", "first_published": iso(24 * 400), "updated_at": iso(2),  # Octaura: reused
+         "location": {"name": "New York"}, "company_name": "Acme"},
+        {"id": 3, "title": "Software Engineer Intern", "first_published": iso(24 * 30), "updated_at": iso(2),
+         "location": {"name": "Austin, TX"}, "company_name": "Acme"},  # a month old, only refreshed
+    ]}
+    found = scan_greenhouse("acme", SINCE, lambda url: jobs)
+    assert [f.job_id for f in found] == ["1", "2"]
+    assert found[0].url == "https://job-boards.greenhouse.io/acme/jobs/1" and found[0].ats == "greenhouse"
+
+
+def test_lever_ashby_smartrecruiters_and_workday_feeds() -> None:
+    lever = [{"id": "a1", "text": "Data Analyst Intern", "createdAt": (NOW - timedelta(hours=5)).timestamp() * 1000,
+              "categories": {"location": "Chicago, IL"}, "hostedUrl": "https://jobs.lever.co/acme/a1"},
+             {"id": "a2", "text": "Old Intern", "createdAt": (NOW - timedelta(days=9)).timestamp() * 1000}]
+    assert [f.job_id for f in scan_lever("acme", SINCE, lambda url: lever)] == ["a1"]
+    ashby = {"jobs": [{"id": "b1", "title": "AI Engineer Intern", "publishedAt": iso(1), "location": "Remote",
+                       "jobUrl": "https://jobs.ashbyhq.com/acme/b1", "isListed": True}]}
+    assert scan_ashby("acme", SINCE, lambda url: ashby)[0].url.endswith("/b1")
+    sr = {"content": [{"id": "744000000000001", "name": "Software Engineer Intern", "releasedDate": iso(2),
+                       "location": {"city": "Austin", "region": "TX", "country": "us"}, "company": {"name": "Acme"}}]}
+    found = scan_smartrecruiters("Acme", SINCE, lambda url: sr)
+    assert len(found) == 1 and found[0].url == "https://jobs.smartrecruiters.com/Acme/744000000000001"
+
+    def post(url: str, payload: dict[str, Any]) -> Any:
+        return {"jobPostings": [
+            {"title": "Software Engineer Intern", "postedOn": "Posted Today", "locationsText": "Boston, MA",
+             "externalPath": "/job/Boston-MA/Software-Engineer-Intern_JR123-1"},
+            {"title": "Data Intern", "postedOn": "Posted 5 Days Ago", "externalPath": "/job/X/Data-Intern_JR9"}]}
+    wd = scan_workday(("acme.wd1.myworkdayjobs.com", "acme", "External"), SINCE, post)
+    assert len(wd) == 1 and wd[0].job_id == "jr123"
+    assert wd[0].url == "https://acme.wd1.myworkdayjobs.com/External/job/Boston-MA/Software-Engineer-Intern_JR123-1"
+    assert workday_req("/job/X/Intern---Data-Science--SMAI_JR117444") == "jr117444"
+
+
+ROW = ('<tr>\n<td><strong><a href="https://simplify.jobs/c/Acme">Acme</a></strong></td>\n<td>Software Engineer Intern'
+       ' 🎓</td>\n<td>Austin, TX</td>\n<td><div align="center"><a href="https://jobs.smartrecruiters.com/Acme/'
+       '744000000000002?utm_source=Simplify&ref=Simplify"><img src="x.png" width="50" alt="Apply"></a></div></td>\n'
+       '<td>0d</td>\n</tr>\n'
+       '<tr>\n<td>↳</td>\n<td>Data Intern</td>\n<td>NYC</td>\n<td><div align="center"><a href="https://job-boards.'
+       'greenhouse.io/acme/jobs/55"><img src="x.png" alt="Apply"></a></div></td>\n<td>3d</td>\n</tr>')
+
+
+def test_lists_give_todays_rows_and_teach_feeds() -> None:
+    found, links = parse_list(ROW, "list: SimplifyJobs/New-Grad-Positions")
+    assert [(f.company, f.title, f.ats) for f in found] == [("Acme", "Software Engineer Intern", "smartrecruiters")]
+    assert found[0].url == "https://jobs.smartrecruiters.com/Acme/744000000000002"  # tracking removed
+    assert "https://job-boards.greenhouse.io/acme/jobs/55" in links  # an older row still teaches Acme's board
+
+
+def test_dedupe_drops_applied_listed_and_repeated_postings() -> None:
+    a = Found(url="https://job-boards.greenhouse.io/acme/jobs/1", company="Acme", title="SWE Intern", location="NY",
+              ats="greenhouse", source="greenhouse", job_id="1")
+    same_from_list = Found(url="https://acme.com/careers/1", company="Acme", title="SWE Intern", location="NY",
+                           ats="generic", source="list: x")
+    applied = Found(url="https://jobs.lever.co/acme/x9", company="Acme", title="Data Intern", location="NY",
+                    ats="lever", source="lever", job_id="x9")
+    sr = Found(url="https://jobs.smartrecruiters.com/Acme/7", company="Acme", title="ML Intern", location="NY",
+               ats="smartrecruiters", source="smartrecruiters", job_id="7")
+    out = dedupe([same_from_list, a, applied, sr], known_urls={"https://jobs.lever.co/acme/x9"}, known_ids=set())
+    assert [f.url for f in out] == [a.url, sr.url]  # the feed's link wins over the list's copy
+    assert [f.how for f in out] == ["helper fills", "you apply"]
+
+
+def test_dedupe_matches_a_lists_application_link_to_the_feeds_posting() -> None:  # DriveWealth, 2026-11-18
+    feed = Found(url="https://jobs.ashbyhq.com/drivewealth/85147395-3dfa-4c16-880f-8c7522a538ec",
+                 company="DriveWealth", title="AI CAP People Analytics Intern - Summer 2027", location="Chicago, IL",
+                 ats="ashby", source="ashby", job_id="85147395-3dfa-4c16-880f-8c7522a538ec")
+    listed = Found(url="https://jobs.ashbyhq.com/drivewealth/85147395-3dfa-4c16-880f-8c7522a538ec/application?embed=true",
+                   company="DriveWealth", title="AI CAP People Analytics Intern", location="Chicago, IL; NYC",
+                   ats="ashby", source="list: SimplifyJobs/Summer2027-Internships")
+    assert [f.url for f in dedupe([listed, feed], known_urls=set(), known_ids=set())] == [feed.url]
+    # and once it is on the list, the application link is the same posting
+    assert dedupe([listed], known_urls={feed.url}, known_ids=set()) == []
+
+
+def test_noise_from_the_first_live_run_is_filtered() -> None:  # 2026-11-16
+    assert not wanted("Water Resources Engineer – Entry Level (Hybrid)", "Minneapolis, MN")
+    assert not wanted("Associate Scientist, Combination Product Characterization", "USA - New Jersey - Rahway")
+    assert not wanted("Entry Level Software Engineer - SECRET", "US-VA-Dahlgren")
+    assert not wanted("Associate Forward Deployed Solution Engineer Intern (Bachelors Summer 2027)", "Santa Clara, CA")
+    assert wanted("Forward Deployed Solution Engineer Intern (Masters Summer 2027)", "Santa Clara, CA")
+    assert not wanted("Graduate Test Software Engineer", "2 Locations",
+                      "https://leonardocompany.wd3.myworkdayjobs.com/LeonardoCareerSite/job/GB---Edinburgh/Graduate_R1")
+    assert wanted("Software Engineer Intern", "2 Locations", "https://acme.wd1.myworkdayjobs.com/x/job/Boston-MA/SWE_R1")
+    assert not wanted("Summer 2027 Business Development, Physical & Edge AI Internship", "Bellevue, Washington")
+    assert wanted("Summer 2027 AI Engineering Internship", "Bellevue, Washington")
+
+
+def test_supply_chain_and_business_analyst_roles_count() -> None:  # Vatsal, 2026-11-17: a wide range of roles
+    assert wanted("Supply Chain Analyst Intern", "Atlanta, GA")
+    assert wanted("Business Analyst Intern (Summer 2027)", "New York, NY")
+    assert wanted("Enterprise AI Associate", "New York City")

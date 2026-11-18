@@ -202,3 +202,42 @@ def test_full_page_iforms_are_read_but_never_get_the_login(page: Any) -> None:
     page.wait_for_timeout(300)
     frame = icims.app_frame(page)
     assert frame is not page.main_frame and "in_iframe=1" in frame.url
+
+
+def test_the_icims_context_takes_everything_apply_passes() -> None:  # Constellation, 2026-11-18: on_account crashed
+    import dataclasses
+
+    from helper.adapters import icims, workday
+
+    icims_fields = {f.name for f in dataclasses.fields(icims.FlowContext)}
+    workday_fields = {f.name for f in dataclasses.fields(workday.FlowContext)}
+    assert workday_fields <= icims_fields, workday_fields - icims_fields
+
+
+def test_a_disabled_forward_button_is_handed_over_not_waited_on() -> None:  # Constellation, 2026-11-18
+    from helper.adapters import icims
+
+    class Button:
+        def __init__(self) -> None:
+            self.clicked = False
+
+        @property
+        def first(self) -> "Button":
+            return self
+
+        def is_enabled(self) -> bool:
+            return False
+
+        def click(self, timeout: int = 0) -> None:
+            self.clicked = True
+
+    button = Button()
+
+    class Frame:
+        def locator(self, selector: str) -> Button:
+            return button
+
+        def wait_for_timeout(self, ms: float) -> None:
+            pass
+
+    assert icims._click(Frame(), {"i": 0}) is False and not button.clicked

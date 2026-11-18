@@ -42,3 +42,17 @@ def test_a_profile_chrome_has_open_is_skipped(tmp_path: Path) -> None:
     base.mkdir()
     os.symlink(f"{socket.gethostname()}-{os.getpid()}", base / "SingletonLock")  # a live process holds it
     assert claim_profile(base) == tmp_path / "browser-profile-2"
+
+
+def test_no_window_limit_when_slots_is_zero(tmp_path: Path) -> None:  # the job hunt, 2026-11-16
+    base = tmp_path / "browser-profile"
+    claimed = [claim_profile(base, 0) for _ in range(9)]  # more than the old limit of 6
+    assert len(set(claimed)) == 9 and claimed[-1] == tmp_path / "browser-profile-9"
+
+
+def test_windows_keep_running_when_hidden() -> None:  # unattended evening timeouts, 2026-11-17
+    from helper.browser import KEEP_ACTIVE_ARGS
+
+    assert "--disable-backgrounding-occluded-windows" in KEEP_ACTIVE_ARGS
+    assert "--disable-renderer-backgrounding" in KEEP_ACTIVE_ARGS
+    assert not any("automation" in a.lower() or "user-agent" in a.lower() for a in KEEP_ACTIVE_ARGS)  # no disguise

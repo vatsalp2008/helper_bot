@@ -166,3 +166,15 @@ def test_the_company_name_is_never_a_gap(ready: Path) -> None:  # ServiceNow, 20
                                                                          *P[1:]]})
     report = validate_letter(letter, ctx, items, job("Cassandra Labs"), tailor, profile)
     assert not any("is a gap" in str(e) and "Cassandra Labs" in str(e) for e in report.errors), report.errors
+
+
+def test_a_company_whose_name_is_also_a_tool_can_be_named(ready: Path) -> None:  # ServiceNow, 2026-11-17
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="May 2027"))
+    tool = next(n for n in ("Databricks", "Snowflake", "Kafka") if ctx.vocab.find(f"I like {n}"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    letter = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [P[0].replace("Northwind Labs", tool), *P[1:]]})
+    report = validate_letter(letter, ctx, items, job(tool), TAILOR, profile)
+    assert not any("isn't a technology" in str(e) and tool in str(e) for e in report.errors), report.errors

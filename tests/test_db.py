@@ -101,8 +101,9 @@ def test_a_version_1_database_is_migrated_and_keeps_its_rows(tmp_path: Path) -> 
     try:
         assert table_columns(conn, "applications") == list(APPLICATION_COLUMNS)
         assert conn.execute("SELECT source FROM applications").fetchone()["source"] == "helper"
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 3
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 4
         assert conn.execute("SELECT COUNT(*) FROM fill_runs").fetchone()[0] == 0  # added in version 3
+        assert conn.execute("SELECT COUNT(*) FROM postings").fetchone()[0] == 0  # added in version 4 (the job hunt)
         assert conn.execute("SELECT name FROM sqlite_master WHERE name = 'sync_state'").fetchone() is not None
     finally:
         conn.close()

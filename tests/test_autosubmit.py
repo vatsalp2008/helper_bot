@@ -181,3 +181,120 @@ def test_company_sites_named_by_their_system_follow_the_company_site_rule() -> N
     from helper.autosubmit import site_kind
     assert site_kind("jobvite") == "generic" and site_kind("oracle") == "generic" and site_kind("generic") == "generic"
     assert site_kind("workday") == "workday" and site_kind("icims") == "icims" and site_kind("taleo") == "taleo"
+
+
+def test_a_page_without_its_form_is_reloaded_once(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # TRI, 2026-11-17: Lever answered with "Something went wrong on our end. Please try reloading your browser."
+    from helper import apply as ap
+
+    calls: list[str] = []
+
+    class Page:
+        def goto(self, url: str, wait_until: str = "") -> None:
+            calls.append("goto")
+
+        def reload(self, wait_until: str = "") -> None:
+            calls.append("reload")
+
+        def wait_for_load_state(self, *a: object, **k: object) -> None:
+            pass
+
+    class Adapter:
+        tries = 0
+
+        def find_form(self, page: object) -> object:
+            Adapter.tries += 1
+            return "form" if Adapter.tries == 2 else None
+
+    monkeypatch.setattr(ap, "_wait_out_captcha", lambda page, wait, poll: False)
+    seen = {"captcha": False}
+    assert ap._open_form(Page(), Adapter(), "https://jobs.lever.co/tri/x/apply", 1, 0.1, seen) == "form"
+    assert calls == ["goto", "reload"]
+    Adapter.tries = -5  # never shows: one reload, then give up
+    calls.clear()
+    assert ap._open_form(Page(), Adapter(), "https://jobs.lever.co/tri/x/apply", 1, 0.1, seen) is None
+    assert calls == ["goto", "reload"]
+
+
+def test_a_submit_the_site_rejects_is_not_sent(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # TRI, 2026-11-17: Lever answered Submit with "There was an error verifying your application. Please try again."
+    from helper import apply as ap
+
+    class Body:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+        def inner_text(self, timeout: int = 0) -> str:
+            return self.text
+
+    class Page:
+        def __init__(self, text: str) -> None:
+            self.body = Body(text)
+
+        def locator(self, selector: str) -> Body:
+            return self.body
+
+        def is_closed(self) -> bool:
+            return False
+
+        def wait_for_timeout(self, ms: float) -> None:
+            pass
+
+    class Adapter:
+        def is_confirmation(self, page: object, form: object = None) -> bool:
+            return False
+
+    monkeypatch.setattr(ap, "captcha_visible", lambda page: False)
+    monkeypatch.setattr(ap, "asks_for_emailed_code", lambda page, form=None: False)
+    clock = iter(range(0, 10_000, 2))
+    monkeypatch.setattr(ap.time, "monotonic", lambda: next(clock))
+    rejected = Page("Automated Driving Intern\n✱ There was an error verifying your application. Please try again.")
+    assert ap._wait_for_submit(rejected, Adapter(), {"value": True}, 5, 0.01) == "rejected"
+    assert ap._submit_rejected(Page("Thanks for applying! We received your application.")) is None
+
+
+_REFUSING_FORM = """<form>
+  <label for="s">State *</label>
+  <select required id="s"><option value="">-Select-</option><option>Washington</option></select>
+  <button type="button" id="go">Submit Application</button>
+</form>
+<script>
+document.getElementById('go').onclick = () => {
+  const s = document.getElementById('s');
+  if (!s.value) {
+    s.setAttribute('aria-invalid', 'true');
+    const note = document.createElement('div');
+    note.className = 'fab-FormNote--error';
+    note.innerText = 'Please make a selection.';
+    s.parentElement.appendChild(note);
+  }
+};
+</script>"""
+
+
+def test_a_submit_the_form_refuses_is_not_logged_as_sent(monkeypatch: Any) -> None:
+    """All Options' BambooHR (2026-11-18): Submit was clicked, the form showed "Please make a selection." under a
+    State box that had reset, and helper logged it as submitted_unverified (and put it in Notion). A form still
+    showing its Submit button with new field errors sent nothing: say so and keep watching."""
+    playwright_api = pytest.importorskip("playwright.sync_api")
+    import helper.apply as ap
+    from helper.adapters import generic
+
+    said: list[str] = []
+    monkeypatch.setattr(ap, "_say", said.append)
+    with playwright_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch(headless=True)
+        except Exception as exc:
+            pytest.skip(f"Chromium isn't installed: {exc}")
+        page = browser.new_page()
+        page.set_content(_REFUSING_FORM)
+        page.evaluate(generic.SUBMIT_WATCH_JS)
+        before = ap.visible_errors(page.main_frame)
+        assert before == []
+        page.click("#go")  # helper's own click comes before the wait, so the wait gets the errors from before it
+        outcome = ap._wait_for_submit(page, generic, {"value": False}, 0.12, 0.25, page.main_frame,
+                                      errors_before=before)
+        browser.close()
+    assert outcome == "timeout"  # never "unverified": nothing was sent, and helper doesn't click Submit again
+    assert any("didn't take the submit; nothing was sent" in s and "Please make a selection." in s for s in said)

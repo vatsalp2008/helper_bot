@@ -112,3 +112,255 @@ synonyms:
       - "echocoach: speech-to-text, LLM coaching loop, LLM-as-judge evaluation"
     approved: true
     note: The evidence is thin; leave unapproved unless you did NLP work beyond these.
+
+  - term: Data Cleansing
+    evidence:
+      - "traffic_accident: preprocessing with leakage detection, imputation, weather bucketing on a stratified 772,840-row sample"
+      - "housing_price: preprocessing pipeline for missing values, encoding, scaling"
+      - "pnwer: data-integrity checks that block publishing if totals don't reconcile"
+    approved: true
+    note: Added 2026-11-17 for Nelnet's Data Analytics internship ("Extract, cleanse, and compile data").
+
+  - term: Data Analytics
+    evidence:
+      - "f1_analytics: analysis of 500K+ historical data points over 10+ seasons, with a Power BI report for business and analyst audiences"
+      - "experimentiq: SQL-native analytics backbone (Data/Analytics Platform)"
+      - "pnwer: Data/Policy Analytics Platform built on a Python (pandas) pipeline over official public data"
+      - "already approved: Data Analysis"
+    approved: true
+    note: Added 2026-11-17 for Bosch's AI Application Intern ("leverage AI, data analytics, and Microsoft technologies").
+
+  - term: Test Automation
+    evidence:
+      - "afterglow: full CI pipeline with Vitest unit tests and Playwright end-to-end tests using fixture-injected camera input"
+      - "afterglow: replay-based deterministic tests against 8+ recorded fixture sessions; a benchmarking page that replays them headlessly"
+      - "chef: 4 RSpec tests, each verified to fail on main and pass with the fix, run in CI across 13 unit-spec jobs"
+    approved: true
+    note: Added 2026-11-17 for KLA's Software Engineering Intern ("Knowledge of software testing methodologies and automation frameworks").
+
+  - term: Troubleshooting
+    evidence:
+      - "pnwer: diagnosed and fixed two failed automation runs caused by Statistics Canada source outages"
+      - "chef: root-caused 2 compounding defects; diagnosed and correctly attributed an unrelated CI flake (1 of 13 jobs failing at bundle install)"
+      - "spiceai: root-caused a stale-bot process deadlock that auto-closed PRs"
+      - "already approved: Debugging"
+    approved: true
+    note: Added 2026-11-17 for M&T Bank's Technology Development Program, Infrastructure Automation ("Analytical and troubleshooting skills").
+
+  - term: GenAI
+    evidence:
+      - "echocoach: integrated an LLM into a real-time voice coaching loop, then LoRA fine-tuned a small open-source LLM and scored it with an LLM-as-judge harness"
+      - "themanager: Gemma 4 ingests PRDs/SRS and auto-generates kanban boards with structured user stories; 7-agent AI pipeline turning specs into code"
+      - "afterglow: a Claude vision model returns schema-validated SVG path data from rough sketches"
+    approved: true
+    note: Added 2026-11-17 for Bose's Data Science Co-Op (NLP & GenAI) ("This role focuses on NLP and GenAI").
+
+  - term: Multi-layer Perceptron
+    evidence:
+      - "perceptnet: camera and LiDAR branches fused via extrinsic calibration and an MLP fusion head (MLP is the master list's abbreviation)"
+    approved: true
+    note: Added 2026-11-17 for Bose's Data Science Co-Op ("classical ML models (Logistic Regression, Random Forests, Multi-layer Perceptron, etc.)").
+
+  - term: Generative AI
+    evidence:
+      - "echocoach: integrated an LLM into a real-time voice coaching loop, then LoRA fine-tuned a small open-source LLM and scored it with an LLM-as-judge harness"
+      - "themanager: Gemma 4 ingests PRDs/SRS and auto-generates kanban boards with structured user stories; 7-agent AI pipeline turning specs into code"
+      - "afterglow: a Claude vision model returns schema-validated SVG path data from rough sketches"
+      - "already approved: GenAI"
+    approved: true
+    note: Added 2026-11-17 for Marvell's AI Infrastructure Engineer Intern ("Work with emerging technologies in generative AI").
+
+  - term: Recommender Systems
+    evidence:
+      - "recommendation_engine: hybrid recommendation system, content-based + collaborative filtering via matrix factorization (Precision@10 0.64, Recall@10 0.76, MAP 0.59)"
+    approved: true
+    note: Added 2026-11-17 for Databricks' Data Science Intern (2027 Start) ("data science methodologies such as causal inference modeling and recommender systems").
+
+  - term: System Monitoring
+    evidence:
+      - "ecommerce_platform: added Prometheus/Grafana for observability, then Sentry and CloudWatch alongside them for error tracking and infrastructure health visibility"
+      - "pulsetrader: Prometheus and Grafana in the streaming pipeline's stack"
+      - "already claimable: Observability"
+    approved: true
+    note: Added 2026-11-17 for Scout Motors' Associate, MES & Shopfloor IT ("Familiarity with support-ticketing, system-monitoring, reporting, data-analysis tools, or basic SQL queries").
+
+  - term: Personalization
+    evidence:
+      - "recommendation_engine: hybrid recommendation system, content-based + collaborative filtering via matrix factorization (Precision@10 0.64, Recall@10 0.76)"
+      - "wardrobe: AI-generated outfit recommendations from the user's own digitized clothing collection (Claude API + WeatherKit)"
+      - "echocoach: persistent weakness graph (Cognee) routing each new session toward topics the user had previously struggled with"
+      - "moodmeals: meals recommended by the user's emotional state, pantry-aware and seasonally optimized, with post-meal mood tracking"
+    approved: true
+    note: Added 2026-11-17 for Samsung's Technical Product Management Intern, D2C Shopping Experiences ("B2C customer experiences, personalization, or recommendation engines").
+
+  - term: Data Operations
+    evidence:
+      - "pnwer: daily GitHub Actions automation that rebuilds trade data when new monthly figures publish, data-integrity checks that block publishing when totals don't reconcile, and 2 failed automation runs diagnosed and fixed (Statistics Canada outages)"
+      - "ai_agent_discovery: automated data collection on 100+ AI agents from GitHub, Hugging Face Spaces and LangChain docs, orchestrated in n8n"
+      - "kalini_ml: data pipeline (Pandas, SQL, 20+ features)"
+    approved: true
+    note: Added 2026-11-17 for Mercor's Enterprise AI Associate ("prior exposure to AI, data operations, or technology-adjacent work").
+
+  - term: Data Quality
+    evidence:
+      - "pnwer: data-integrity checks that block publishing if totals don't reconcile or Washington's figures don't match the Embassy of Canada's published numbers; build-time data validation against a second independent source"
+      - "traffic_accident: preprocessing with leakage detection and imputation on a stratified 772,840-row sample"
+      - "pulsetrader: watermark-based out-of-order handling and dead letter queues in the trade-event pipeline"
+      - "already approved: Data Cleansing"
+    approved: true
+    note: Added 2026-11-17 for Duetti's 2027 Summer Internship - Data ("Investigate inconsistencies, missing information and data quality issues").
+
+  - term: Design Patterns
+    evidence:
+      - "ecommerce_platform: choreography-based Saga pattern for distributed transactions and a transactional outbox pattern with Kafka, in a database-per-service architecture"
+      - "wardrobe: MVVM + Repository pattern"
+      - "already approved: Object-Oriented Programming"
+    approved: true
+    note: Added 2026-11-18 for Airbnb's Software Engineering Intern (BS/MS) ("Familiarity with computer science fundamentals (data structures, algorithms, design patterns)").
+
+  - term: Supervised Learning
+    evidence:
+      - "kalini_ml: predictive classification (TensorFlow, Scikit-learn, 85% accuracy, 5+ algorithms)"
+      - "kalini_sde: predictive maintenance with Random Forest and Logistic Regression (85% accuracy)"
+      - "traffic_accident: binary classification (minor vs severe) with XGBoost tuned via GridSearchCV, ROC-AUC 0.818"
+      - "housing_price: ensemble regression (XGBoost, Random Forest, Gradient Boosting), R² 0.82"
+    approved: true
+    note: Added 2026-11-18 for Airbnb's Software Engineering Intern (BS/MS) ("Foundational awareness of AI concepts, such as supervised learning, model evaluation, or working with APIs backed by large language models").
+
+  - term: RDBMS
+    evidence:
+      - "experimentiq: optimized the PostgreSQL-backed assignment log query with a composite index, ~800ms to ~40ms (20x), confirmed via EXPLAIN ANALYZE (sequential scan to index scan)"
+      - "ecommerce_platform: an RDS instance per microservice (database-per-service); migrated one service from PostgreSQL to Cosmos DB, comparing relational and non-relational data modeling"
+      - "seattle_transit, investment_prediction, housing_price: PostgreSQL backends; streamline: JPA persistence to an H2 database; afterglow: SQLite-backed room persistence"
+      - "skills: Databases & Data Warehousing (PostgreSQL, MySQL, SQLite)"
+    approved: true
+    note: Added 2026-11-18 for Constellation's 2027 IT Development Intern ("Should have experience working with Relational Database Management Systems (RDBMS)").
+
+  - term: Regression Testing
+    evidence:
+      - "chef: added 4 RSpec tests (4 regression tests in Key Metrics), each verified to fail on main and pass with the fix, including a regression guard proving the & 0777 bit mask actually masks"
+      - "spiceai: fixed the LIMIT wrong-results bug with a one-line change plus 2 regression tests"
+      - "already approved: Unit Testing"
+    approved: true
+    note: Added 2026-11-18 for NBCUniversal's Associate SDET ("Strong experience designing and maintaining automated UI, API, integration, regression, and performance test suites").
+
+  - term: Performance Testing
+    evidence:
+      - "streamline: built load testing and latency analysis tooling to measure p99 latency and system throughput (p99 latency testing)"
+      - "afterglow: a benchmarking page that replays recorded fixture sessions headlessly to measure filter jitter/lag and gesture precision/recall; bundle-size and Lighthouse budgets enforced in CI"
+      - "echocoach: benchmarked serving latency across fp16, INT8 and INT4 quantization (28, 24 and 41 tok/sec)"
+    approved: true
+    note: Added 2026-11-18 for NBCUniversal's Associate SDET ("Experience with REST API and performance testing, including analysis of application behavior under load").
+
+  - term: Root Cause Analysis
+    evidence:
+      - "chef: root-caused 2 compounding defects in a single method behind a bug open 3.5 years; diagnosed and correctly attributed an unrelated CI flake to a known upstream bundle install issue"
+      - "spiceai: root-caused a stale-bot process deadlock; traced a silent wrong-results bug to a swapped skip/fetch value that the existing test missed"
+      - "pnwer: 2 production incidents diagnosed and fixed (Statistics Canada outages)"
+      - "already approved: Debugging, Troubleshooting"
+    approved: true
+    note: Added 2026-11-18 for NBCUniversal's Associate SDET ("Experience performing root cause analysis and converting production defects into preventative regression coverage").
+
+  - term: Cloud Computing
+    evidence:
+      - "ecommerce_platform: Terraform modules provisioning production AWS infrastructure (an RDS instance per microservice, a VPC with segmented subnets/security groups, an ECS cluster, scoped IAM roles per service)"
+      - "ecommerce_platform: migrated one service's database from PostgreSQL to Cosmos DB (Azure's NoSQL offering)"
+      - "pulsetrader: migrated the analytical storage layer to BigQuery for scalable historical/batch querying"
+      - "skills: Cloud & DevOps group (AWS, Google Cloud, Azure, Vercel, Fly.io, Docker, Kubernetes, Terraform)"
+    approved: true
+    note: Added 2026-11-18 for BMO's Software Developer (New or Recent Graduate) ("Foundational level of proficiency ... Cloud computing").
+
+  - term: Predictive Modeling
+    evidence:
+      - "kalini_ml: predictive classification (TensorFlow, Scikit-learn, 85% accuracy, 5+ algorithms)"
+      - "kalini_sde: predictive maintenance with Random Forest and Logistic Regression (85% accuracy)"
+      - "traffic_accident: severity prediction on 7.7M US accident records, XGBoost tuned via GridSearchCV, ROC-AUC 0.818"
+      - "housing_price: ensemble regression (XGBoost, Random Forest, Gradient Boosting) predicting prices, R² 0.82"
+      - "investment_prediction: time-series forecasting with LSTM/GRU on 1.2M data points, 68% directional accuracy"
+    approved: true
+    note: Added 2026-11-18 for Attain Partners' Summer 2027 Data Analytics Intern ("Support optimization through channel, campaign, and pricing analyses, as well as predictive modeling").
+
+  - term: SDLC
+    evidence:
+      - "pnwer: designed and built a public-data web platform end to end, with data-integrity checks that block publishing, daily GitHub Actions automation with automatic Vercel redeployment, 2 failed automation runs diagnosed and fixed, and technical documentation (a 28-decision architecture and design log, a setup guide)"
+      - "chef: triaged ~200 issues, reproduced the failure, fixed it with 4 RSpec tests, went through code review and CI on 13 unit-spec jobs, and shipped in Chef Infra Client v19.4.22 with a CHANGELOG entry"
+      - "afterglow: phase-gated build process with ADR-documented architecture decisions and a full CI pipeline (lint, typecheck, Vitest, Playwright)"
+      - "themanager: 7-agent pipeline spanning planner, architect, coder, tester, reviewer, debugger and docs"
+    approved: true
+    note: Added 2026-11-18 for Nelnet's Intern - IT Software Engineer (Summer 2027) ("General knowledge of the Software Development Life Cycle (SDLC)").
+
+  - term: Software Development Lifecycle
+    evidence:
+      - "themanager: a 7-agent pipeline covering each lifecycle stage (planner, architect, coder, tester, reviewer, debugger, docs), turning PRDs/SRS into structured user stories and executable code"
+      - "chef: one fix taken from issue triage (~200 open issues) through reproduction, 4 RSpec tests, a contested code review and CI on 13 unit-spec jobs to release in Chef Infra Client v19.4.22, with 14 later releases and no revert"
+      - "afterglow: phase-gated build process with ADR-documented architecture decisions and a full CI pipeline (lint, typecheck, Vitest, Playwright, Lighthouse CI)"
+    approved: true
+    note: Added 2026-11-18 for apexanalytix's Product Management (DevOps) Intern - Summer 2027 ("Familiarity with the software development lifecycle and with version control and issue tracking tools (for example Git)").
+
+  - term: Version Control
+    evidence:
+      - "skills: Git and GitHub (Tools & Platforms)"
+      - "chef: worked from the fork vatsalp2008/chef on branch fix-integer-umask-13473; PR #16260 merged into main as squash commit 4a6992838e"
+      - "spiceai: PR #13507 merged to trunk (commit d8a32b6eb288), two more PRs open"
+    approved: true
+    note: Added 2026-11-18 for apexanalytix's Product Management (DevOps) Intern - Summer 2027 ("version control and issue tracking tools (for example Git)").
+
+  - term: Issue Tracking
+    evidence:
+      - "chef: triaged ~200 open issues and evaluated 20 candidates before fixing chef/chef#13473"
+      - "pnwer: daily GitHub Actions automation opens a GitHub issue for each new U.S. tariff action on Canada"
+      - "spiceai: filed 4 issues (#12745, #12746, #12747, #13509), 2 closed as fixed"
+    approved: true
+    note: Added 2026-11-18 for apexanalytix's Product Management (DevOps) Intern - Summer 2027 ("version control and issue tracking tools (for example Git)").
+
+  - term: AI-Assisted Development
+    evidence:
+      - "themanager: an AI-powered software factory whose 7-agent pipeline (planner, architect, coder, tester, reviewer, debugger, docs) turns specs into executable code"
+      - "themanager: MCP integration (11 tools, 3 resources, 2 prompts) giving Cursor, Claude Code and Windsurf editor-native access"
+    approved: true
+    note: Added 2026-11-18 for Cloudflare's AI & Automation Intern, Communications (Winter 2027) ("Experience building with AI tools, including LLMs, AI agents, or AI-assisted development tools").
+
+  - term: Data Profiling
+    evidence:
+      - "traffic_accident: preprocessing with leakage detection, imputation and weather bucketing on a stratified 10% sample (772,840 rows) of 7.7M US accident records; addressed class imbalance (80.5%/19.5%) via SMOTE and balanced class weights"
+      - "housing_price: preprocessing pipeline for missing values, encoding and scaling on 50,000+ property records"
+      - "pnwer: data-integrity checks that block publishing if totals don't reconcile or Washington's figures don't match the Embassy of Canada's published numbers"
+      - "already approved: Data Quality, Data Cleansing, Data Analysis"
+    approved: true
+    note: Added 2026-11-18 for Great American Insurance Company's Data Engineer Developer Intern, Summer 2027 ("AI-facilitated data profiling and data analysis").
+
+  - term: Data Migration
+    evidence:
+      - "pulsetrader: migrated the analytical storage layer to BigQuery for scalable historical/batch querying, while retaining TimescaleDB continuous aggregates for sub-100ms real-time serving"
+      - "ecommerce_platform: migrated one service's database from PostgreSQL to Cosmos DB (Azure's NoSQL offering), comparing relational and non-relational data modeling within the same database-per-service architecture"
+    approved: true
+    note: Added 2026-11-18 for Great American Insurance Company's Data Engineer Developer Intern, Summer 2027 ("Willingness to learn data migration processes").
+
+  - term: Secure Coding
+    evidence:
+      - "swarm: security built into the code: PII redaction, an OAuth token vault with per-Bee scope isolation, a default-deny compliance architecture and SHA-256 hash-chain audit logging (18 audit event types)"
+      - "ecommerce_platform: JWT authentication, and scoped IAM roles per service with a VPC of segmented subnets and security groups"
+      - "wardrobe: CryptoKit AES-GCM encryption"
+      - "seattle_transit: rewrote a performance-critical scoring component in Rust for additional speed and memory safety"
+      - "chef: caught a reviewer's suggested edit that would have inverted the guard and leaked the modified umask into every subsequent resource in the run; added the & 0777 bit mask with its own test"
+      - "already claimable: Code Review"
+    approved: true
+    note: Added 2026-11-18 for Bloomberg Industry Group's Application Security Engineer 1 ("Secure coding or code review").
+
+  - term: Product Analytics
+    evidence:
+      - "experimentiq: end-to-end A/B testing and causal inference platform with a SQL-native analytics backbone (Airbnb/Uber/Netflix/Stripe-style), 10M+ simulated events, 12 dbt models in 3 tiers, metric computation 45s to 0.8s"
+      - "experimentiq: React/TypeScript dashboard with experiment builder, results, diagnostics, causal inference and a SQL explorer"
+      - "master list Career Positioning: Data & Experimentation Platforms (Airbnb, Uber, Netflix, Stripe, Meta, Booking.com, Spotify), ExperimentIQ"
+      - "already claimable: A/B Testing; already approved: Data Analytics"
+    approved: true
+    note: Added 2026-11-18 for FreedomRoads' BI & AI Analyst Intern ("Coursework or projects involving KPI design, product analytics, or user adoption metrics").
+
+  - term: Workflow Automation
+    evidence:
+      - "kalini_sde: automation tools (Python, Bash, 8 workflows, 3.2 hours daily savings, Slack API integration)"
+      - "ai_agent_discovery: multi-agent workflow orchestration via n8n for automated data collection"
+      - "pnwer: daily GitHub Actions automation layer that refreshes trade news, opens a GitHub issue for each new U.S. tariff action on Canada, rebuilds trade data when new monthly figures publish, and triggers automatic Vercel redeployment"
+      - "already claimable: Workflow Orchestration"
+    approved: true
+    note: Added 2026-11-18 for DriveWealth's AI Consulting Associate Program (AI CAP) People Analytics Intern ("Build working solutions for the People team that combine LLMs, APIs, and automation frameworks. Solutions might be AI assistants, automated workflows, dashboards").

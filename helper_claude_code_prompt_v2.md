@@ -19,7 +19,7 @@ helper should do steps 2 to 4 from one input: **a job posting URL**.
 helper apply <job_url>
 ```
 
-Result: a tailored one-page PDF resume, a filled application form, (optionally) a submitted application, and a logged record in SQLite mirrored to Notion.
+Result: a tailored on m   e-page PDF resume, a filled application form, (optionally) a submitted application, and a logged record in SQLite mirrored to Notion.
 
 ---
 

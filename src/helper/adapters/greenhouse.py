@@ -207,11 +207,18 @@ _EEOC_LABELS = {
 
 
 def dom_id(field_name: str) -> str:
-    """The DOM id of a field. The location question renders as #candidate-location."""
-    return "candidate-location" if field_name == "location" else field_name
+    """The DOM id of a field. The location question renders as #candidate-location, and a demographic question as
+    its bare number: demographic_4000319003 is id="4000319003" (Soros, 2026-11-17)."""
+    if field_name == "location":
+        return "candidate-location"
+    if field_name.startswith("demographic_") and field_name[len("demographic_"):].isdigit():
+        return field_name[len("demographic_"):]
+    return field_name
 
 
 def css_id(dom: str) -> str:
+    if dom[:1].isdigit():  # "#4000319003" isn't a valid CSS selector: an id can't start with a digit there
+        return f"[id='{dom}']"
     return "#" + re.sub(r"([^A-Za-z0-9_-])", r"\\\1", dom)
 
 
@@ -254,6 +261,38 @@ def choose_option(root: Any, dom: str, wanted: str, *, search: Optional[str] = N
     return True, best
 
 
+_CHOICE_INPUTS = "input[type='checkbox'], input[type='radio']"
+
+
+def is_choice_group(target: Any) -> bool:
+    """A question the form shows as a group of checkboxes or radio buttons: Greenhouse's new forms render "Select
+    all that apply" questions as <fieldset id="question_N[]"> with one checkbox per option (Databricks, Twitch,
+    Cloudflare, 2026-11-18)."""
+    return target.locator(_CHOICE_INPUTS).count() > 0
+
+
+def check_options(root: Any, dom: str, wanted: list[str]) -> tuple[bool, str]:
+    """Tick the box (or radio button) of each wanted option in a choice group, matched on its label."""
+    from ..answers import match_option
+
+    labels = root.locator(css_id(dom)).locator("label")
+    texts = [t.strip() for t in labels.all_inner_texts()]
+    chosen: list[str] = []
+    for pick in wanted:
+        best, score = match_option(pick, texts)
+        if best is None or score < 0.8:
+            return False, f"no option matches '{pick}' (options: {', '.join(texts[:12])})"
+        label = labels.nth(texts.index(best))
+        box_id = label.get_attribute("for")
+        box = root.locator(f"[id='{box_id}']") if box_id else label.locator(_CHOICE_INPUTS)
+        if not box.is_checked():
+            label.click()
+        if not box.is_checked():  # the input hides behind a drawn box; a label click can miss it
+            box.check(force=True)
+        chosen.append(best)
+    return True, "; ".join(chosen)
+
+
 # A follow-up that only appears after a certain answer ("If you selected other, please specify"; SharkNinja): when it
 # isn't shown, it isn't needed, even though the form marks it required.
 FOLLOW_UP_RE = re.compile(r"(?i)^\W*if (you (selected|answered|chose|checked)|yes|no|other|so|applicable)\b")
@@ -264,7 +303,10 @@ def fill_form(page: Any, answers: list[Any], resume_pdf: Path, *, country: Optio
     """Fill every planned answer in `page` (a Page or the Frame find_form returned). Never touches Submit."""
     results: list[FieldResult] = []
     if country and page.locator("#country").count():
-        ok, chosen = choose_option(page, "country", country, search=country[:9])
+        try:  # a slow phone-country box crashed the whole fill and closed the window (Airbnb, 2026-11-18)
+            ok, chosen = choose_option(page, "country", country, search=country[:9])
+        except Exception as exc:
+            ok, chosen = False, f"{type(exc).__name__}: {str(exc).splitlines()[0][:100]}"
         results.append(FieldResult("country", "Country (phone)", ok, chosen if ok else None, "" if ok else chosen))
         pause()
     for a in answers:
@@ -296,6 +338,10 @@ def fill_form(page: Any, answers: list[Any], resume_pdf: Path, *, country: Optio
                     chosen = "; ".join(chosen_all)
                 else:
                     ok, chosen = choose_option(page, dom, a.value)
+                results.append(FieldResult(a.field, a.label, ok, chosen if ok else a.value, "" if ok else chosen))
+            elif is_choice_group(target):
+                picks = [v.strip() for v in a.value.split(";") if v.strip()] if a.type == "multi_select" else [a.value]
+                ok, chosen = check_options(page, dom, picks)
                 results.append(FieldResult(a.field, a.label, ok, chosen if ok else a.value, "" if ok else chosen))
             else:
                 target.fill(a.value)

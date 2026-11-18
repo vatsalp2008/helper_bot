@@ -164,7 +164,22 @@ def _merge(plan: AnswerPlan, provided: dict[str, Any]) -> list[str]:
                 problems.append(f"{name}: a hiring-manager note opens with 'Hi,', runs about 60 to 90 words "
                                 f"(this one has {words}), and ends 'Thank you,' then 'Vatsal Patel'")
                 continue
-        if a.options:
+        if a.options and a.type == "multi_select":  # "C#; Python; SQL" (Quest's tech stack, 2026-11-17)
+            picks, bad = [], []
+            for part in (p.strip() for p in text.split(";")):
+                if not part:
+                    continue
+                best, score = match_option(part, a.options)
+                if best is None or score < 0.95:
+                    bad.append(part)
+                elif best not in picks:
+                    picks.append(best)
+            if bad or not picks:
+                problems.append(f"{name}: {', '.join(repr(b) for b in bad) or repr(text)} not among the options "
+                                f"({', '.join(a.options)}); separate several choices with ';'")
+                continue
+            text = "; ".join(picks)
+        elif a.options:
             best, score = match_option(text, a.options)
             if best is None or score < 0.95:
                 problems.append(f"{name}: '{text}' is not one of the options ({', '.join(a.options)})")
@@ -271,6 +286,62 @@ def answers_step(paths: Paths, cfg: Config, run_id: str, approve: bool = False) 
 # --------------------------------------------------------------------------- filling (spec 10.1, 10.2, 9 steps 8-11)
 
 
+def replan(paths: Paths, cfg: Config, run_id: str) -> list[str]:
+    """Plan a single-page form's answers again with today's rules, for a refill after a rule was fixed (Scout,
+    2026-11-18: the saved plan still said Master's for "highest level completed" and took a Yes/No confirmation for
+    the resume upload). Claude's earlier answers stay wherever the new plan has nothing better than a question for
+    Claude. Returns the changes, one line each."""
+    folder = run_dir(paths, run_id)
+    job = Job.model_validate(read_json(folder / "job.json"))
+    if not job.questions or not (folder / PLAN).is_file():
+        return []
+    old = {a.field: a for a in AnswerPlan.model_validate(read_json(folder / PLAN)).answers}
+    new = plan_answers(job.questions, _context(paths, cfg, run_id, job))
+    changes: list[str] = []
+    for i, a in enumerate(new.answers):
+        before = old.get(a.field)
+        if before is None:
+            continue
+        if before.source.startswith("Claude") and (a.kind in ("free_text", "unknown") or a.source.startswith("Claude")):
+            new.answers[i] = before  # Claude's answer to a question the rules still can't answer
+            continue
+        if (a.value, a.kind) != (before.value, before.kind):
+            changes.append(f"{a.label[:70]}: {before.value!r} -> {a.value!r}")
+    if not cfg.drafts_need_review:  # Vatsal, 2026-11-15: Claude's drafts count as approved
+        for a in new.answers:
+            if a.status == "needs_review" and a.source.startswith("Claude"):
+                a.status = "approved"
+    write_json(folder / PLAN, new.model_dump(mode="json"))
+    return changes
+
+
+def rescan(paths: Paths, cfg: Config, run_id: str, scan: Optional[Any] = None) -> str:
+    """Read a company-site form's questions again and plan its answers afresh, for a refill after helper learned to
+    read that kind of form (Rippling, 2026-11-18: the first read missed its dropdowns and rating questions, so most of
+    the form stayed empty). The old plan and answer files stay beside the new ones as *.before-rescan.json. Questions
+    the rules can't answer go to Claude as in `helper continue` (WaitingForClaude)."""
+    from .adapters import adapter_for, generic
+
+    folder = run_dir(paths, run_id)
+    job = Job.model_validate(read_json(folder / "job.json"))
+    link = job.apply_url or job.url or ""
+    if adapter_for(link) is not generic:
+        raise HelperError(f"--rescan is for company-site forms; {job.ats} forms are read from the site's own data.")
+    result = (scan or generic.scan_posting)(link)
+    if not result.questions:
+        raise HelperError("helper couldn't read the form's questions again (the posting may have closed, or the page "
+                          "turned helper's hidden browser away). The old plan stays as it was.")
+    job.questions = result.questions
+    write_json(folder / "job.json", job.model_dump(mode="json"))
+    for name in (PLAN, NEEDED, PROVIDED):
+        if (folder / name).is_file():
+            (folder / name).replace(folder / name.replace(".json", ".before-rescan.json"))
+    state = load_state(paths, run_id)
+    set_step(state, "answers", "pending", f"the form was read again: {len(result.questions)} question(s)")
+    save_state(paths, state)
+    return answers_step(paths, cfg, run_id)
+
+
 @dataclass
 class FillOutcome:
     status: str  # dry_run | filled | applied | submitted_unverified
@@ -278,9 +349,16 @@ class FillOutcome:
     results: list[Any] = field(default_factory=list)
 
 
+_HUNT: dict[str, Any] = {}  # the fill under way, so a stop for Vatsal shows on the job hunt's list
+
+
 def _say(text: str) -> None:
     print(text, flush=True)
     sys.stdout.flush()
+    if _HUNT:
+        from .hunt import on_fill_message
+
+        on_fill_message(_HUNT["paths"], _HUNT["cfg"], _HUNT["run_id"], text)
 
 
 def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, wait_minutes: Optional[float] = None,
@@ -311,6 +389,10 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
     profile = Profile.model_validate(load_yaml(paths.profile))
     wait = cfg.fill_wait_timeout_minutes if wait_minutes is None else wait_minutes
     mode = state.options.get("submit_mode") or cfg.submit_mode
+    _HUNT.update(paths=paths, cfg=cfg, run_id=run_id)
+    from .hunt import on_fill_started
+
+    on_fill_started(paths, cfg, run_id)
     if hasattr(adapter, "run_flow"):
         return _fill_flow(paths, cfg, state, job, pdf, adapter, profile, wait, headless, poll_seconds, mode)
     submit_seen = {"value": False}
@@ -319,13 +401,7 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
         page = context.pages[0] if context.pages else context.new_page()
         page.on("request", lambda req: submit_seen.update(value=True) if adapter.is_submit_request(req.url, req.method)
                 else None)
-        page.goto(job.apply_url or job.url, wait_until="domcontentloaded")
-        try:
-            page.wait_for_load_state("networkidle", timeout=20000)
-        except Exception:
-            pass
-        seen["captcha"] = _wait_out_captcha(page, wait, poll_seconds)
-        form = adapter.find_form(page)
+        form = _open_form(page, adapter, job.apply_url or job.url, wait, poll_seconds, seen)
         if form is None:
             reason = getattr(adapter, "no_form_reason", None)
             _say(reason(page) if reason else "helper couldn't find the application form on this page, so it filled "
@@ -344,6 +420,7 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
         set_step(state, "fill", "done", f"{sum(r.ok for r in results)} field(s) filled")
         save_state(paths, state)
         submitted_by_helper = False
+        errors_before: Optional[list[str]] = None
         if mode == "auto":
             reasons = _auto_blockers(paths, cfg, folder, job, plan, results, page, form, adapter, seen)
             if reasons:
@@ -351,6 +428,7 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
                      + "\n".join(f"  - {r}" for r in reasons))
             else:
                 _say("Auto-submit: every condition holds (spec 10.5). Clicking Submit once; helper never retries.")
+                errors_before = visible_errors(form) if form is not None else []
                 submitted_by_helper = adapter.submit(form)
                 if not submitted_by_helper:
                     _say("helper couldn't click Submit after all, so it's in review mode: submit it yourself.")
@@ -366,7 +444,7 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
             if yours:
                 _say("Only you can answer these; fill them in the window:\n"
                      + "\n".join(f"  {a.label[:120]}" for a in yours))
-        outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, form, seen)
+        outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, form, seen, errors_before)
         shot = None
         if outcome in ("confirmed", "unverified"):
             shot = folder / "confirmation.png"
@@ -391,7 +469,12 @@ def _auto_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, plan: Answ
         if errors:
             reasons.append("the form shows errors: " + "; ".join(e[:80] for e in errors[:3]))
         if form is None or len(adapter.submit_buttons(form)) != 1:
-            reasons.append("helper couldn't find exactly one Submit button")
+            turned_off = getattr(adapter, "disabled_submit_buttons", None)
+            if form is not None and turned_off and not adapter.submit_buttons(form) and turned_off(form):
+                reasons.append("the form's Submit button is still turned off, so the site wants something more (a "
+                               "field it marks, or an upload still processing)")
+            else:
+                reasons.append("helper couldn't find exactly one Submit button")
         return reasons
 
     conn = open_db(paths, cfg)
@@ -826,6 +909,26 @@ def _fill_summary(results: list[Any], failed_required: list[Any], wait: float) -
     return "\n".join(lines)
 
 
+def _open_form(page: Any, adapter: Any, url: str, wait: float, poll: float, seen: dict[str, bool]) -> Optional[Any]:
+    """Open the form page and find the form. A page that comes up without it gets one reload: Lever answered TRI with
+    "Something went wrong on our end. Please try reloading" (2026-11-17). Nothing is typed or sent before this."""
+    for attempt in (1, 2):
+        if attempt == 1:
+            page.goto(url, wait_until="domcontentloaded")
+        else:
+            _say("The page came up without the application form; reloading it once.")
+            page.reload(wait_until="domcontentloaded")
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)
+        except Exception:
+            pass
+        seen["captcha"] = _wait_out_captcha(page, wait, poll) or seen.get("captcha", False)
+        form = adapter.find_form(page)
+        if form is not None:
+            return form
+    return None
+
+
 def _wait_out_captcha(page: Any, wait: float, poll: float) -> bool:
     """True when a CAPTCHA showed (Vatsal solves it; helper never does, rule 6)."""
     if not captcha_visible(page):
@@ -838,12 +941,55 @@ def _wait_out_captcha(page: Any, wait: float, poll: float) -> bool:
     return True
 
 
+# A page that answers Submit by saying the application didn't go through: "There was an error verifying your
+# application. Please try again." (Lever's check on TRI, 2026-11-17). That's a clear "not sent", not an unclear result.
+_SUBMIT_REJECTED_RE = re.compile(
+    r"(?i)\berror (verifying|submitting|processing) your application\b"
+    r"|\byour application (could not|couldn't|was not|wasn't) (be )?(submitted|sent|processed|received)\b"
+    r"|\b(unable|failed) to submit your application\b"
+)
+
+
+def _submit_rejected(page: Any) -> Optional[str]:
+    try:
+        text = page.locator("body").inner_text(timeout=2000)
+    except Exception:
+        return None
+    m = _SUBMIT_REJECTED_RE.search(text or "")
+    return m.group(0) if m else None
+
+
+def _submit_refused(form: Optional[Any], adapter: Any, before: list[str]) -> list[str]:
+    """New field errors on a form that is still there, Submit button and all: the form's own checks stopped the submit
+    before anything was sent."""
+    if form is None or not hasattr(adapter, "submit_buttons"):
+        return []
+    try:
+        if not adapter.submit_buttons(form):
+            return []
+    except Exception:
+        return []
+    return [e for e in visible_errors(form) if e not in before and not e.startswith("helper couldn't")]
+
+
+def _clear_submit_clicked(page: Any) -> None:
+    """Forget the click the page recorded (SUBMIT_WATCH_JS), so the next click on Submit counts as a new one."""
+    for frame in page.frames:
+        try:
+            frame.evaluate("() => { window.__helperSubmitClicked = false; }")
+        except Exception:
+            pass
+
+
 def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait: float, poll: float,
-                     form: Optional[Any] = None, seen: Optional[dict[str, bool]] = None) -> str:
+                     form: Optional[Any] = None, seen: Optional[dict[str, bool]] = None,
+                     errors_before: Optional[list[str]] = None) -> str:
+    """`errors_before`: the form's errors from before helper's own click on Submit (the click runs first)."""
     deadline = time.monotonic() + wait * 60
     since_submit: Optional[float] = None
     warned_captcha = warned_code = False
     clicked = getattr(adapter, "submit_clicked", None)
+    before = errors_before if errors_before is not None else visible_errors(form) if form is not None else []
     while time.monotonic() < deadline:
         if page.is_closed():
             return "unverified" if submit_seen["value"] else "closed"
@@ -853,6 +999,19 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
             submit_seen["value"] = True
         if submit_seen["value"] and since_submit is None:
             since_submit = time.monotonic()
+        if since_submit is not None and time.monotonic() - since_submit > 3 and _submit_rejected(page):
+            return "rejected"  # the site said outright it didn't take the application (TRI's Lever, 2026-11-17)
+        refused = _submit_refused(form, adapter, before) if since_submit is not None and \
+            time.monotonic() - since_submit > 4 else []
+        if refused:
+            # the form stopped the submit with its own field errors: nothing was sent, so it isn't a submit to log
+            # as unverified (All Options' BambooHR, 2026-11-18: State had reset; logged as sent and put in Notion)
+            _say("The form didn't take the submit; nothing was sent. It shows: " + "; ".join(e[:80] for e in refused[:4])
+                 + ". Fix it in the window yourself and click Submit; helper keeps watching for the confirmation.")
+            submit_seen["value"], since_submit = False, None
+            before = visible_errors(form)
+            if clicked is not None:
+                _clear_submit_clicked(page)
         if since_submit is not None and time.monotonic() - since_submit > 60:
             return "unverified"  # rule 10: never retry; an unclear result is submitted_unverified
         if not warned_captcha and captcha_visible(page):
@@ -905,10 +1064,18 @@ def _log_outcome(paths: Paths, cfg: Config, state: Any, outcome: str, shot: Opti
         conn.commit()
     finally:
         conn.close()
+    from .hunt import on_fill_outcome
 
-    if outcome in ("closed", "timeout"):
+    on_fill_outcome(paths, cfg, state.run_id, state.application_id, outcome)  # sent: off the job hunt's list
+
+    if outcome in ("closed", "timeout", "rejected"):
         set_step(state, "submit", "waiting_for_user", "not submitted yet")
         save_state(paths, state)
+        if outcome == "rejected":
+            return FillOutcome("filled", "Not sent: the site answered Submit with an error and didn't take the "
+                                         "application from helper's window. The application stays 'filled'. Apply in "
+                                         f"your normal browser (`helper assist {state.run_id}` opens it with a paste "
+                                         f"sheet), then `helper mark {state.application_id} applied`.", results)
         how = "the browser was closed" if outcome == "closed" else "the wait ran out"
         return FillOutcome("filled", f"Not submitted ({how}). The application stays 'filled'. Run `helper fill "
                                      f"{state.run_id}` to fill it again, or mark it after applying by hand: "

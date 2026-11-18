@@ -28,6 +28,7 @@ tier1:                        # auto-filled without asking
     street: null
     unit: null
     city: null
+    county: null  # Workday asks for it in the address
     state: null
     postal_code: null
     country: null
@@ -64,6 +65,9 @@ tier2:                        # auto-filled only when auto_answer is true and a 
     value: null
     yes_when_question_includes_cpt_opt: true
   us_citizen_or_permanent_resident:
+    auto_answer: false
+    value: null
+  f1_student:                     # "Are you an F1 student ... applying for CPT, OPT, or STEM OPT?"
     auto_answer: false
     value: null
   earliest_start_date:

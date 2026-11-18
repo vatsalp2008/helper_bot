@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- The shape of a Rippling application form (apexanalytix, Raptor Maps, 2026-11-18), trimmed: upload boxes inside
+     drop-zone labels, a phone country-code picker, rating questions made of role=radio divs, a radio question whose
+     inputs are hidden inside role=radio divs, and dropdowns that are role=combobox (an input or a div). -->
+<html><head><style>.req::after { content: "*"; color: #c00; }</style></head><body>
+<form>
+<h1>Application: Product Management (DevOps) Intern - Summer 2027</h1>
+<div data-testid="field"><div><span id="f4-label">Résumé</span><span>*</span></div>
+  <div><div data-testid="screen-reader-only" id="file-input-6">Total 0 file selected</div>
+    <label data-testid="resume" aria-labelledby="file-input-6 f4-label"><input data-testid="input-resume" type="file"
+      accept=".pdf" style="display:none"><button type="button"><span>Drop or select (.doc / .docx / .pdf)</span></button></label>
+    <span>The résumé will be parsed to fill in the application details</span></div></div>
+<div data-testid="field"><div><span id="f8-label">First name</span><span>*</span></div>
+  <div><div><input id="f8" aria-required="true" placeholder="First name" aria-labelledby="f8-label" name="86s8tv1NZ"></div></div></div>
+<div data-testid="field"><div><span id="f20-label">Pronouns</span></div>
+  <div><div data-testid="pronouns_strategy"><div data-testid="select-controller"><div><div><div data-testid="select-search-input">
+    <input id="f20" aria-required="false" placeholder="Search" aria-label="Search" aria-labelledby="f20-label"
+      role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-expanded="false" name="xdDVlzzz9A"
+      data-list="pronouns" value=""></div></div></div></div></div>
+    <span>Add pronouns to your application so interviewers know how to refer to you.</span></div></div>
+<div data-testid="field"><div><span id="f31-label">Phone number</span><span>*</span></div>
+  <div><div><div><div data-testid="field"><div><div data-testid="phone_number-code"><div><div data-testid="select-controller">
+    <div><div><div data-testid="select-search-input"><input id="f34" aria-required="true" placeholder="Search"
+      aria-label="Search" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-expanded="false"
+      value="+1 US" name="juBPVcI16u" data-list="codes"></div></div></div></div></div></div></div></div>
+    <div data-testid="phone_number"><input id="f31" aria-required="true" placeholder="Phone number"
+      aria-labelledby="f31-label" name="oRwPP2SZDj"></div></div></div></div></div>
+<div data-testid="field"><div><span id="f51-label">Cover letter</span></div>
+  <div><label data-testid="cover_letter" aria-labelledby="file-input-53 f51-label"><input data-testid="input-cover_letter"
+    type="file" style="display:none"><button type="button"><span>Drop or select (.doc / .docx / .pdf)</span></button></label></div></div>
+<div><div><p>Do you currently require Visa Sponsorship?<span class="req"></span></p></div>
+  <div data-testid="field"><div><div><div><div data-testid="customQuestions.visa" id="input-57" role="radiogroup">
+    <div role="radio" aria-label="Strong No" aria-checked="false"><p>Strong No</p></div>
+    <div role="radio" aria-label="No" aria-checked="false"><p>No</p></div>
+    <div role="radio" aria-label="Yes" aria-checked="false"><p>Yes</p></div>
+    <div role="radio" aria-label="Strong Yes" aria-checked="false"><p>Strong Yes</p></div>
+  </div></div></div></div></div></div>
+<div><div><p>Are you able to work in Greensboro, NC May 2027 through August 2027? <span class="req"></span></p></div>
+  <div data-testid="field"><div><div data-testid="customQuestions.where" id="field-63" role="radiogroup">
+    <div role="radio" aria-checked="false"><div><div><input aria-hidden="true" tabindex="-1" type="radio" value="Yes"
+      name="customQuestions.where" style="display:none"></div></div><div><div><div><p>Yes</p></div></div></div></div>
+    <div role="radio" aria-checked="false"><div><div><input aria-hidden="true" tabindex="-1" type="radio" value="No"
+      name="customQuestions.where" style="display:none"></div></div><div><div><div><p>No</p></div></div></div></div>
+    <div role="radio" aria-checked="false"><div><div><input aria-hidden="true" tabindex="-1" type="radio"
+      value="I plan to relocate." name="customQuestions.where" style="display:none"></div></div>
+      <div><div><div><p>I plan to relocate.</p></div></div></div></div>
+  </div></div></div></div>
+<div data-testid="field"><div><span id="f78-label">Gender</span></div>
+  <div><div data-testid="eeoc.gender"><div><div data-testid="select-controller"><div>
+    <div id="f78" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-expanded="false"
+      aria-labelledby="f78-label" aria-label="Select..." aria-required="false" tabindex="0" data-list="genders"><p>Select...</p></div>
+  </div></div></div></div></div></div>
+</form>
+<div id="listbox" role="listbox" style="display:none"></div>
+<script>
+const lists = {pronouns: ['He/Him', 'She/Her', 'They/Them'], codes: ['+1 US', '+91 IN'],
+               genders: ['Male', 'Female', 'Decline to self-identify']};
+let open = null;
+for (const c of document.querySelectorAll('[role=combobox]')) {
+  c.addEventListener('click', () => {
+    open = c;
+    const lb = document.getElementById('listbox');
+    lb.innerHTML = lists[c.dataset.list].map(t => '<div role="option">' + t + '</div>').join('');
+    lb.style.display = 'block';
+    for (const o of lb.querySelectorAll('[role=option]')) o.onclick = () => {
+      if (open.tagName === 'INPUT') open.value = o.innerText; else open.querySelector('p').innerText = o.innerText;
+      lb.style.display = 'none';
+    };
+  });
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('listbox').style.display = 'none';
+});
+for (const r of document.querySelectorAll('[role=radio]')) r.addEventListener('click', () => {
+  for (const s of r.parentElement.querySelectorAll('[role=radio]')) s.setAttribute('aria-checked', 'false');
+  r.setAttribute('aria-checked', 'true');
+  const i = r.querySelector('input');
+  if (i) i.checked = true;
+});
+</script>
+</body></html>

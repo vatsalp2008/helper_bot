@@ -96,6 +96,10 @@ def test_intake() -> None:
 @pytest.mark.parametrize("name,expected", [
     ("ADUS-Adobe Inc.", "Adobe"), ("100 Salesforce", "Salesforce"), ("ASML US, LLC. (US01)", "ASML"),
     ("Snap Inc.", "Snap"), ("NVIDIA", "NVIDIA"), ("", "Adobe"),
+    ("Company 19 - John Hancock Life Insurance Company", "John Hancock Life Insurance Company"),
+    ("GAIC Great American Insurance Company", "Great American Insurance Company"), ("C01 Carrier", "Carrier"),
+    ("LAB Labcorp Early Development Laboratories", "Labcorp Early Development Laboratories"),
+    ("LS3002 GE Vernova Operations", "GE Vernova Operations"), ("GE Vernova Operations", "GE Vernova Operations"),
 ])
 def test_company_names(name: str, expected: str) -> None:
     ref = wd.parse_ref(URL)
@@ -302,6 +306,11 @@ def test_degree_choices_never_pick_another_named_degree() -> None:
     assert wp.degree_score("Master of Science", "Masters of Technology (Masters)") >= 0.85
     assert pick("Bachelor of Engineering") == "Bachelors of Arts or Science (Bachelors)"
     assert wp.degree_score("Master of Science", "Master of Business Administration") < 0.85
+    # other common names for the two levels
+    for name in ("Postgraduate", "M.Sc.", "Post Graduate Degree"):
+        assert wp.degree_score("Master of Science", name) >= 0.85, name
+    assert wp.degree_score("Bachelor of Engineering", "4 Year Degree") >= 0.85
+    assert wp.degree_score("Bachelor of Engineering", "Postgraduate") < 0.85
 
 
 def test_a_question_only_vatsal_can_answer_waits_for_him(browser: Any, tmp_path: Path) -> None:
@@ -473,6 +482,17 @@ def test_company_names_lose_codes_and_legal_suffixes() -> None:  # Dexcom, Rocke
         assert company_name({"hiringOrganization": {"name": raw}}, ref) == clean
 
 
+def test_a_remote_posting_names_its_country() -> None:  # GE Aerospace, 2026-11-17: "Remote", Germany only
+    url = "https://geaerospace.wd5.myworkdayjobs.com/ge_externalsite/job/Remote/Applied-AI-Engineer-Intern_R5043333-1"
+    data: dict[str, Any] = {"jobPostingInfo": {"title": "Applied AI Engineer Intern (m/f/d)", "location": "Remote",
+                                               "country": {"descriptor": "Germany"}, "jobDescription": "<p>Python</p>"}}
+    assert wd.job_from_api(data, url, wd.parse_ref(url)).location == "Remote, Germany"
+    data["jobPostingInfo"]["country"] = {"descriptor": "United States of America"}
+    assert wd.job_from_api(data, url, wd.parse_ref(url)).location == "Remote"
+    data["jobPostingInfo"].update(location="Berlin, Germany", country={"descriptor": "Germany"})
+    assert wd.job_from_api(data, url, wd.parse_ref(url)).location == "Berlin, Germany"
+
+
 def test_a_site_that_needs_a_longer_password_gets_the_long_one() -> None:  # Visa, 2026-11-16
     from helper.adapters.workday import Credentials, _min_password_length
 
@@ -494,3 +514,268 @@ def test_a_site_that_needs_a_longer_password_gets_the_long_one() -> None:  # Vis
     assert _min_password_length(Page("Create Account")) is None
     creds = Credentials("x@mockmail.test", "short-pw", long_password="a-much-longer-password")
     assert "longer" not in repr(creds) and "short" not in repr(creds)
+
+
+def test_a_prompt_category_is_opened_and_a_real_choice_sticks() -> None:  # Samsung, Bloomberg, 2026-11-17
+    # "How Did You Hear About Us?": clicking "Job Board" opens its own list; nothing is selected until a leaf is picked
+    from helper.adapters.workday import any_source_but_referral
+
+    class Page:
+        def __init__(self) -> None:
+            self.top = ["Job Board", "Social Media"]
+            self.tree = {"Job Board": ["Employee Referral", "Indeed"], "Social Media": ["LinkedIn"]}
+            self.shown: list[str] = []
+            self.selected: list[str] = []
+            page = self
+
+            class Keyboard:
+                def press(self, key: str) -> None:
+                    page.shown = list(page.top) if key == "Enter" else []
+
+            self.keyboard = Keyboard()
+
+        def wait_for_timeout(self, ms: float) -> None:
+            pass
+
+        def locator(self, selector: str) -> Any:
+            page = self
+            if selector == wp.PROMPT_OPTIONS:
+                class Options:
+                    def all_inner_texts(self) -> list[str]:
+                        return list(page.shown)
+
+                    def nth(self, i: int) -> Any:
+                        class Option:
+                            def click(self) -> None:
+                                label = page.shown[i]
+                                if label in page.tree:
+                                    page.shown = list(page.tree[label])
+                                else:
+                                    page.selected.append(label)
+                                    page.shown = []
+                        return Option()
+                return Options()
+            return SimpleNamespace(count=lambda: 1 if page.shown else 0)
+
+    class Where:
+        def __init__(self, page: Page) -> None:
+            self.page = page
+
+        def locator(self, selector: str) -> Any:
+            page = self.page
+            if selector == wp.SELECTED_ITEMS:
+                return SimpleNamespace(evaluate_all=lambda js: list(page.selected))
+            box = SimpleNamespace(click=lambda: None, fill=lambda text: None, type=lambda text, delay=0: None)
+            return SimpleNamespace(first=box, last=SimpleNamespace(click=lambda: page.selected.pop()))
+
+    page = Page()
+    ok, shown, detail = wp.choose_prompt(page, Where(page), ["Social Media", "Other"], any_source_but_referral)
+    assert (ok, shown) == (True, "Indeed") and page.selected == ["Indeed"]  # never the referral
+
+
+def test_next_is_found_by_its_words_and_never_submit() -> None:  # Samsung, 2026-11-18
+    clicked: list[str] = []
+
+    class Button:
+        def __init__(self, name: str, found: bool) -> None:
+            self.name, self.found = name, found
+
+        @property
+        def first(self) -> "Button":
+            return self
+
+        def count(self) -> int:
+            return 1 if self.found else 0
+
+        def click(self, timeout: int = 0) -> None:
+            clicked.append(self.name)
+
+    class Page:
+        def locator(self, selector: str) -> Button:
+            return Button("by id", False)
+
+        def get_by_role(self, role: str, name: Any = None) -> Button:
+            return Button("Save and Continue", bool(name.match("Save and Continue")) and not name.match("Submit"))
+
+    import helper.adapters.workday_page as page_mod
+
+    original = (page_mod.next_is_submit, page_mod.current_step)
+    page_mod.next_is_submit, page_mod.current_step = (lambda page: False), (lambda page: "My Information")
+    try:
+        page_mod.click_next(Page())
+    finally:
+        page_mod.next_is_submit, page_mod.current_step = original
+    assert clicked == ["Save and Continue"]
+    assert not page_mod.NEXT_WORDS.match("Submit")
+
+
+def test_next_words_work_as_a_javascript_regex() -> None:  # Samsung, 2026-11-18: "(?i)" broke the selector
+    assert "(?i)" not in wp.NEXT_WORDS.pattern and wp.NEXT_WORDS.flags & __import__("re").IGNORECASE
+    assert wp.NEXT_WORDS.match("Save and Continue") and wp.NEXT_WORDS.match("NEXT") and not wp.NEXT_WORDS.match("Submit")
+
+
+def test_a_next_button_that_arrives_late_is_waited_for() -> None:  # HPE, 2026-11-18: My Information right after sign-in
+    import helper.adapters.workday_page as page_mod
+
+    clicked: list[str] = []
+    checks = {"n": 0}
+
+    class Button:
+        def __init__(self, there: bool) -> None:
+            self.there = there
+            self.first = self
+
+        def count(self) -> int:
+            return 1 if self.there else 0
+
+        def click(self, timeout: int = 0) -> None:
+            clicked.append("Next")
+
+    class Page:
+        def locator(self, selector: str) -> Button:
+            checks["n"] += 1
+            return Button(checks["n"] >= 3)
+
+        def get_by_role(self, role: str, name: Any = None) -> Button:
+            return Button(False)
+
+        def wait_for_timeout(self, ms: int) -> None:
+            pass
+
+    original = (page_mod.next_is_submit, page_mod.current_step)
+    page_mod.next_is_submit, page_mod.current_step = (lambda page: False), (lambda page: "My Information")
+    try:
+        page_mod.click_next(Page())
+        assert clicked == ["Next"] and checks["n"] == 3
+        checks["n"] = -100  # never arrives: helper says so instead of clicking
+        with pytest.raises(LookupError):
+            page_mod.click_next(Page(), wait_seconds=3)
+    finally:
+        page_mod.next_is_submit, page_mod.current_step = original
+
+
+def test_follow_up_questions_that_appear_after_answers_are_filled_too(monkeypatch: Any, tmp_path: Path) -> None:
+    """Marvell, 2026-11-18: each answer revealed another required question, three deep, and helper left the last."""
+    import helper.adapters.workday as wd
+    from helper.answers import PlannedAnswer
+    from helper.models import FormQuestion
+
+    def question(key: str, label: str) -> FormQuestion:
+        return FormQuestion(label=label, field_name=key, type="select", required=True, options=["Yes", "No"])
+
+    shown = [question("workday:a", "Are you a U.S. person?")]
+    follow_ups = [question("workday:b", "Are you a citizen of Cuba, Iran, North Korea or Syria?"),
+                  question("workday:c", "Select all countries in which you hold citizenship")]
+    filled: list[str] = []
+
+    def discover(page: Any, skip_special: bool = False, section: str = "") -> tuple[list[Any], dict[str, Any]]:
+        return list(shown), {q.field_name: wp.Found() for q in shown}
+
+    def fill_answer(page: Any, a: Any, found: Any, ctx: Any) -> Any:
+        filled.append(a.field)
+        if follow_ups:
+            shown.append(follow_ups.pop(0))  # answering this one reveals the next
+        return wd.FieldResult(a.field, a.label, True, a.value)
+
+    def plan(questions: list[Any]) -> list[Any]:
+        return [PlannedAnswer(field=q.field_name, label=q.label, type=q.type, required=True, kind="auto", value="No",
+                              confidence=1.0, source="x") for q in questions]
+
+    class Page:
+        def wait_for_timeout(self, ms: int) -> None:
+            pass
+
+    said: list[str] = []
+    monkeypatch.setattr(wd.wp, "discover", discover)
+    monkeypatch.setattr(wd, "fill_answer", fill_answer)
+    monkeypatch.setattr(wd, "_wait_for_fields", lambda page, seconds=20: 0)
+    ctx = wd.FlowContext(company="Example", plan=plan, ask_claude=lambda answers, gone: None,
+                         resume_pdf=tmp_path / "r.pdf", work=[], schools=[], say=said.append, pause=lambda: None)
+    missing = wd._fill_step(Page(), "questions", "Application Questions", ctx, wd.FlowResult())
+    assert missing == [] and filled == ["workday:a", "workday:b", "workday:c"]
+    assert said[0] == "Application Questions: filling 1 question(s)." and "appeared" in said[1]
+
+
+def test_workdays_something_went_wrong_page_is_recognized(browser: Any) -> None:  # HPE, Marvell, 2026-11-18
+    page = browser.new_page()
+    page.set_content("<div data-automation-id='progressBarActiveStep'>current step 1 of 5 My Information</div>"
+                     "<h2>Something went wrong</h2><p>Please refresh the page and then try again.</p>")
+    assert wp.went_wrong(page)
+    page.set_content("<div data-automation-id='progressBarActiveStep'>current step 1 of 5 My Information</div>"
+                     "<label>First Name</label><input>")
+    assert not wp.went_wrong(page)
+    page.close()
+
+
+def test_degree_choices_with_a_note_in_brackets() -> None:  # HPE, 2026-11-18: the required Degree stayed empty
+    hpe = ["Other (other type of degree or diploma)", "High School or GED (±11 years of education)",
+           "Associates (±13 years of education)", "Bachelors (±16 years of education)",
+           "Masters (±18 years of education)", "Doctorate (±20 years of education)"]
+    pick = lambda d: max(hpe, key=lambda o: (wp.degree_score(d, o), -len(o)))  # noqa: E731
+    assert pick("Master of Science") == "Masters (±18 years of education)"
+    assert wp.degree_score("Master of Science", "Masters (±18 years of education)") >= 0.85
+    assert pick("Bachelor of Engineering") == "Bachelors (±16 years of education)"
+    assert wp.degree_score("Bachelor of Engineering", "Bachelors (±16 years of education)") >= 0.85
+    assert wp.degree_score("Master of Science", "Master of Education (MEd)") < 0.85  # a real other degree still loses
+
+
+_WEBSITES = """<div role="group" aria-labelledby="Websites-section"><h3 id="Websites-section">Websites</h3>
+  <div id="rows">ROWS</div>
+  <button data-automation-id="add-button" type="button" onclick="addRow('')">Add Another</button>
+</div>
+<script>
+let n = 0;
+function addRow(value) {
+  n += 1;
+  const row = document.createElement('div');
+  row.setAttribute('role', 'group');
+  row.innerHTML = '<h4>Websites ' + n + '</h4><button type="button" aria-label="Delete Websites ' + n + '">Delete</button>'
+    + '<label>URL*<input type="text"></label>';
+  row.querySelector('input').value = value;
+  row.querySelector('button').onclick = () => row.remove();
+  document.getElementById('rows').appendChild(row);
+}
+</script>"""
+
+
+def _websites_page(browser: Any, values: list[str]) -> Any:
+    page = browser.new_page()
+    page.set_content(_WEBSITES.replace("ROWS", ""))
+    for v in values:
+        page.evaluate("v => addRow(v)", v)
+    return page
+
+
+def test_blank_website_rows_take_the_links_and_leftovers_go(browser: Any) -> None:  # FreedomRoads, 2026-11-18
+    """A page that opened while the account's rows were still loading kept a blank URL row, and Workday refused it."""
+    links = ["https://www.linkedin.com/in/example/", "https://github.com/example", "https://example.github.io/"]
+    values = lambda p: p.locator("[role=group] [role=group] input").evaluate_all("els => els.map(e => e.value)")  # noqa: E731
+    page = _websites_page(browser, [""])
+    (result,) = wp.fill_websites(page, links, pause=lambda: None)
+    assert result.ok and values(page) == links  # the blank row took the first link, then two were added
+    page.close()
+    page = _websites_page(browser, [links[0], "", ""])
+    (result,) = wp.fill_websites(page, links[:2], pause=lambda: None)
+    assert result.ok and values(page) == links[:2] and "deleted 1 blank row" in result.detail
+    page.close()
+    page = _websites_page(browser, links)
+    (result,) = wp.fill_websites(page, links, pause=lambda: None)
+    assert (result.value, result.detail) == ("already listed", "")  # a second pass adds and deletes nothing
+    page.close()
+
+
+def test_review_submit_waits_for_a_late_button_without_the_usual_ids(browser: Any) -> None:
+    """Bloomberg Industry Group, 2026-11-18: helper reached Review, found no Submit button and clicked nothing."""
+    page = browser.new_page()
+    page.set_content("<div data-automation-id='progressBarActiveStep'>current step 5 of 5 Review</div><div id='f'></div>"
+                     "<script>setTimeout(() => { document.getElementById('f').innerHTML = "
+                     "'<button onclick=\"window.sent = (window.sent || 0) + 1\">Submit</button>'; }, 1500);</script>")
+    assert wp.submit_review(page, wait_seconds=6)
+    assert page.evaluate("() => window.sent") == 1  # clicked once
+    page.close()
+    page = browser.new_page()
+    page.set_content("<div data-automation-id='progressBarActiveStep'>current step 3 of 5 Application Questions</div>"
+                     "<button onclick='window.sent = 1'>Submit</button>")
+    assert not wp.submit_review(page, wait_seconds=2)  # never off the Review page
+    assert page.evaluate("() => window.sent") is None
+    page.close()

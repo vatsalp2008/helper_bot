@@ -24,7 +24,10 @@ from ..dates import MonthYear, parse_month_year
 from ..models import FormQuestion
 from .common import FieldResult, tick
 
-NEXT_BUTTON = "[data-automation-id=pageFooterNextButton], [data-automation-id=bottom-navigation-next-button]"
+NEXT_BUTTON = ("[data-automation-id=pageFooterNextButton], [data-automation-id=bottom-navigation-next-button], "
+               "[data-automation-id=bottomNavigationNextButton]")
+# a flag, not an inline (?i): Playwright hands the pattern to the page as a JavaScript regex (Samsung, 2026-11-18)
+NEXT_WORDS = re.compile(r"^\s*(next|continue|save and continue)\s*$", re.IGNORECASE)  # never "Submit" (rule 10)
 LISTBOX_OPTIONS = "ul[role=listbox]:not([data-automation-id=selectedItemList]) li[role=option]"
 PROMPT_OPTIONS = "[data-automation-id=activeListContainer] [role=option]"
 SELECTED_ITEMS = "[data-automation-id=selectedItemList] [data-automation-id=promptOption]"
@@ -97,6 +100,19 @@ def block(page: Any, key: str) -> Any:
 # --------------------------------------------------------------------------- where the flow is
 
 
+_WENT_WRONG = re.compile(r"something went wrong", re.IGNORECASE)  # a flag, not "(?i)": Playwright runs it as JS
+
+
+def went_wrong(page: Any) -> bool:
+    """Workday's own error page inside the application: "Something went wrong. Please refresh the page and then try
+    again." (HPE and Marvell, reopened after a helper fix, 2026-11-18)."""
+    try:
+        shown = page.get_by_text(_WENT_WRONG)
+        return shown.count() > 0 and shown.first.is_visible()
+    except Exception:
+        return False
+
+
 def current_step(page: Any) -> Optional[str]:
     """The name of the active step ('My Information', 'Review', 'Create Account/Sign In'), or None outside the flow."""
     bar = page.locator("[data-automation-id=progressBarActiveStep]")
@@ -135,24 +151,49 @@ def next_is_submit(page: Any) -> bool:
         return True  # unsure: treat it as Submit, so it is never clicked
 
 
-def click_next(page: Any) -> None:
-    """Go to the next page. Refuses whenever the button is Submit or the page is Review (review mode, rule 10)."""
+def click_next(page: Any, wait_seconds: float = 15) -> None:
+    """Go to the next page. Refuses whenever the button is Submit or the page is Review (review mode, rule 10).
+    Waits for a Next button that arrives late: right after signing in, HPE's My Information page had none yet and
+    helper handed the page over (2026-11-18)."""
     if next_is_submit(page) or step_kind(current_step(page)) == "review":
         raise RuntimeError("refusing to click Submit: Vatsal submits")
-    page.locator(NEXT_BUTTON).first.click()
+    tries = max(1, int(wait_seconds))
+    for attempt in range(tries):
+        button = page.locator(NEXT_BUTTON).first
+        if not button.count():  # Samsung's Workday (2026-11-18): none of the usual ids; find the button by its words
+            button = page.get_by_role("button", name=NEXT_WORDS).first
+        if button.count():
+            break
+        if attempt == tries - 1:
+            raise LookupError("Workday's Next button isn't on this page")
+        page.wait_for_timeout(1000)
+        if next_is_submit(page) or step_kind(current_step(page)) == "review":
+            raise RuntimeError("refusing to click Submit: Vatsal submits")
+    button.click(timeout=15000)
 
 
-def submit_review(page: Any) -> bool:
+SUBMIT_WORDS = re.compile(r"^\s*submit(\s+(my\s+)?application)?\s*$", re.IGNORECASE)
+
+
+def _shown(buttons: Any) -> list[Any]:
+    return [buttons.nth(i) for i in range(buttons.count()) if buttons.nth(i).is_visible()]
+
+
+def submit_review(page: Any, wait_seconds: float = 15) -> bool:
     """Auto-submit (Vatsal, 2026-11-16): click Submit on the Review page, once. Only on the Review page, only when
-    exactly one visible Submit button is there."""
-    if step_kind(current_step(page)) != "review":
-        return False
-    button = page.locator(NEXT_BUTTON)
-    visible = [button.nth(i) for i in range(button.count()) if button.nth(i).is_visible()]
-    if len(visible) != 1 or not re.search(r"submit", visible[0].inner_text(timeout=2000), re.I):
-        return False
-    visible[0].click()
-    return True
+    exactly one visible Submit button is there. It waits for a button that arrives late and finds one without
+    Workday's usual ids by its words, as click_next does (Bloomberg Industry Group, 2026-11-18: helper reached Review
+    and never clicked; nothing was sent)."""
+    for attempt in range(max(1, int(wait_seconds))):
+        if attempt:
+            page.wait_for_timeout(1000)
+        if step_kind(current_step(page)) != "review":
+            continue
+        visible = _shown(page.locator(NEXT_BUTTON)) or _shown(page.get_by_role("button", name=SUBMIT_WORDS))
+        if len(visible) == 1 and re.search(r"submit", visible[0].inner_text(timeout=2000), re.I):
+            visible[0].click()
+            return True
+    return False
 
 
 def errors_shown(page: Any) -> list[str]:
@@ -306,9 +347,23 @@ def choose_prompt(page: Any, where: Any, terms: list[str], accept: Callable[[str
         if scored and scored[0][0] >= threshold:
             options.nth(scored[0][1]).click()
             page.wait_for_timeout(800)
+            # A category ("Job Board ›") opens its own list instead of selecting anything, and the field stayed empty
+            # (Bloomberg, Samsung, 2026-11-17): pick inside it, up to two levels down, and only count a pick that stuck.
+            for _ in range(2):
+                if [s for s in selected_items(where) if s not in existing]:
+                    break
+                inner = page.locator(PROMPT_OPTIONS)
+                inner_texts = [" ".join(t.split()) for t in inner.all_inner_texts()]
+                ranked = sorted(((accept(t), i) for i, t in enumerate(inner_texts) if t), key=lambda x: (-x[0], x[1]))
+                if not ranked or ranked[0][0] < threshold:
+                    break
+                inner.nth(ranked[0][1]).click()
+                page.wait_for_timeout(800)
             _close_popup(page)
             chosen = [s for s in selected_items(where) if s not in existing]
-            return True, chosen[-1] if chosen else texts[scored[0][1]], ""
+            if chosen:
+                return True, chosen[-1], ""
+            existing = selected_items(where)  # nothing stuck: try the next term
     box.fill("")
     _close_popup(page)
     return False, terms[0] if terms else "", f"no search result matches '{terms[0] if terms else ''}'"
@@ -524,9 +579,10 @@ def _span(my: Optional[MonthYear]) -> str:
 
 
 DEGREE_ALIASES = {
-    "master": ("masters", "master's", "master's degree", "master", "ms", "m s", "msc", "graduate", "master of science"),
+    "master": ("masters", "master's", "master's degree", "master", "ms", "m s", "msc", "m sc", "graduate",
+               "postgraduate", "post graduate", "master of science"),
     "bachelor": ("bachelors", "bachelor's", "bachelor's degree", "bachelor", "be", "b e", "bs", "b s", "btech",
-                 "b tech", "bachelor of engineering", "undergraduate"),
+                 "b tech", "bachelor of engineering", "undergraduate", "4 year degree", "four year degree"),
 }
 
 
@@ -546,11 +602,17 @@ def degree_score(degree: str, option: str) -> float:
     Administration - MBA (ISCED 7)" tied "Master's or Equivalent (ISCED 7: MA, MSc, ...)" for "Master of Science" and
     won as the shorter one (2026-11-16)."""
     score = match_option(degree, [option], degree_aliases(degree))[1]
+    # a note in brackets isn't part of the name: HPE's "Masters (±18 years of education)" scored too low and the
+    # required Degree stayed empty (2026-11-18)
+    core = " ".join(re.sub(r"\([^()]*\)?", " ", option).split())
+    if core and core != option:
+        score = max(score, match_option(degree, [core], degree_aliases(degree))[1])
     # "(ISCED 7: MA, MSc, MEng, MBA, LLM, et cetera)" is a list of examples, not the choice's own name
     examples = " ".join(re.findall(r"\(([^()]*,[^()]*)\)?", option))
     name = re.sub(r"\([^()]*,[^()]*\)?", " ", option)
-    mine, theirs = _DEGREE_OF.search(degree), _DEGREE_OF.search(name)
-    if _OTHER_DEGREES.search(name) and not _OTHER_DEGREES.search(degree):
+    # the degree's own name, without notes in brackets: "(±18 years of education)" isn't a Master of Education
+    mine, theirs = _DEGREE_OF.search(degree), _DEGREE_OF.search(core or name)
+    if _OTHER_DEGREES.search(core or name) and not _OTHER_DEGREES.search(degree):
         return min(score, 0.5)  # a professional degree (MBA, law, medicine) is never his
     if theirs and mine and theirs.group(1).lower() != mine.group(1).lower():
         # another field of the same level: only when nothing closer is offered (KLA has no Master of Science, so
@@ -638,13 +700,7 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
                     pass
             degree = _field_of(page, base + "degree")
             if degree.count() and degree.locator("button[aria-haspopup=listbox]").count():
-                options = dropdown_options(page, degree)
-                scored = sorted(((degree_score(s.degree, o), -len(o), o) for o in options if o.strip()), reverse=True)
-                best, score = (scored[0][2], scored[0][0]) if scored else (None, 0.0)
-                if best is not None and score >= 0.85:
-                    choose_dropdown(page, degree, best)
-                else:
-                    notes.append(f"degree: no choice matches '{s.degree}'")
+                notes += _choose_degree(page, degree, s.degree)
             study = _field_of(page, base + "fieldOfStudy")
             if study.count() and s.field_of_study:
                 ok, _, why = choose_prompt(page, study, [s.field_of_study],
@@ -671,6 +727,30 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
         except Exception:
             pass
     return results
+
+
+def _choose_degree(page: Any, degree: Any, wanted: str) -> list[str]:
+    """Pick the degree. Returns what went wrong, if anything. A list that opened slowly (an overloaded Mac) left
+    HPE's required Degree empty with no word about it (2026-11-18), so a closed list is tried again, a failed pick
+    is reported, and a no-match names the choices."""
+    options = dropdown_options(page, degree)
+    if not options:
+        page.wait_for_timeout(1500)
+        options = dropdown_options(page, degree)
+    if not options:
+        return ["degree: the Degree list didn't open; pick it in the window"]
+    scored = sorted(((degree_score(wanted, o), -len(o), o) for o in options if o.strip()), reverse=True)
+    best, score = scored[0][2], scored[0][0]
+    if score < 0.85:
+        return [f"degree: no choice matches '{wanted}' (choices: {', '.join(options[:15])})"]
+    ok, shown, why = choose_dropdown(page, degree, best)
+    if not ok:
+        ok, shown, why = choose_dropdown(page, degree, best)
+    held = " ".join(degree.locator("button[aria-haspopup=listbox]").first.inner_text().split())
+    if not ok or match_option(best, [held])[1] < 0.95:
+        return [f"degree: picking '{best}' didn't hold ({why or 'the box still shows ' + repr(held)}); pick it in the "
+                "window"]
+    return []
 
 
 def required_gpa_fields(page: Any) -> list[str]:
@@ -824,19 +904,31 @@ def fill_websites(page: Any, urls: list[str], pause: Callable[[], None]) -> list
     if not urls or not group.count():
         return []
     norm = lambda u: u.strip().rstrip("/").lower()  # noqa: E731
-    present = {norm(v) for v in group.locator(_URL_INPUTS).evaluate_all("els => els.map(e => e.value)") if v}
+    values = group.locator(_URL_INPUTS).evaluate_all("els => els.map(e => e.value)")
+    present = {norm(v) for v in values if v}
+    todo = [u for u in urls if norm(u) not in present]
     added, failed = [], []
-    for url in urls:
-        if norm(url) in present:
-            continue
+    # a row already there but blank takes a link first: a page that opened while the account's rows were still
+    # loading kept them empty, and Workday refused it ("The field URL is required"; FreedomRoads, 2026-11-18)
+    for i, value in enumerate(values):
+        if todo and not value.strip():
+            url = todo.pop(0)
+            group.locator(_URL_INPUTS).nth(i).fill(url)
+            present.add(norm(url))
+            added.append(url)
+            pause()
+    for url in todo:
         before = group.locator(_URL_INPUTS).count()
         button = group.locator("button[data-automation-id=add-button]")
         if not button.count():
             failed.append(url)
             continue
         button.first.click()
-        page.wait_for_timeout(900)
         boxes = group.locator(_URL_INPUTS)
+        for _ in range(8):  # a new row can take a few seconds (Bloomberg Industry Group, 2026-11-18)
+            page.wait_for_timeout(500)
+            if boxes.count() > before:
+                break
         if boxes.count() <= before:
             failed.append(url)
             continue
@@ -844,5 +936,29 @@ def fill_websites(page: Any, urls: list[str], pause: Callable[[], None]) -> list
         present.add(norm(url))
         added.append(url)
         pause()
+    removed = _drop_blank_websites(page, group)
     detail = f"couldn't add: {', '.join(failed)}" if failed else ""
+    if removed:
+        detail = "; ".join(d for d in (detail, f"deleted {removed} blank row(s)") if d)
     return [FieldResult("workday:websites", "Websites", not failed, "; ".join(added) or "already listed", detail)]
+
+
+def _drop_blank_websites(page: Any, group: Any) -> int:
+    """Delete Websites rows still blank once every link is in (Workday won't take an empty URL). Only a row whose own
+    panel holds exactly that one box is deleted, so a filled row never goes with it."""
+    removed = 0
+    for _ in range(6):
+        values = group.locator(_URL_INPUTS).evaluate_all("els => els.map(e => e.value)")
+        blank = [i for i, v in enumerate(values) if not v.strip()]
+        if not blank:
+            break
+        panel = group.locator(_URL_INPUTS).nth(blank[-1]).locator("xpath=ancestor::*[@role='group'][1]")
+        delete = panel.get_by_role("button", name=re.compile(r"^Delete", re.I))
+        if panel.locator(_URL_INPUTS).count() != 1 or not delete.count():
+            break
+        delete.first.click()
+        page.wait_for_timeout(600)
+        if group.locator(_URL_INPUTS).count() >= len(values):
+            break
+        removed += 1
+    return removed

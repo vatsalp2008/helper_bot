@@ -173,6 +173,9 @@ def apply(
         started.state.options["submit_mode"] = submit_mode
         save_state(paths, started.state)
     typer.echo(format_started(paths, started))
+    from .hunt import on_run_started
+
+    on_run_started(paths, cfg, url, started.state)  # a posting on the job hunt's list is being applied to now
     if submit_mode == "auto":
         typer.echo("Submit mode: auto. helper clicks Submit itself only if every auto-submit condition holds "
                    "(spec 10.5); otherwise this run falls back to review mode and says why.")
@@ -220,6 +223,10 @@ def resume(
             url=url, location=location, projects=projects, include_experience=include_experience, grad_date=grad_date,
         )
     typer.echo(format_started(paths, started))
+    if url:
+        from .hunt import on_run_started
+
+        on_run_started(paths, load_config(paths), url, started.state)  # a listed posting helper can't fill
     if started.blocked:
         raise blocked_message(started.state)
     raise waiting(paths, started.state.run_id)
@@ -232,15 +239,30 @@ def fill(
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would be filled; open no browser.")] = False,
     wait: Annotated[Optional[float], typer.Option("--wait", help="Minutes to wait for you to submit.")] = None,
     headless: Annotated[bool, typer.Option("--headless", help="Hidden browser (tests only).")] = False,
+    keep_open: Annotated[bool, typer.Option("--keep-open", help="The job hunt: if it stops for you, keep the window "
+                                            "open for stuck_window_hours (default 24) instead of the usual wait.")] = False,
+    replan: Annotated[bool, typer.Option("--replan", help="Plan the answers again with today's rules first (a refill "
+                                         "after an answer rule was fixed); Claude's earlier answers are kept.")] = False,
+    rescan: Annotated[bool, typer.Option("--rescan", help="Read a company-site form's questions again first (a refill "
+                                         "after helper learned to read that kind of form); questions the rules can't "
+                                         "answer go to Claude, as in `helper continue`.")] = False,
 ) -> None:
     """Fill the application form in a browser window, stop before Submit, and log the result after you submit."""
-    from .apply import fill_run
+    from .apply import fill_run, replan as replan_answers, rescan as rescan_form
     from .config import load_config
     from .errors import EXIT_NEEDS_USER
 
     paths = _paths()
-    outcome = fill_run(paths, load_config(paths), run_id, dry_run=dry_run, wait_minutes=wait,
-                       headless=True if headless else None)
+    cfg = load_config(paths)
+    if keep_open and wait is None:  # Vatsal, 2026-11-16: a stuck window stays open for him to review later
+        wait = cfg.stuck_window_hours * 60
+    if rescan:  # waiting for Claude stops here (exit 3); after `helper continue`, run `helper fill` again
+        typer.echo(rescan_form(paths, cfg, run_id))
+    elif replan:
+        changes = replan_answers(paths, cfg, run_id)
+        typer.echo("Planned again with today's rules" + (":\n" + "\n".join(f"  {c}" for c in changes) if changes
+                                                         else ": no answers changed."))
+    outcome = fill_run(paths, cfg, run_id, dry_run=dry_run, wait_minutes=wait, headless=True if headless else None)
     typer.echo(outcome.message)
     if outcome.status == "filled":
         raise typer.Exit(EXIT_NEEDS_USER)
@@ -256,6 +278,141 @@ def assist(
     from .assist import assist as run_assist
 
     typer.echo(run_assist(_paths(), run_id, open_browser=not no_open))
+
+
+@app.command()
+@guarded
+def find(
+    hours: Annotated[float, typer.Option("--hours", help="How far back to look.")] = 24,
+    limit: Annotated[int, typer.Option("--limit", help="Postings to check for eligibility (newest first).")] = 100,
+    no_check: Annotated[bool, typer.Option("--no-check", help="Skip the eligibility checks (faster).")] = False,
+) -> None:
+    """The job hunt: new postings from the last day, from every public source helper can read. Read-only, except that
+    ineligible postings go on the list as skipped."""
+    from .config import load_config
+    from .hunt import find_command
+
+    paths = _paths()
+    typer.echo(find_command(paths, load_config(paths), hours, limit, check=not no_check))
+
+
+queue_app = typer.Typer(help="The job hunt's list of postings (exports/postings_queue.md).", no_args_is_help=False,
+                        invoke_without_command=True)
+app.add_typer(queue_app, name="queue")
+
+
+@queue_app.callback()
+def queue_main(
+    ctx: typer.Context,
+    as_json: Annotated[bool, typer.Option("--json", help="Every row as JSON.")] = False,
+    page_file: Annotated[Optional[Path], typer.Option("--page-file", help="Write the list's web page record "
+                                                      "(hunt/list) to this JSON file.")] = None,
+) -> None:
+    """Show the list."""
+    if ctx.invoked_subcommand is not None:
+        return
+    import json as _json
+
+    from .config import load_config
+    from .hunt import refresh
+    from .tracker import queue as q
+    from .tracker.commands import open_db
+
+    paths = _paths()
+    conn = open_db(paths, load_config(paths))
+    try:
+        if as_json:
+            typer.echo(_json.dumps(q.as_dicts(conn), indent=1, ensure_ascii=False, default=str))
+            return
+        if page_file is not None:
+            page_file.parent.mkdir(parents=True, exist_ok=True)
+            page_file.write_text(_json.dumps(q.page_doc(conn), ensure_ascii=False, default=str), encoding="utf-8")
+            typer.echo(f"wrote {page_file} ({len(q.page_doc(conn)['rows'])} rows)")
+            return
+        typer.echo(q.render_markdown(conn))
+        typer.echo(f"(also in {refresh(paths, conn).relative_to(paths.root)})")
+    finally:
+        conn.close()
+
+
+@queue_app.command("add")
+@guarded
+def queue_add(
+    urls: Annotated[list[str], typer.Argument(help="Posting links (details come from the latest `helper find`).")],
+    skip: Annotated[Optional[str], typer.Option("--skip", help="List them as skipped, with this reason.")] = None,
+) -> None:
+    """Put postings on the list (queued), or record them as skipped."""
+    from .config import load_config
+    from .hunt import add
+
+    paths = _paths()
+    for line in add(paths, load_config(paths), urls, status="skipped" if skip else "queued", reason=skip):
+        typer.echo(line)
+
+
+@queue_app.command("set")
+@guarded
+def queue_set(
+    key: Annotated[str, typer.Argument(help="Row id, posting link or run id.")],
+    status: Annotated[str, typer.Argument(help="queued, applying, needs_you, ready_for_you or skipped.")],
+    reason: Annotated[Optional[str], typer.Option("--reason", help="Why (shown on the list).")] = None,
+) -> None:
+    """Change a posting's status on the list."""
+    from .config import load_config
+    from .hunt import refresh
+    from .tracker import queue as q
+    from .tracker.commands import open_db
+
+    paths = _paths()
+    conn = open_db(paths, load_config(paths))
+    try:
+        if not q.set_status(conn, key, status, reason):
+            raise HelperError(f"nothing on the list matches {key!r} (`helper queue` shows the list)")
+        conn.commit()
+        refresh(paths, conn)
+        typer.echo(f"{key}: {status}" + (f" ({reason})" if reason else ""))
+    finally:
+        conn.close()
+
+
+@queue_app.command("remove")
+@guarded
+def queue_remove(key: Annotated[str, typer.Argument(help="Row id, posting link or run id.")]) -> None:
+    """Take a posting off the list."""
+    from .config import load_config
+    from .hunt import refresh
+    from .tracker import queue as q
+    from .tracker.commands import open_db
+
+    paths = _paths()
+    conn = open_db(paths, load_config(paths))
+    try:
+        if not q.remove(conn, key):
+            raise HelperError(f"nothing on the list matches {key!r}")
+        conn.commit()
+        refresh(paths, conn)
+        typer.echo(f"removed {key}")
+    finally:
+        conn.close()
+
+
+@queue_app.command("note")
+@guarded
+def queue_note(text: Annotated[str, typer.Argument(help="What this session found (shown at the top of the list).")]) -> None:
+    """Record the session's summary on the list (for example: only 7 good postings in the last 24 hours)."""
+    from .config import load_config
+    from .hunt import refresh
+    from .tracker import queue as q
+    from .tracker.commands import open_db
+
+    paths = _paths()
+    conn = open_db(paths, load_config(paths))
+    try:
+        q.set_note(conn, text)
+        conn.commit()
+        refresh(paths, conn)
+    finally:
+        conn.close()
 
 
 @app.command("continue")
@@ -293,6 +450,9 @@ def continue_(
         typer.echo(f"Run {run_id} is finished: its resume and cover letter are built.")
     if letter and load_state(paths, run_id).command == "resume":
         typer.echo(f"To apply yourself: `helper assist {run_id}` opens the posting in your browser with a paste sheet.")
+        from .hunt import on_resume_ready
+
+        on_resume_ready(paths, cfg, run_id)
 
 
 @app.command("cover-letter")
@@ -421,6 +581,9 @@ def mark(
         typer.echo(f"#{row['id']} {row['company']}, {row['role_title']}: {before} -> {row['status']}"
                    + (f" (applied {row['date_applied']})" if row["date_applied"] else ""))
         typer.echo(push_one(paths, conn, application_id))
+        from .hunt import on_marked
+
+        on_marked(paths, conn, application_id, row["status"])
     finally:
         conn.close()
 

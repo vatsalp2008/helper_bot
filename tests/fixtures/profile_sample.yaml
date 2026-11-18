@@ -21,6 +21,7 @@ tier1:
     street: 1 Example Way
     unit: null
     city: Springfield
+    county: Example County
     state: ST
     postal_code: "00000"
     country: United States
@@ -55,6 +56,9 @@ tier2:
     value: "No"
     yes_when_question_includes_cpt_opt: true
   us_citizen_or_permanent_resident:
+    auto_answer: false
+    value: null
+  f1_student:
     auto_answer: false
     value: null
   earliest_start_date:

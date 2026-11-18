@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -142,6 +143,133 @@ def _choose_suggestion(root: Any, field: Any, typed: str, wanted: str, timeout_m
     return True, texts[index]
 
 
+_MENU_TOGGLE = "button[aria-haspopup]"
+
+
+def _choose_from_menu(root: Any, block: Any, wanted: str) -> tuple[bool, Optional[str], str]:
+    """A styled dropdown whose real <select> stays empty until something is picked: BambooHR's Fabric select keeps
+    its choices in a pop-up menu (All Options' State and Country, 2026-11-18). Open it and click the best item."""
+    from ..answers import us_state_name
+
+    toggle = block.locator(_MENU_TOGGLE).first
+    toggle.click()
+    menu = toggle.get_attribute("data-menu-id") or toggle.get_attribute("aria-controls")
+    items = (root.locator(f"[id={json.dumps(menu)}] [role=menuitem], [id={json.dumps(menu)}] [role=option]") if menu
+             else root.locator("[role=menuitem]:visible, [role=option]:visible"))
+    try:
+        items.first.wait_for(state="visible", timeout=5000)
+    except Exception:
+        keyboard(root).press("Escape")
+        return False, wanted, "the dropdown's list didn't open"
+    texts = [" ".join(t.split()) for t in items.all_inner_texts()]
+    index = _pick(wanted, texts)
+    if index is None and us_state_name(wanted):  # "WA" in a list of full names
+        index = _pick(us_state_name(wanted) or "", texts)
+    if index is None:
+        keyboard(root).press("Escape")
+        return False, wanted, f"no option matches '{wanted}' (choices: {', '.join(texts[:10])})"
+    items.nth(index).click()
+    return True, texts[index], ""
+
+
+_COMBOBOX = "[role=combobox]"
+_SHOWN_JS = "e => (e.value !== undefined ? e.value : e.innerText || '').replace(/\\s+/g, ' ').trim()"
+_UNPICKED = re.compile(r"(?i)^(select|choose|search|pick)\b.{0,15}$|^$")
+
+
+def _open_options(root: Any, combo: Any, timeout_ms: int) -> tuple[Any, list[str]]:
+    """Click an ARIA combobox and read the options its list shows ([] when none show)."""
+    combo.click(timeout=5000)
+    items = root.locator("[role=option]:visible")
+    try:
+        items.first.wait_for(state="visible", timeout=timeout_ms)
+    except Exception:
+        return items, []
+    ref = combo.get_attribute("aria-controls") or combo.get_attribute("aria-owns")
+    if ref:  # the list this box opened, when it names it
+        own = root.locator(f"[id={json.dumps(ref)}] [role=option]")
+        if own.count():
+            items = own
+    return items, [" ".join(t.split()) for t in items.all_inner_texts()]
+
+
+def listbox_options(root: Any, key: str, timeout_ms: int = 2500) -> list[str]:
+    """The choices of an ARIA dropdown (Rippling, 2026-11-18), read by opening its list and closing it again; nothing
+    is picked. [] for a box that shows nothing until typed into (a place search)."""
+    combo = _inside(_block(root, key), _COMBOBOX)
+    texts: list[str] = []
+    try:
+        if combo.count():
+            _, texts = _open_options(root, combo, timeout_ms)
+    except Exception:
+        texts = []
+    finally:
+        try:
+            keyboard(root).press("Escape")
+        except Exception:
+            pass
+    return [t for t in dict.fromkeys(texts) if t]
+
+
+def _choose_from_listbox(root: Any, combo: Any, wanted: str) -> tuple[bool, Optional[str], str]:
+    """An ARIA dropdown (Rippling's role=combobox, 2026-11-18): open its list and click the best option. A dropdown
+    with a search box gets the answer's first words typed when the option isn't in view (long lists)."""
+    from ..answers import us_state_name
+
+    def best(texts: list[str]) -> Optional[int]:
+        index = _pick(wanted, texts) if texts else None
+        if index is None and texts and us_state_name(wanted):  # "WA" in a list of full names
+            index = _pick(us_state_name(wanted) or "", texts)
+        return index
+
+    items, texts = _open_options(root, combo, 5000)
+    index = best(texts)
+    if index is None and combo.evaluate("e => e.tagName === 'INPUT'"):
+        combo.fill("")
+        combo.type(re.split(r"[(,]", wanted)[0].strip()[:30], delay=40)
+        try:
+            items = root.locator("[role=option]:visible")
+            items.first.wait_for(state="visible", timeout=4000)
+            texts = [" ".join(t.split()) for t in items.all_inner_texts()]
+        except Exception:
+            texts = []
+        index = best(texts)
+    if index is None:
+        keyboard(root).press("Escape")
+        if not texts:
+            return False, wanted, "the dropdown's list didn't open"
+        return False, wanted, f"no option matches '{wanted}' (choices: {', '.join(texts[:10])})"
+    items.nth(index).click()
+    shown = ""
+    for _ in range(10):  # the box shows the pick a moment later
+        shown = combo.evaluate(_SHOWN_JS)
+        if not _UNPICKED.match(shown):
+            break
+        time.sleep(0.2)
+    if _UNPICKED.match(shown):
+        return False, texts[index], f"the dropdown still shows '{shown or 'nothing'}' after picking '{texts[index]}'"
+    return True, texts[index], ""
+
+
+def _choose_aria_radio(block: Any, wanted: str) -> tuple[bool, Optional[str], str]:
+    """A radio group of role=radio elements with no input inside (Rippling's Strong No / No / Yes / Strong Yes
+    questions, 2026-11-18): click the best option and check that it took."""
+    radios = block.locator("[role=radio]")
+    labels = [(radios.nth(i).get_attribute("aria-label") or radios.nth(i).inner_text()).strip()
+              for i in range(radios.count())]
+    index = _pick(wanted, labels)
+    if index is None:
+        return False, wanted, f"no option matches '{wanted}' (choices: {', '.join(labels[:8])})"
+    radio = radios.nth(index)
+    for _ in range(2):
+        radio.click()
+        for _ in range(10):
+            if radio.get_attribute("aria-checked") == "true":
+                return True, labels[index], ""
+            time.sleep(0.15)
+    return False, labels[index], f"the site didn't keep the pick on '{labels[index]}'"
+
+
 def fill_dom_form(root: Any, answers: list[Any], resume_pdf: Path, *, city: Optional[str],
                   pause: Callable[[], None], date_text: Callable[[str], str] = lambda v: v) -> list[FieldResult]:
     """Fill every planned answer whose block is in the form. Never touches the submit button."""
@@ -186,7 +314,13 @@ def _fill_one(root: Any, block: Any, a: Any, pdf: Path, city: Optional[str],
         return True, a.value, ""
     if a.type == "select":
         select = _inside(block, "select")
+        if not select.count():
+            combo = _inside(block, _COMBOBOX)
+            if combo.count():  # an ARIA dropdown with no <select> (Rippling, 2026-11-18)
+                return _choose_from_listbox(root, combo, a.value)
         options = [o.strip() for o in select.locator("option").all_inner_texts()]
+        if not any(options) and block.locator(_MENU_TOGGLE).count():
+            return _choose_from_menu(root, block, a.value)
         index = _pick(a.value, options)
         if index is None:
             return False, a.value, f"no option matches '{a.value}'"
@@ -195,6 +329,8 @@ def _fill_one(root: Any, block: Any, a: Any, pdf: Path, city: Optional[str],
     if a.type in ("radio", "multi_select", "boolean"):
         kind = "radio" if a.type == "radio" else "checkbox"
         boxes = _labels(block, kind)
+        if not boxes and a.type == "radio" and block.locator("[role=radio]").count():
+            return _choose_aria_radio(block, a.value)
         wanted = [v.strip() for v in a.value.split(";")] if a.type == "multi_select" else [a.value]
         if a.type == "boolean":
             same = " ".join(a.value.strip(" *").split()).lower() == " ".join(a.label.strip(" *").split()).lower()
@@ -230,7 +366,13 @@ def _fill_one(root: Any, block: Any, a: Any, pdf: Path, city: Optional[str],
         field.fill(date_text(a.value))
         keyboard(root).press("Enter")
         return True, date_text(a.value), ""
-    _inside(block, _ANSWER_INPUTS).fill(a.value)
+    field = _inside(block, _ANSWER_INPUTS)
+    if a.key == "location_city" and (field.get_attribute("aria-autocomplete") == "list"
+                                     or field.get_attribute("role") == "combobox"):
+        # a place search that wants one of its suggestions picked (Rippling's Location, 2026-11-18)
+        ok, shown = _choose_suggestion(root, field, city or a.value.split(",")[0], a.value)
+        return ok, shown if ok else a.value, "" if ok else shown
+    field.fill(a.value)
     return True, a.value, ""
 
 

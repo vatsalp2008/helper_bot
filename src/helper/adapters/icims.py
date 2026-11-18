@@ -125,6 +125,9 @@ class FlowContext:  # the same shape as Workday's, so apply.py drives both
     go_on: Callable[[], bool] = lambda: False
     wait_seconds: float = 1800
     poll_seconds: float = 2.0
+    # apply.py passes it to both adapters (Workday's sign-in-first memory); iCIMS has no use for it yet. Missing here,
+    # every iCIMS fill crashed before opening (Constellation, 2026-11-18).
+    on_account: Callable[[str], None] = lambda kind: None
 
 
 def app_frame(page: Any) -> Optional[Any]:
@@ -196,8 +199,21 @@ def _forward_button(frame: Any) -> tuple[Optional[dict[str, Any]], bool]:
     return submit, submit is not None
 
 
-def _click(frame: Any, button: dict[str, Any]) -> None:
-    frame.locator(f"[data-helper-button='{button['i']}']").first.click()
+def _click(frame: Any, button: dict[str, Any]) -> bool:
+    """Click a forward button. False when it stays disabled (a consent box to tick first, Constellation 2026-11-18):
+    the caller hands the window over instead of waiting 30 seconds and crashing."""
+    target = frame.locator(f"[data-helper-button='{button['i']}']").first
+    for _ in range(10):
+        try:
+            if target.is_enabled():
+                break
+        except Exception:
+            return False
+        frame.wait_for_timeout(500)
+    else:
+        return False
+    target.click(timeout=15000)
+    return True
 
 
 def _settle(page: Any, frame: Any) -> None:
@@ -345,7 +361,9 @@ def _account_step(page: Any, frame: Any, stage: str, ctx: FlowContext, out: Flow
     if button is None or says_submit:
         return _hand_over(page, frame, ctx, "helper couldn't find the button that goes on from iCIMS's sign-in page. "
                                             "Click it in the window.") != "timeout"
-    _click(frame, button)
+    if not _click(frame, button):
+        return _hand_over(page, frame, ctx, "iCIMS's button to go on stays disabled (often a consent box to tick "
+                                            "first). Tick it and go on in the window.") != "timeout"
     if _moved(page, before) == "same":
         frame = app_frame(page) or frame
         errors = common.visible_errors(frame)
@@ -388,7 +406,9 @@ def _form_page(page: Any, frame: Any, ctx: FlowContext, out: FlowResult, before:
         return _hand_over(page, frame, ctx, "helper couldn't find a Next button on this page. Go on in the window.") \
             == "changed"
     pre_click = signature(frame)
-    _click(frame, button)
+    if not _click(frame, button):
+        return _hand_over(page, frame, ctx, "iCIMS's Next button stays disabled (often a consent box to tick first). "
+                                            "Tick it and click Next in the window.") == "changed"
     moved = _moved(page, pre_click)
     after = app_frame(page) or frame
     if moved == "same":  # the page didn't go on

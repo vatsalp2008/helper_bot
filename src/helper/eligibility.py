@@ -114,15 +114,31 @@ class Eligibility(StrictModel):
 _MONTHS = (r"January|February|March|April|May|June|July|August|September|October|November|December"
            r"|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec")
 _SEASONS = r"Spring|Summer|Fall|Autumn|Winter"
+_MONTH_RANGE_RE = re.compile(
+    rf"(?i)\b({_MONTHS})\.?\s*(?:\d{{1,2}}(?:st|nd|rd|th)?,?\s*)?(?:(20\d\d)\s*)?(?:-|–|to|through|until)\s*"
+    rf"({_MONTHS})\.?\s*(?:\d{{1,2}}(?:st|nd|rd|th)?,?\s*)?(20\d\d)\b"
+)
+
+
+def _month_number(name: str) -> int:
+    return {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7, "aug": 8, "sep": 9, "oct": 10,
+            "nov": 11, "dec": 12}[name[:3].lower()]
 _WHEN = rf"(?:(?:{_MONTHS})\.?\s+\d{{4}}|(?:{_SEASONS})\s+\d{{4}}|\d{{4}})"
 
-_VISA = r"(?:F-?1|STEM OPT|OPT|CPT|student visas?|international students?)"
+_VISA = (r"(?:F-?1|STEM OPT|OPT|CPT|student visas?|international students?|Curricular Practical Training"
+         r"|Optional Practical Training)")
 _EXCLUSION_RES = [
     re.compile(rf"(?i)\b{_VISA}\b[^.\n]{{0,80}}?\b(?:(?:are|is)\s+not\s+(?:eligible|considered|accepted|supported)"
                r"|ineligible|not eligible|(?:will|can)\s*not be considered|won't be considered|cannot be considered)"),
     re.compile(rf"(?i)\b(?:not eligible|ineligible|not open to|not available (?:to|for)|(?:unable to|cannot|can't|will not|"
                rf"won't|do not|does not|not able to) (?:consider|accept|hire|support|sponsor|employ))\b[^.\n]{{0,100}}?\b{_VISA}\b"),
     re.compile(r"(?i)\bno\s+(?:F-?1|OPT|CPT)\b"),
+    # "HP, Inc. will not provide any assistance or sign documentation in support of immigration sponsorship
+    # including Curricular Practical Training (CPT) or Optional Practical Training (OPT)" (HP, 2026-11-18): CPT/OPT
+    # named as part of what it won't support; "no sponsorship, but OPT students are welcome" stays a note
+    re.compile(rf"(?i)\b(?:will not|won't|cannot|can't|do not|does not|not able to|unable to)\s+(?:provide|offer|sign"
+               rf"|give)\b[^.\n]{{0,120}}?\b(?:sponsorship|documentation|paperwork|assistance)\b[^.\n]{{0,40}}?"
+               rf"\b(?:including|such as|incl\.)\s+{_VISA}\b"),
 ]
 _VISA_POSITIVE_RE = re.compile(rf"(?i)\b{_VISA}\b[^.\n]{{0,60}}?\b(?:welcome|are eligible|is eligible|encouraged|supported)\b")
 _CPT_OPT_RE = re.compile(r"(?i)\b(?:CPT|OPT)\b")
@@ -132,10 +148,18 @@ _NO_SPONSOR_RE = re.compile(
     r"the future\b|\b(?:will not|won't|unable to|cannot|can't|do not|does not|not able to) (?:offer |provide |support )?"
     r"(?:visa |immigration |employment visa )?sponsor|\bno (?:visa |immigration )?sponsorship|\bsponsorship (?:is )?not "
     r"(?:available|offered|provided)|\bmust be (?:legally )?authorized to work in the (?:U\.?S\.?|United States)"
+    r"|\bnot eligible for (?:visa |immigration )?sponsorship"  # Samsung, 2026-11-17
 )
 _EXPORT_RE = re.compile(
     r"(?i)\bexport[- ]control|\bITAR\b|\bexport administration regulations|\bU\.?S\.? persons?\b|\bdeemed export"
     r"|\bgovernment authori[sz]ation|\bexport licen[cs]e"
+)
+# "Indefinite U.S. work authorized individuals only" (Bosch, 2026-11-17): CPT/OPT is time-limited, so only a citizen
+# or permanent resident meets it (his rule answers "No" to permanent work authorization questions)
+_PERMANENT_AUTH_RE = re.compile(
+    r"(?i)\b(?:indefinite(?:ly)?|permanent(?:ly)?)\s+(?:U\.?S\.?\s+)?"
+    r"(?:work[- ]?authori[sz](?:ed|ation)|authori[sz]ed to work|right to work)\b"  # "indefinite right to work" (S&P)
+    r"|\bauthori[sz]ed to work in the (?:U\.?S\.?|United States)\s+(?:on an? )?(?:indefinite(?:ly)?|permanent(?:ly)?)\b"
 )
 _US_PERSON_RE = re.compile(
     r"(?i)\b(?:must be|required to be|need to be|candidates? must be)\b[^.\n]{0,20}?\bU\.?S\.? persons?\b"
@@ -144,16 +168,27 @@ _US_PERSON_RE = re.compile(
 _CITIZEN_RE = re.compile(
     r"(?i)\b(?:must be|requires?|required to be|only|open to)\b[^.\n]{0,40}?\bU\.?S\.? citizens?(?:hip)?\b"
     r"|\bU\.?S\.? citizens?(?:hip)? (?:is |are )?(?:required|only)\b"
+    # a bare list item under the requirements: "- U.S. citizenship." (Technology Service Corp, 2026-11-17)
+    r"|^(?:U\.?S\.?|United States) citizen(?:ship)?(?:\s*\([^)]*\))?\.?$"  # "US Citizenship (due to project ...)"
 )
+# "Public Trust Clearance: Must have lived in the US for at least 3 years" (Laansu, 2026-11-18): a federal
+# background check that needs 3 years of U.S. residency, which a recent arrival doesn't have yet
+_PUBLIC_TRUST_RE = re.compile(r"(?i)\bpublic trust\b")
 _CLEARANCE_RE = re.compile(
     r"(?i)\b(?:active|current|secret|top secret|TS/SCI|security) clearance\b[^.\n]{0,60}?\b(?:required|must|needed)\b"
-    r"|\b(?:must|required to|ability to|able to|eligible to) (?:hold|have|obtain|maintain)[^.\n]{0,30}?\bclearance\b"
+    # "Ability to obtain and maintain a U.S. Department of Defense Secret security clearance" (TSC, 2026-11-17)
+    r"|\b(?:must|required to|ability to|able to|eligible to) (?:hold|have|obtain|maintain)"
+    r"(?:U\.S\.(?:A\.)?|[^.\n]){0,60}?\bclearance\b"
 )
 _UNDERGRAD_RE = re.compile(
     r"(?i)\b(?:pursuing|enrolled in|working towards?|candidates? for|currently in)\s+(?:a |an |your )?"
     r"(?:bachelor['’]?s|B\.?S\.?|B\.?A\.?|undergraduate)(?: degree| program)?\b"
     r"|\bundergraduate (?:students?|candidates?) only\b|\bonly (?:open to )?undergraduates?\b"
     r"|\b(?:rising )?(?:sophomores?|juniors? or seniors?|sophomore or junior)\b"
+    # "for undergraduate students who are rising seniors", "enrollment in an accredited Bachelor's degree program"
+    # (Attain Partners, 2026-11-18)
+    r"|\bfor undergraduate students\b|\brising seniors?\b"
+    r"|\benrollment in an? (?:accredited )?(?:bachelor['’]?s|undergraduate) (?:degree )?program\b"
 )
 _PHD_ONLY_RE = re.compile(
     r"(?i)\b(?:pursuing|enrolled in|candidates? for|currently in|working towards?)\s+(?:a |an |your )?"
@@ -173,6 +208,26 @@ _NOT_REMOTE_RE = re.compile(r"(?i)\b(?:not|no|non)[- ]remote\b|\bremote work is 
 _SEATTLE_RE = re.compile(
     r"(?i)\b(?:Seattle|Bellevue|Redmond|Kirkland|Bothell|Renton|Issaquah|Sammamish|Lynnwood|Everett|Tukwila"
     r"|Mercer Island|SeaTac|Shoreline|Woodinville|Kenmore|Puget Sound)\b"
+)
+# "Must live in the Kansas City or Rolla metro area" (Quest Analytics, 2026-11-17): a residency requirement, not an
+# office location; relocating for the summer doesn't meet it
+_RESIDENCY_RE = re.compile(
+    r"(?i)\bmust (?:currently )?(?:live|reside|be located|be based)\s+(?:in|within|near)\b[^.\n]{0,90}"
+    r"|\b(?:who|that) (?:currently )?live (?:in|within|near) the\b[^.\n]{0,60}\barea\b|\blocal (?:candidates|applicants) only\b"
+)
+_NATIONWIDE_RE = re.compile(r"(?i)\b(?:united states|u\.s\.|usa|\bus\b|the country|north america|remote)\b")
+# A location in another country ("Remote, Germany": GE Aerospace, 2026-11-17, open only to people living in Germany).
+_FOREIGN_COUNTRY_RE = re.compile(
+    r"(?i)\b(?:Germany|Deutschland|Canada|United Kingdom|(?<!New )England|Scotland|Wales|Ireland|France|Netherlands"
+    r"|Belgium|Switzerland|Austria|Poland|Czechia|Czech Republic|Spain|Portugal|Italy|Sweden|Norway|Denmark|Finland"
+    r"|Romania|Hungary|Greece|Turkey|India|China|Hong Kong|Japan|Singapore|Israel|Australia|New Zealand"
+    r"|(?<!New )Mexico|Brazil|Argentina|Colombia|Chile|Costa Rica|Philippines|Malaysia|Taiwan|South Korea|Korea"
+    r"|Vietnam|Indonesia|Thailand|United Arab Emirates|UAE|Saudi Arabia|Egypt|South Africa|Nigeria|Kenya)\b"
+)
+_US_PLACE_RE = re.compile(
+    r"(?i)\b(?:united states|u\.s\.a?\.?|usa|us|north america|the americas)\b"
+    r"|(?-i:,\s*(?:AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC"
+    r"|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC)\b)"
 )
 _LOCATION_LINE_RE = re.compile(r"(?im)^\s*(?:location|locations|office|based in)\s*:\s*(?P<loc>.+?)\s*$")
 _RETURNING_RE = re.compile(
@@ -256,6 +311,9 @@ def _when_range(text: str) -> Optional[tuple[tuple[int, int], tuple[int, int]]]:
     return None
 
 
+_SEASON_LIST = rf"(?:{_SEASONS})(?:\s*/\s*(?:{_SEASONS}))*\s+\d{{4}}"
+
+
 def _grad_window(sentences: list[str]) -> tuple[Optional[tuple[int, int]], Optional[tuple[int, int]], list[str]]:
     """Lower and upper bounds on the graduation date the posting asks for, with the sentences that say so."""
     lower: Optional[tuple[int, int]] = None
@@ -274,15 +332,43 @@ def _grad_window(sentences: list[str]) -> tuple[Optional[tuple[int, int]], Optio
                 lower = max(lower, ra[0]) if lower else ra[0]
                 upper = min(upper, rb[1]) if upper else rb[1]
                 found = True
+        if not found:  # "Expected Masters graduation date of May 2028 or later" (ServiceNow, 2026-11-17)
+            for m in re.finditer(rf"(?i)({_WHEN})\s+or\s+(later|after|beyond|earlier|before|sooner)\b", s):
+                r = _when_range(m.group(1))
+                if not r:
+                    continue
+                if m.group(2).lower() in ("later", "after", "beyond"):
+                    lower = max(lower, r[0]) if lower else r[0]
+                else:
+                    upper = min(upper, r[1]) if upper else r[1]
+                found = True
+        if not found:
+            # "Graduating in Summer/Fall/Winter 2027 or Spring/Summer 2028" (Atoms, 2026-11-18): seasons joined by
+            # slashes, in lists joined by "or", span from the earliest season to the latest
+            m = re.search(rf"(?i)\b(?:in|during)\s+({_SEASON_LIST}(?:\s*(?:,|or|and)\s*{_SEASON_LIST})*)", s)
+            if m and "/" in m.group(1):
+                spans = [r for g in re.finditer(rf"(?i)((?:{_SEASONS})(?:\s*/\s*(?:{_SEASONS}))*)\s+(\d{{4}})",
+                                                m.group(1))
+                         for season in re.split(r"\s*/\s*", g.group(1))
+                         if (r := _when_range(f"{season} {g.group(2)}"))]
+                if spans:
+                    lo, hi = min(r[0] for r in spans), max(r[1] for r in spans)
+                    lower = max(lower, lo) if lower else lo
+                    upper = min(upper, hi) if upper else hi
+                    found = True
         if not found:
             # Longest phrases first: "before or in June 2027" is an upper bound, not "in June 2027".
             for m in re.finditer(rf"(?i)\b(before or (?:in|by|on)|on or before|by or before|no later than|prior to"
                                  rf"|on or after|no (?:earlier|sooner) than|not (?:earlier than|before)|by|before|in|during"
                                  rf"|after)\s+(?:the\s+)?"
                                  rf"(?:calendar\s+year\s+(?:of\s+)?)?({_WHEN})"  # "during the 2028 calendar year" (Riot)
-                                 rf"|\bclass of\s+(\d{{4}})", s):
+                                 rf"|\bclass of\s+(\d{{4}})(?:\s*(?:or|and|,|/|-|–|to)\s*(\d{{4}}))?", s):
                 if m.group(3):
                     r = _when_range(m.group(3))
+                    # "Class of 2026 or 2027" spans both years (Duetti, 2026-11-17)
+                    end = _when_range(m.group(4)) if m.group(4) else None
+                    if r and end:
+                        r = (r[0], end[1])
                     word = "in"
                 else:
                     r = _when_range(m.group(2))
@@ -347,6 +433,11 @@ def _season(title: str, text: str, today: Optional[date] = None) -> tuple[Option
     m = _TITLE_SEASON_GAP_RE.search(title)
     if m:  # "Machine Learning Engineer - Summer Intern 2027" (Kensho)
         return m.group(1).lower().replace("autumn", "fall"), int(m.group(2))
+    # "June 7th, 2027 through August 13th, 2027" names no season, but it's a summer (Constellation, 2026-11-18)
+    for m in _MONTH_RANGE_RE.finditer(text[:4000]):
+        start, end = _month_number(m.group(1)), _month_number(m.group(3))
+        if start in (5, 6) and end in (7, 8, 9):
+            return "summer", int(m.group(4))
     if today is not None and re.search(r"(?i)\bintern", title) and re.search(r"(?i)\bsummer\b", text):
         # "an end of summer presentation" (ASML): the coming summer; from August on, next year's
         return "summer", today.year + 1 if today.month >= 8 else today.year
@@ -472,6 +563,11 @@ def check_eligibility(
     if us_person and not is_citizen:
         flag("us_person_required", "blocker", "It requires U.S. person status (citizen, permanent resident, refugee "
              "or asylee), which your profile says you don't have.", us_person)
+    permanent = _matching(sentences, _PERMANENT_AUTH_RE)
+    if permanent and not is_citizen:
+        # Vatsal, 2026-11-17: "apply anyways ... remember this for future postings": a note, never a skip
+        flag("permanent_auth_required", "note", "It asks for indefinite U.S. work authorization; you apply anyway "
+             "(forms that ask directly still get your current answer).", permanent)
     export = [s for s in _matching(sentences, _EXPORT_RE) if s not in us_person or is_citizen]
     if export:
         flag("export_control", "warning", "Export control: the role may require government authorization.", export)
@@ -479,6 +575,10 @@ def check_eligibility(
     if citizen and not is_citizen:
         flag("citizenship_required", "blocker", "It requires U.S. citizenship, which your profile says you don't have.",
              citizen)
+    trust = _matching(sentences, _PUBLIC_TRUST_RE)
+    if trust and not is_citizen:
+        flag("public_trust", "blocker", "It requires a Public Trust clearance, which needs at least 3 years of U.S. "
+             "residency.", trust[:2])
     clearance = _matching(sentences, _CLEARANCE_RE)
     has_clearance = bool(profile and (profile.tier2.security_clearance.value or "").lower() not in ("", "no", "none"))
     if clearance and not has_clearance:
@@ -503,10 +603,11 @@ def check_eligibility(
     employment = _employment(job.role_title, text)
     season, season_year = _season(job.role_title, text, today)
     # Vatsal, 2026-11-16: free from January 2027 and open to co-ops, so Spring 2027 roles and co-ops without a
-    # named term are fine anywhere; fall terms still clash with classes (back at school after the summer)
+    # named term are fine anywhere; fall terms still clash with classes (back at school after the summer). A Winter
+    # 2027 term runs January to March 2027 (`_term_end`), inside that free time too (Atoms, Cloudflare, 2026-11-18)
     free = parse_month_year(cfg.free_from)
-    spring_free = bool(free and season == "spring" and season_year == free.year)
-    in_semester = not spring_free and season in ("fall", "spring", "winter") and employment in ("co_op", "internship")
+    term_free = bool(free and season in ("spring", "winter") and season_year == free.year)
+    in_semester = not term_free and season in ("fall", "spring", "winter") and employment in ("co_op", "internship")
     if in_semester:
         term = f"{season.title()} {season_year}" if season and season_year else "This co-op"
         extra = []
@@ -531,21 +632,29 @@ def check_eligibility(
     flags.extend(grad_flags)
 
     # 5. Location.
+    residency = [s for s in _matching(sentences, _RESIDENCY_RE)
+                 if not _NATIONWIDE_RE.search(s) and not _SEATTLE_RE.search(s)]
+    if residency:  # Vatsal, 2026-11-17: he can relocate, so this is a note, never a reason to skip
+        flag("residency", "note", "It requires living in a particular area; fine, you can relocate there.",
+             residency[:2])
     location = job.location
     if not location:
         m = _LOCATION_LINE_RE.search(text)
         location = m.group("loc").strip() if m else None
     remote = bool(location and _REMOTE_RE.search(location)) or (
         bool(_REMOTE_RE.search(text)) and not _NOT_REMOTE_RE.search(text) and not _ONSITE_RE.search(text))
-    if location and not remote and not _SEATTLE_RE.search(location):
+    abroad = location and _FOREIGN_COUNTRY_RE.search(location)
+    if abroad and not _US_PLACE_RE.search(location):
+        flag("outside_us", "blocker", f"It's based in {abroad.group(0)}, outside the U.S.", [_quote(location)])
+    elif location and not remote and not _SEATTLE_RE.search(location):
         place = re.sub(r"\s*\([^)]*\)", "", location).strip() or location
-        if in_semester:
-            flag("far_office", "blocker", f"It needs you in {place} during the semester, far from your Seattle "
-                 "classes.", [_quote(location)])
+        if in_semester:  # Vatsal, 2026-11-17: he can relocate, so a far-away office never skips a posting
+            flag("far_office", "note", f"Based in {place} during the semester; fine, you can relocate.",
+                 [_quote(location)])
         elif employment == "internship" and season == "summer":
             flag("relocation", "note", f"Based in {place}; relocating for the summer is fine (you said yes to "
                  "relocation).")
-        elif spring_free or employment == "co_op":
+        elif term_free or employment == "co_op":
             flag("relocation", "note", f"Based in {place}; fine, you're free from {cfg.free_from} and open to "
                  "co-ops (you said yes to relocation).")
 

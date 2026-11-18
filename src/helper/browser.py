@@ -62,10 +62,13 @@ def _in_use(profile: Path) -> bool:
 
 def claim_profile(base: Path, slots: int = PROFILE_SLOTS) -> Path:
     """helper's browser profile, or the next numbered one (browser-profile-2, -3...) when other fills have it open,
-    so several applications can fill side by side, each in its own window. Claimed for this process."""
+    so several applications can fill side by side, each in its own window. Claimed for this process. `slots` 0 means
+    no limit (Vatsal, 2026-11-16: the job hunt keeps stuck windows open and still starts new ones)."""
+    import itertools
+
     from .errors import HelperError
 
-    for i in range(slots):
+    for i in (itertools.count() if slots == 0 else range(slots)):
         profile = base if i == 0 else base.with_name(f"{base.name}-{i + 1}")
         profile.mkdir(parents=True, exist_ok=True)
         if _in_use(profile):
@@ -88,17 +91,24 @@ def release_profile(profile: Path) -> None:
         pass
 
 
+# Windows behind others, or with the display asleep, get throttled by Chrome until clicks time out after 30 seconds
+# (Scout, Samsung, Little Caesars on an unattended evening, 2026-11-17). These keep each window running at full speed;
+# they change nothing a site can see about the browser.
+KEEP_ACTIVE_ARGS = ("--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding",
+                    "--disable-background-timer-throttling")
+
+
 @contextmanager
 def browser_session(paths: Paths, cfg: Config, *, headless: Optional[bool] = None) -> Iterator[Any]:
     from playwright.sync_api import sync_playwright
 
-    profile = claim_profile(paths.browser_profile(cfg))
+    profile = claim_profile(paths.browser_profile(cfg), cfg.max_browser_windows)
     try:
         no_password_saving(profile)
         with sync_playwright() as pw:
             context = pw.chromium.launch_persistent_context(
                 str(profile), headless=cfg.headless if headless is None else headless,
-                viewport={"width": 1280, "height": 900},
+                viewport={"width": 1280, "height": 900}, args=list(KEEP_ACTIVE_ARGS),
             )
             try:
                 yield context

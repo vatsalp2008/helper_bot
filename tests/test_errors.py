@@ -98,3 +98,10 @@ def test_a_missing_profile_says_how_to_make_one(tmp_path: Path) -> None:
 
     with pytest.raises(HelperError, match="Run `helper setup` to create it from data/profile.example.yaml"):
         load_yaml(tmp_path / "profile.yaml")
+
+
+def test_a_dropped_network_is_explained_not_called_a_bug() -> None:  # Samsung, ERR_NETWORK_CHANGED, 2026-11-17
+    from helper.errors import explain
+
+    message = explain(PlaywrightError("Page.goto: net::ERR_NETWORK_CHANGED at https://sec.wd3.myworkdayjobs.com/x"))
+    assert message and "ERR_NETWORK_CHANGED" in message and "nothing was submitted" in message

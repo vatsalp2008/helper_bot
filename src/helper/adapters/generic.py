@@ -40,26 +40,56 @@ DISCOVER_JS = r"""
   const text = el => el ? (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim() : '';
   const visible = el => !!(el.offsetParent || el.getClientRects().length);
   const skipType = t => ['hidden', 'submit', 'button', 'reset', 'image', 'search', 'password'].includes(t);
-  const all = [...document.querySelectorAll('input, select, textarea')].filter(c => {
+  // ARIA widgets with no <input> of their own are questions too: Rippling's dropdowns are role=combobox divs, and its
+  // rating questions are role=radio divs in a role=radiogroup (apexanalytix, Raptor Maps, 2026-11-18)
+  const CONTROLS = 'input, select, textarea, [role=combobox], [role=radiogroup]';
+  const isField = c => ['INPUT', 'SELECT', 'TEXTAREA'].includes(c.tagName);
+  const all = [...document.querySelectorAll(CONTROLS)].filter(c => {
+    if (c.closest('header, nav, footer, [role=search], [role=navigation]')) return false;
+    if (!isField(c)) {  // a radio group with real inputs, or a combobox wrapping its input, is read by those inputs
+      if (c.querySelector('input, select, textarea')) return false;
+      if (c.getAttribute('role') === 'radiogroup' && !c.querySelector('[role=radio]')) return false;
+      return visible(c);
+    }
     const t = (c.type || '').toLowerCase();
-    if (skipType(t) || c.closest('header, nav, footer, [role=search], [role=navigation]')) return false;
+    if (skipType(t)) return false;
     return visible(c) || t === 'file' || t === 'radio' || t === 'checkbox';  // styled controls hide the real input
   });
   const optionLabel = c => text(c.labels && c.labels[0]) || c.getAttribute('aria-label') || c.value || '';
+  // a widget's own name says nothing about the question: BambooHR labels both upload boxes "file-input", and the
+  // cover letter box got the resume (All Options, 2026-11-18); the words next to it name it
+  const GENERIC = /^(file[-_ ]?input|file|upload|search|textbox|input|select|combobox|choose)\s*(\.\.\.|…)?$/i;
+  const DROP_ZONE = /^(drop|drag|select|choose|browse|upload|attach)\b/i;  // "Drop or select (.doc / .docx / .pdf)"
+  // a required mark the stylesheet draws (::after { content: "*" }) isn't in the text: Rippling marks its custom
+  // questions that way, and helper took them for optional ones (apexanalytix, 2026-11-18)
+  const starred = el => !!el && el.nodeType === 1 && [el, ...el.querySelectorAll('*')].some(x =>
+    ['::after', '::before'].some(p => /^["']\s*\*\s*["']$/.test(getComputedStyle(x, p).content || '')));
+  let labelEl = null;  // where the label was read, for its drawn mark
   const own = (c, members) => {
     const kind = (c.type || '').toLowerCase();
-    if (c.labels && c.labels.length && (!['radio', 'checkbox'].includes(kind) || (kind === 'checkbox' && !members)))
-      return text(c.labels[0]);  // a lone checkbox's own label is the question ("I agree to the privacy policy")
+    if (c.labels && c.labels.length && (!['radio', 'checkbox'].includes(kind) || (kind === 'checkbox' && !members))) {
+      const words = text(c.labels[0]);  // a lone checkbox's own label is the question ("I agree to the privacy policy")
+      if (!(kind === 'file' && DROP_ZONE.test(words))) { labelEl = c.labels[0]; return words; }  // Rippling: drop zone
+    }
     const by = c.getAttribute('aria-labelledby');
-    if (by) return by.split(/\s+/).map(id => text(document.getElementById(id))).join(' ');
-    if (c.getAttribute('aria-label') && !members) return c.getAttribute('aria-label');
+    if (by) {
+      const ids = by.split(/\s+/).filter(id => id !== c.id);
+      const named = ids.map(id => text(document.getElementById(id))).join(' ').trim();
+      if (named) { labelEl = document.getElementById(ids[ids.length - 1]); return named; }
+    }
+    const aria = c.getAttribute('aria-label') || '';
+    if (aria && !members && !GENERIC.test(aria.trim())) return aria;
     return '';
   };
   const wrapper = members => {  // the widest ancestor holding these controls and no other question's
-    let w = members[0].parentElement, best = null;
+    // a radio group's own container first: Rippling hides each input four levels inside its option (2026-11-18)
+    const group = members[0].type === 'radio' || members[0].type === 'checkbox'
+      ? members[0].closest('[role=radiogroup], [role=group], fieldset') : null;
+    const holds = group && members.every(m => group.contains(m));
+    let w = holds ? group.parentElement : members[0].parentElement, best = holds ? group : null;
     for (let i = 0; i < 6 && w && w !== document.body; i++, w = w.parentElement) {
-      const inside = [...w.querySelectorAll('input, select, textarea')].filter(x => !skipType((x.type || '').toLowerCase()));
-      if (inside.some(x => !members.includes(x))) break;
+      const inside = [...w.querySelectorAll(CONTROLS)].filter(x => !skipType((x.type || '').toLowerCase()));
+      if (inside.some(x => !members.includes(x) && !members.some(m => x.contains(m) || m.contains(x)))) break;
       best = w;
     }
     if (best) return best;
@@ -70,11 +100,17 @@ DISCOVER_JS = r"""
   };
   const nearbyLabel = (box, members) => {
     const fs = members[0].closest('fieldset');
-    if (fs && fs.querySelector('legend') && box.contains(fs)) return text(fs.querySelector('legend'));
+    if (fs && fs.querySelector('legend') && box.contains(fs)) {
+      labelEl = fs.querySelector('legend');
+      return text(labelEl);
+    }
     for (const el of box.querySelectorAll('legend, label, p, h3, h4, h5, span, div')) {
       if (el.querySelector('input, select, textarea') || members.some(m => m.labels && [...m.labels].includes(el))) continue;
+      // an option's words or a dropdown's shown value aren't the question ("Full Stack", "Select...": Rippling)
+      if (members.some(m => el.contains(m)) || el.closest('[role=radio], [role=checkbox], [role=option], [role=listbox], '
+                                                        + '[role=combobox]')) continue;
       const t = text(el);
-      if (t && t.length > 1) return t;
+      if (t && t.length > 1) { labelEl = el; return t; }
     }
     return '';
   };
@@ -86,25 +122,39 @@ DISCOVER_JS = r"""
     if ((t === 'radio' || t === 'checkbox') && c.name) members = all.filter(x => x.name === c.name && x.type === c.type);
     members.forEach(m => done.add(m));
     const box = wrapper(members);
-    let label = own(c, members.length > 1 || t === 'radio' ? members : null) || nearbyLabel(box, members)
-                || c.placeholder || c.name || '';
+    const role = c.getAttribute('role');
+    labelEl = null;
+    const named = own(c, members.length > 1 || t === 'radio' ? members : null) || nearbyLabel(box, members);
+    // a dropdown's own search box with no name of its own is part of the field beside it (Rippling's phone country
+    // code, "Search", was asked of Vatsal as a required question; Raptor Maps, 2026-11-18)
+    if (!named && role === 'combobox' && GENERIC.test((c.placeholder || c.getAttribute('aria-label') || '').trim())) return;
+    let label = named || c.placeholder || c.name || '';
     label = label.replace(/\s+/g, ' ').trim();
     if (!label) return;
-    let type = 'text', options = [];
+    let type = 'text', options = [], listbox = false;
     if (t === 'file') type = 'file';
     else if (c.tagName === 'SELECT') { type = 'select'; options = [...c.options].map(o => text(o)).filter(o => o && !/^(select|choose|--)/i.test(o)); }
     else if (c.tagName === 'TEXTAREA') type = 'textarea';
+    else if (role === 'radiogroup') {
+      type = 'radio';
+      options = [...c.querySelectorAll('[role=radio]')].map(r => (r.getAttribute('aria-label') || text(r)).trim());
+    }
+    else if (role === 'combobox' && !isField(c)) { type = 'select'; listbox = true; }  // its choices open on a click
     else if (t === 'radio') { type = 'radio'; options = members.map(optionLabel); }
     else if (t === 'checkbox') {
       if (members.length > 1) { type = 'multi_select'; options = members.map(optionLabel); }
       else { type = 'boolean'; options = [optionLabel(c) || label]; }
     } else if (t === 'date') type = 'date';
-    const required = members.some(m => m.required || m.getAttribute('aria-required') === 'true') || /\*|\(required\)/i.test(label);
+    // a search box that opens a list: a dropdown when its choices show without typing (discover() opens it to see),
+    // a place search otherwise
+    else if (role === 'combobox' && c.getAttribute('aria-haspopup') === 'listbox') listbox = true;
+    const required = members.some(m => m.required || m.getAttribute('aria-required') === 'true')
+      || /\*|\(required\)/i.test(label) || starred(labelEl) || (box !== c && starred(box));
     const key = 'generic:' + (c.name || c.id || 'field-' + n);
     if (out.some(o => o.key === key)) return;
     box.setAttribute('data-helper-key', key);
     out.push({key, label: label.replace(/^\s*\*+\s*/, '').replace(/\s*\*+\s*$/, '').replace(/\s*\(required\)\s*$/i, '').trim(),
-              type, required, options});
+              type, required, options, listbox});
   });
   return out;
 }
@@ -193,6 +243,12 @@ def discover(root: Any) -> list[FormQuestion]:
     found = root.evaluate(DISCOVER_JS)
     questions = []
     for f in found:
+        if f.get("listbox") and not f["options"]:
+            # an ARIA dropdown keeps its choices in a list that opens on a click (Rippling, 2026-11-18): open it to
+            # read them, so answers pick one; a place search shows nothing until typed into and stays a text box
+            choices = dom.listbox_options(root, f["key"])
+            if choices:
+                f["type"], f["options"] = "select", choices
         section = "eeoc" if re.search(r"(?i)^(gender|race|ethnicity|veteran|disabilit|hispanic|sex)\b", f["label"]) else "questions"
         questions.append(FormQuestion(label=f["label"], field_name=f["key"], type=f["type"], required=f["required"],
                                       options=f["options"], section=section))
@@ -204,6 +260,17 @@ _GENERIC_SITE_NAME = re.compile(r"(?i)^\s*(candidate experience( site)?|careers?
 _COPYRIGHT_RE = re.compile(r"(?:©|\(c\)|Copyright)\s*(?:©\s*)?(?:\d{4}(?:\s*[-–]\s*\d{4})?\s*)?"
                            r"([A-Z][A-Za-z0-9&'. -]{1,60}?)(?:,?\s+(?:Inc|LLC|Ltd|Corp|Corporation|Co)\b\.?|\.|\s+All rights)",
                            re.IGNORECASE)
+
+
+def rippling_employer(url: str) -> str:
+    """ats.rippling.com/<employer-slug>/jobs/<id>: the employer, from its slug ("raptor-maps-inc" is Raptor Maps)."""
+    parts = [p for p in urlparse(url).path.split("/") if p]
+    if not parts or parts[0] in ("jobs", "careers"):
+        return ""
+    words = [w for w in parts[0].split("-") if w and w.lower() not in ("inc", "llc", "corp", "co", "careers", "jobs")]
+    if len(words) == 1:
+        return words[0]  # a one-word brand keeps its own spelling ("apexanalytix")
+    return " ".join(w.title() for w in words)
 
 
 def copyright_owner(text: str) -> str:
@@ -232,6 +299,8 @@ def read_posting(page: Any) -> tuple[str, str, str]:
         # Oracle's "Candidate Experience site" is no employer (Fortinet, 2026-11-16): use the copyright line
         owner = copyright_owner(data.get("footer") or "")
         company = owner or ("" if _GENERIC_SITE_NAME.match(company) else company)
+    if host.endswith("rippling.com"):  # "Rippling Recruiting" is the hiring site (Raptor Maps, apexanalytix, 2026-11-18)
+        company = rippling_employer(page.url) or company
     text = data["text"].strip()
     try:
         ld = job_posting_ld(page.evaluate(_LD_JS))
@@ -519,12 +588,25 @@ def find_form(page: Any, timeout_ms: int = 15000) -> Optional[Any]:
 def fill_form(root: Any, answers: list[Any], resume_pdf: Path, *, country: Optional[str], city: Optional[str],
               pause: Callable[[], None]) -> list[FieldResult]:
     """Fill every planned answer the page has (found again by its label). Never touches Submit."""
-    root.evaluate(DISCOVER_JS)
+    by_label: dict[str, list[tuple[str, str]]] = {}
+    for f in root.evaluate(DISCOVER_JS):
+        by_label.setdefault(" ".join(f["label"].lower().split()), []).append((f["key"], f["type"]))
     results: list[FieldResult] = []
+    # a country pick can reset the state list after it (All Options' BambooHR, 2026-11-18: State went back to
+    # "-Select-" and the submit failed), so the country goes first
+    answers = sorted(answers, key=lambda a: 0 if getattr(a, "key", None) == "address_country" else 1)
     for a in answers:
         if a.kind in ("skip", "unknown") or (a.value is None and a.type != "file"):
             continue
         block = root.locator(f"[data-helper-key={json.dumps(a.field)}]")
+        if not block.count():
+            # a site that names its boxes anew on every load (Rippling, 2026-11-18: name, email and phone were "not
+            # found"): the same question is the one with the same label and type, when exactly one has it
+            same = by_label.get(" ".join(a.label.lower().split()), [])
+            # a search box planned as a dropdown (its choices were read) reads as a text box again on the page
+            keys = [k for k, t in same if t == a.type] or ([k for k, _ in same] if len(same) == 1 else [])
+            if len(keys) == 1:
+                block = root.locator(f"[data-helper-key={json.dumps(keys[0])}]")
         if not block.count():
             results.append(FieldResult(a.field, a.label, not a.required, None,
                                        "not shown on this form" if not a.required else "field not found on the page"))
@@ -584,6 +666,24 @@ def submit_buttons(form: Any) -> list[Any]:
     return found
 
 
+def disabled_submit_buttons(form: Any) -> int:
+    """Final Submit buttons the page shows but keeps turned off: Rippling's Apply stays aria-disabled until the site is
+    satisfied (apexanalytix, 2026-11-18), which says more than "no Submit button"."""
+    count = 0
+    buttons = form.locator("button, input[type=submit], [role=button]")
+    for i in range(min(buttons.count(), 200)):
+        b = buttons.nth(i)
+        try:
+            if not b.is_visible() or b.is_enabled():
+                continue
+            text = (b.inner_text(timeout=500) or b.get_attribute("value") or "").strip()
+        except Exception:
+            continue
+        if _SUBMIT_TEXT.match(text):
+            count += 1
+    return count
+
+
 def submit(form: Any) -> bool:
     """Auto-submit (Vatsal, 2026-11-16): click the final Submit once, only when exactly one such button is there."""
     found = submit_buttons(form)
@@ -598,8 +698,10 @@ def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:
 
 
 def is_submit_request(url: str, method: str) -> bool:
-    return method == "POST" and bool(re.search(r"(?i)/(apply|application|applications|submit|candidates?)\b",
-                                               urlparse(url).path))
+    """Never, on a company's own site: their pages save drafts with the same kind of request (Eightfold posted to an
+    'apply' path while helper was still filling, and an unsent application was logged as sent; Boston Scientific,
+    2026-11-17). A click on the final Submit button (`submit_clicked`) and the confirmation page decide instead."""
+    return False
 
 
 def submit_clicked(page: Any) -> bool:

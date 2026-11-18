@@ -195,3 +195,52 @@ def test_a_hidden_follow_up_question_is_not_a_failure(browser: Any, tmp_path: Pa
     assert results["question_999"].ok and results["question_999"].detail == "not shown on this form"
     assert not results["question_998"].ok  # a required question that's really missing still counts
     page.close()
+
+
+_CHECKBOX_FORM = """<form id="application-form">
+<fieldset class="checkbox" id="question_701[]" aria-required="true">
+  <legend>Please acknowledge the privacy policy. *</legend>
+  <div class="checkbox__wrapper"><div class="checkbox__input">
+    <input required type="checkbox" id="question_701[]_9001" name="question_701[]" value="9001"
+           style="opacity:0;position:absolute"><svg width="16" height="16"></svg></div>
+    <label for="question_701[]_9001">Acknowledge/Confirm</label></div>
+</fieldset>
+<fieldset class="checkbox" id="question_702[]">
+  <legend>Do any of these apply to you? Select all that apply.</legend>
+  <div class="checkbox__wrapper"><input type="checkbox" id="question_702[]_1" name="question_702[]" value="1">
+    <label for="question_702[]_1">Resident of a sanctioned region</label></div>
+  <div class="checkbox__wrapper"><input type="checkbox" id="question_702[]_2" name="question_702[]" value="2">
+    <label for="question_702[]_2">TikTok</label></div>
+  <div class="checkbox__wrapper"><input type="checkbox" id="question_702[]_3" name="question_702[]" value="3">
+    <label for="question_702[]_3">YouTube</label></div>
+  <div class="checkbox__wrapper"><input type="checkbox" id="question_702[]_4" name="question_702[]" value="4">
+    <label for="question_702[]_4">None of the above</label></div>
+</fieldset>
+</form>"""
+
+
+def test_select_all_that_apply_questions_tick_their_boxes(browser: Any, tmp_path: Path) -> None:
+    """Greenhouse's new forms show multi-select questions as a fieldset of checkboxes, not a dropdown; typing into
+    the fieldset failed (Databricks, Twitch, Cloudflare, 2026-11-18)."""
+    from helper.answers import PlannedAnswer
+
+    pdf = tmp_path / "AlexExample_Resume.pdf"
+    pdf.write_bytes(b"%PDF-1.4 test")
+    page = browser.new_page()
+    page.set_content(_CHECKBOX_FORM)
+
+    def multi(field: str, value: str) -> PlannedAnswer:
+        return PlannedAnswer(field=field, label=field, type="multi_select", required=True, kind="auto", value=value,
+                             confidence=1.0, source="x")
+
+    results = gh.fill_form(page, [multi("question_701[]", "Acknowledge/Confirm"),
+                                  multi("question_702[]", "TikTok; YouTube")], pdf,
+                           country=None, city=None, pause=lambda: None)
+    assert [(r.ok, r.value) for r in results] == [(True, "Acknowledge/Confirm"), (True, "TikTok; YouTube")]
+    ticked = page.evaluate("() => [...document.querySelectorAll('input:checked')].map(i => i.id)")
+    assert ticked == ["question_701[]_9001", "question_702[]_2", "question_702[]_3"]
+    again = gh.fill_form(page, [multi("question_702[]", "TikTok")], pdf, country=None, city=None, pause=lambda: None)
+    assert again[0].ok and page.locator("[id='question_702[]_2']").is_checked()  # ticking twice doesn't untick it
+    wrong = gh.fill_form(page, [multi("question_702[]", "Instagram")], pdf, country=None, city=None, pause=lambda: None)
+    assert not wrong[0].ok and "no option matches 'Instagram'" in wrong[0].detail
+    page.close()

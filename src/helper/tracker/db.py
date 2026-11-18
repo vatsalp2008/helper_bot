@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Statuses a run sets (spec 11).
 PIPELINE_STATUSES = ("drafted", "filled", "applied", "submitted_unverified", "skipped", "failed")
@@ -80,6 +80,25 @@ CREATE TABLE IF NOT EXISTS fill_runs (
     finished_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS postings (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    url            TEXT NOT NULL UNIQUE,
+    job_id         TEXT,
+    company        TEXT NOT NULL,
+    title          TEXT NOT NULL,
+    location       TEXT,
+    ats            TEXT,
+    source         TEXT,
+    posted_at      TEXT,
+    found_at       TEXT NOT NULL,
+    status         TEXT NOT NULL,
+    reason         TEXT,
+    run_id         TEXT,
+    application_id INTEGER,
+    updated_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_postings_run ON postings (run_id);
+
 CREATE TABLE IF NOT EXISTS status_history (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     application_id INTEGER NOT NULL REFERENCES applications (id) ON DELETE CASCADE,
@@ -115,6 +134,13 @@ _MIGRATIONS: dict[int, list[str]] = {
         "CREATE TABLE IF NOT EXISTS fill_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, "
         "ats TEXT NOT NULL, mode TEXT NOT NULL, outcome TEXT NOT NULL, clean INTEGER NOT NULL, problems TEXT, "
         "finished_at TEXT NOT NULL)",
+    ],
+    4: [  # the job hunt's list of postings (Vatsal, 2026-11-16)
+        "CREATE TABLE IF NOT EXISTS postings (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL UNIQUE, job_id TEXT, "
+        "company TEXT NOT NULL, title TEXT NOT NULL, location TEXT, ats TEXT, source TEXT, posted_at TEXT, "
+        "found_at TEXT NOT NULL, status TEXT NOT NULL, reason TEXT, run_id TEXT, application_id INTEGER, "
+        "updated_at TEXT NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS idx_postings_run ON postings (run_id)",
     ],
 }
 

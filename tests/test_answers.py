@@ -104,6 +104,11 @@ def test_start_date_by_season() -> None:
     assert one(q("Earliest start date")).value == "May 1, 2027"
     fall = one(q("Earliest start date"), season="fall")
     assert fall.kind == "unknown"  # profile says "ask" for fall internships
+    # no term named (Nelnet, 2026-11-17): the first day he's free, January 2027 (free_from)
+    assert one(q("Date Available to Start:", "date"), season=None, season_year=None,
+               today=date(2026, 11, 17)).value == "January 1, 2027"
+    assert one(q("Date Available to Start:", "date"), season=None, season_year=None,
+               today=date(2027, 2, 10)).value == "February 10, 2027"
 
 
 def test_gpa_and_cover_letters_are_never_filled() -> None:
@@ -475,6 +480,13 @@ def test_country_of_citizenship_comes_from_the_profile() -> None:  # ASML, 2026-
     assert (text.key, text.value) == ("citizenship_country", "Freedonia, since 2001 (by birth)")
     assert one(q("Country of Citizenship", "select", ["Freedonia", "Sylvania"]), profile=profile).value == "Freedonia"
     assert one(q("Country of Citizenship", "select", ["Freedonia", "Sylvania"])).kind == "unknown"  # not set: ask
+    # Marvell, 2026-11-18: a country picker, not the U.S.-status question ("... permanent resident status")
+    marvell = one(q("Please select all countries in which you currently hold citizenship or have an active permanent "
+                    "resident status:", "multi_select", ["Freedonia", "Sylvania"]), profile=profile)
+    assert (marvell.key, marvell.value) == ("citizenship_country", "Freedonia")
+    status = one(q("What is your current citizenship or immigration status?", "select",
+                   ["U.S. Citizen", "Permanent Resident", "None"]), profile=profile)
+    assert status.key == "us_citizen"
 
 
 def test_military_service_questions_are_no() -> None:  # Vatsal, 2026-11-16
@@ -582,3 +594,126 @@ def test_unlabelled_upload_boxes_get_the_resume_then_the_letter() -> None:  # La
     labelled = [q("Resume/CV", "file", name="resume"), q("File", "file", required=False, name="file-1")]
     plan = plan_answers(labelled, ctx()).answers
     assert plan[0].key == "resume" and plan[1].key is None  # a named resume box: the extra box stays empty
+
+
+def test_company_sites_get_a_us_phone_without_the_plus() -> None:  # Boston Scientific, 2026-11-17
+    from helper.models import Job
+    phone = q("Phone number", "text")
+    site = Job(company="Acme", role_title="Intern", description_text="x", source="test", fetched_at="now", ats="eightfold")
+    board = Job(company="Acme", role_title="Intern", description_text="x", source="test", fetched_at="now", ats="greenhouse")
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier1.phone = "+15550100000"
+    assert one(phone, job=site, profile=profile).value == "555-010-0000"
+    assert one(phone, job=board, profile=profile).value == "+15550100000"
+
+
+def test_rules_from_the_first_job_hunt_night() -> None:  # 2026-11-17
+    legally = q("Can you legally work in the US now or anytime in the future without sponsorship?", "select",
+                ["Yes, I can work WITHOUT sponsorship now and in the FUTURE", "No, I will need sponsorship now or in the future"])
+    assert key_for(legally)[0] == "work_authorization" and one(legally).value.startswith("Yes")
+    na = q("What is your current visa status? Choose Not Applicable if you do not require sponsorship.", "text")
+    assert one(na).value == "Not Applicable"
+    put_na = q("If you require sponsorship to work in the United States, please indicate the type of visa you currently "
+               "hold. If you do not require a visa please put NA.", "textarea")
+    assert one(put_na).value == "NA"
+    plain = q("What is your current visa status?", "select", ["F-1", "H-1B", "Other"])
+    assert one(plain).value is None  # a visa type: Vatsal answers it
+    permanent = q("Do you have legal authority to work permanently in the United States?", "select", ["Yes", "No"])
+    assert key_for(permanent)[0] == "permanent_work" and one(permanent).value == "No"
+    salary = q("What are your salary expectations? (number only please)", "text")
+    assert one(salary).value is None  # "Negotiable" can't go in a numbers-only box: Vatsal decides
+
+
+def test_remembered_written_answers_never_beat_a_rule() -> None:  # a remembered "Winter '27", 2026-11-17
+    remembered = AnswersFile(answers=[ApprovedAnswer(id="grad", question_patterns=[r"anticipated graduation date"],
+                                                     answer="Winter '27", approved_on="2026-11-16")])
+    grad = q("What is your anticipated graduation date?", "text")
+    assert one(grad, approved=remembered, grad_date="December 2027").value == "December 2027"
+
+
+def test_a_sponsorship_question_that_says_visa_status_stays_a_sponsorship_question() -> None:
+    q1 = q("Will you now or in the future require sponsorship for employment visa status?", "select", ["Yes", "No"])
+    assert key_for(q1)[0] == "sponsorship" and one(q1).value == "No"
+
+
+def test_a_hispanic_only_ethnicity_question_and_an_armed_forces_member_question() -> None:  # Soros, 2026-11-17
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.eeo.hispanic_latino = "No"
+    ethnicity = one(q("What is your ethnicity? (please check all that apply)", "multi_select",
+                      ["Hispanic or Latino", "Not Hispanic or Latino", "I don't wish to answer"]), profile=profile)
+    assert ethnicity.key == "eeo_hispanic" and ethnicity.value == "Not Hispanic or Latino"
+    race = one(q("What is your race/ethnicity?", "select", ["Asian", "White", "Hispanic or Latino", "Decline"]))
+    assert race.key == "eeo_race"
+    member = one(q("Are you a veteran or active member of the armed forces?", "select", ["Yes ", "No ", "I don't wish to answer"]))
+    assert member.key == "military_service" and member.value.strip() == "No"
+
+
+def test_the_f1_student_question_follows_the_profile() -> None:  # Boston Scientific, 2026-11-17
+    question = q("Are you an F1 student who has or will be applying for CPT, OPT, or STEM OPT?", "radio", ["Yes", "No"])
+    assert one(question).kind == "unknown"  # the sample profile doesn't say
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.f1_student.value = "Yes"
+    answer = one(question, profile=profile)
+    assert (answer.key, answer.value) == ("f1_student", "Yes")
+    assert one(q("Are you currently on an F-1 visa?", "select", ["Yes", "No"]), profile=profile).value == "Yes"
+    sponsor = one(q("Will you require sponsorship now or in the future (including F-1 OPT)?", "select", ["Yes", "No"]),
+                  profile=profile)
+    assert sponsor.key == "sponsorship"
+
+
+def test_permit_ai_processing_questions_opt_in() -> None:  # Labcorp, 2026-11-17: "answer yes always"
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.ai_screening_consent.value = "Yes"
+    for label in ("Do you permit Labcorp to process your data using Artificial Intelligence (AI) tools to evaluate you "
+                  "against the listed job qualifications of the role? Opting out will not result in any adverse "
+                  "employment action.",
+                  "Do you permit Labcorp to process your data to consider you for future job openings using Artificial "
+                  "Intelligence (AI) tools ? Opting out will not result in any adverse employment action."):
+        answer = one(q(label, "select", ["Yes", "No"]), profile=profile)
+        assert (answer.key, answer.value) == ("ai_consent", "Yes")
+    assert one(q("Are you legally authorized to work in the United States?", "select", ["Yes", "No"]),
+               profile=profile).key == "work_authorization"
+
+
+def test_a_covenant_not_to_compete_is_the_restrictions_question() -> None:  # Little Caesars, 2026-11-17
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.employment_restrictions.value = "No"
+    answer = one(q("Are you under any obligation to a current or previous employer, through a covenant not to compete, "
+                   "or otherwise restricted in your acceptance of employment with a competitive firm?", "select",
+                   ["Yes", "No"]), profile=profile)
+    assert (answer.key, answer.value) == ("employment_restrictions", "No")
+
+
+def test_highest_education_completed_is_the_finished_degree() -> None:  # Scout Motors, 2026-11-18
+    from helper.models import EducationEntry
+
+    profile = PROFILE.model_copy(deep=True)
+    profile.education.append(EducationEntry(school="Sample Institute", degree="Bachelor of Engineering",
+                                            major="Computer Engineering", location="Sample City", start="August 2021",
+                                            end="May 2025"))
+    options = ["High school or equivalent", "Bachelor's degree or international equivalent",
+               "Master's degree or international equivalent", "Doctorate"]
+    done = one(q("What is the highest level of education you have completed?", "select", options), profile=profile)
+    assert (done.key, done.value) == ("degree_completed", "Bachelor's degree or international equivalent")
+    assert one(q("Highest level of education", "select", options), profile=profile).key == "degree"
+
+
+def test_a_phone_type_list_without_mobile_gets_personal_primary() -> None:  # BMO, 2026-11-18
+    answer = one(q("Phone Device Type", "select", ["Business Primary", "Business Secondary", "Personal Primary",
+                                                    "Personal Secondary"]))
+    assert answer.value == "Personal Primary"
+    assert one(q("Phone Device Type", "select", ["Home", "Mobile", "Work"])).value == "Mobile"
+
+
+def test_the_county_comes_from_the_profile_address() -> None:  # Great American's Workday, 2026-11-18
+    county = one(q("County", "text", name="workday:regionSubdivision1"))
+    assert (county.key, county.value) == ("address_county", "Example County")
+    assert one(q("County", "text")).key == "address_county"
+    assert one(q("Country", "select", ["United States", "Canada"])).key == "address_country"
+
+
+def test_a_yes_no_question_naming_the_resume_is_not_the_upload() -> None:  # Scout, 2026-11-18
+    confirm = one(q("I confirm that the information I have provided in my application and resume is true, complete, "
+                    "and accurate to the best of my knowledge.", "select", ["Yes", "No"]))
+    assert confirm.kind != "file" and confirm.key != "resume"
+    assert one(q("Resume/CV", "file")).key == "resume"

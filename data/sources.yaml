@@ -1,0 +1,137 @@
+# Public job feeds `helper find` reads (Vatsal, 2026-11-16). Public companies only: the companies in his tracker
+# history are read from helper.db at run time and never written here. Every company linked from the lists below is
+# also scanned. A wrong or closed name is skipped quietly.
+
+lists:  # GitHub lists of new postings on every system (company sites, Oracle, Eightfold, Taleo, iCIMS...)
+  - https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md
+  - https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md
+
+greenhouse:  # board names (job-boards.greenhouse.io/<board>)
+  - airbnb
+  - stripe
+  - databricks
+  - figma
+  - robinhood
+  - coinbase
+  - discord
+  - reddit
+  - pinterest
+  - dropbox
+  - instacart
+  - lyft
+  - twitch
+  - roblox
+  - scaleai
+  - anthropic
+  - samsara
+  - gusto
+  - brex
+  - affirm
+  - chime
+  - asana
+  - airtable
+  - flexport
+  - nuro
+  - waymo
+  - duolingo
+  - squarespace
+  - cloudflare
+  - datadog
+  - mongodb
+  - elastic
+  - twilio
+  - okta
+  - gitlab
+  - confluent
+  - verkada
+  - mercury
+  - benchling
+  - retool
+  - vercel
+  - webflow
+  - grammarly
+  - wayfair
+  - tripadvisor
+  - rubrik
+  - purestorage
+  - hudsonrivertrading
+  - point72
+  - imc
+  - optiver
+  - jumptrading
+  - akunacapital
+  - towerresearchcapital
+  - oldmissioncapital
+  - arcesium
+  - appliedintuition
+  - skydio
+  - astranis
+  - planetlabs
+  - toast
+  - klaviyo
+  - carta
+  - gemini
+  - chainalysis
+  - ripple
+  - sofi
+  - betterment
+  - marqeta
+  - nerdwallet
+  - faire
+  - nextdoor
+  - quora
+  - thumbtack
+  - yelp
+  - zocdoc
+  - oscar
+  - headway
+  - lattice
+  - calendly
+  - intercom
+  - amplitude
+  - mixpanel
+  - fivetran
+  - cockroachlabs
+  - singlestore
+  - clickhouse
+  - pinecone
+  - cohere
+  - huggingface
+  - runwayml
+  - glean
+  - hebbia
+  - abridge
+  - tempus
+  - flatiron
+  - insitro
+  - recursion
+  - cerebrassystems
+  - lightmatter
+  - tenstorrent
+  - sifive
+  - lucidmotors
+  - zipline
+  - agilityrobotics
+  - figureai
+  - neuralink
+  - palantir
+  - niantic
+  - epicgames
+  - riotgames
+  - scopely
+  - twosigma
+  - drw
+  - citadel
+  - citadelsecurities
+  - janestreet
+  - schonfeld
+  - pdtpartners
+  - fanaticscollectibles
+  - sharkninjaoperatingllc
+  - octaura
+  - nationallifeinsurancecompany
+
+lever: []       # company names (jobs.lever.co/<company>); the tracker and the lists add more
+ashby: []       # organization names (jobs.ashbyhq.com/<org>)
+smartrecruiters: []  # company names (jobs.smartrecruiters.com/<company>)
+workday: []     # {host, tenant, site}; the tracker's Workday sites are added at run time

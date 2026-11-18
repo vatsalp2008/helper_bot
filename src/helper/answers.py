@@ -128,7 +128,12 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("internship_count", r"\bhow many\b.{0,100}\binternships?\b|\bnumber of\b.{0,60}\binternships?\b", 0.9),
     ("ai_consent", r"\bhiredscore\b|\bAI[- ]assisted (recruit|tool|screen)|\binvolving AI\b|"
                    r"\b(consent|opt[- ]?in|agree)\b.{0,80}\b(AI|artificial intelligence)\b|"
-                   r"\b(AI|artificial intelligence)\b.{0,80}\b(consent|opt[- ]?in)\b", 0.9),
+                   r"\b(AI|artificial intelligence)\b.{0,80}\b(consent|opt[- ]?in)\b|"
+                   # "Do you permit Labcorp to process your data using Artificial Intelligence (AI) tools to evaluate
+                   # you...?" (Labcorp, 2026-11-17: always Yes)
+                   r"\b(permit|allow)\b.{0,100}\b(AI|artificial intelligence)\b|"
+                   r"\bprocess\w* (your|my) (personal )?(data|information)\b.{0,80}\b(AI|artificial intelligence)\b",
+     0.9),
     ("terms_consent", r"\b(read and accept|accept the|acknowledge (the|that)|agree to the)\b.{0,100}\b(privacy|terms|notice|"
                       r"policy|conditions)\b|\b(privacy|data protection) (notice|policy)\b.{0,60}\b(accept|acknowledge|"
                       r"agree|consent)\b|\bconfirm\b.{0,40}\b(read|agree)\b.{0,60}\b(privacy|notice|nda|"
@@ -136,7 +141,7 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("relatives_at_company", r"\b(relatives?|family members?|immediate family|related to|close personal relationship)\b"
                              r".{0,120}\b(employ\w*|work\w*|board|trustee)\b", 0.95),
     ("employment_restrictions", r"\bnon-?compete\b|\bemployment restrictions?\b|\brestrictive covenants?\b|"
-                                r"\bnon-?solicit", 0.9),
+                                r"\bnon-?solicit|\bcovenant not to compete\b", 0.9),  # Little Caesars, 2026-11-17
     ("keep_for_other_roles", r"\bretain\w*\b.{0,80}\b(future|other|alternative)\b.{0,40}\b(roles?|opportunit\w*|"
                              r"positions?|openings?)\b|\btalent (pool|community)\b", 0.9),
     ("transcript", r"\btranscripts?\b|\bacademic record\b", 0.95),
@@ -158,13 +163,28 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("portfolio_url", r"\bportfolio\b|\bpersonal (web)?site\b|\bwebsite\b|\bweb ?site\b|\bblog\b", 0.88),
     # "authorized to work without sponsorship?" asks about authorization (Yes); any other mention of sponsorship asks
     # whether you need it (No), even when it also says "work authorization" (Fanatics, 2026-11-15)
-    ("work_authorization", r"\b(authori[sz]ed|eligible|permitted) to work\b.{0,80}\bwithout\b.{0,40}\bsponsor", 0.95),
+    ("work_authorization", r"\b((authori[sz]ed|eligible|permitted) to work|legally work|work legally|legal(ly)? "
+                           r"(able|allowed|authori[sz]ed) to work)\b.{0,80}\bwithout\b.{0,40}\bsponsor", 0.95),
+    # "What is your current visa status? Choose Not Applicable if you do not require sponsorship." (Boston Scientific)
+    # and "...indicate the type of visa you currently hold. If you do not require a visa please put NA." (BorgWarner)
+    ("visa_status", r"\bwhat is your (current )?visa (status|type)\b|\b(indicate|state|list) (the |your )?(type of visa|"
+                    r"visa type)\b|\btype of visa (you|do you)\b|^\W*(current )?visa (status|type)\W*$", 0.95),
+    # "Do you have legal authority to work permanently in the United States?" (Great American): a citizen or permanent
+    # resident's right, which his profile says he doesn't have
+    ("permanent_work", r"\bwork permanently\b|\bpermanent(ly)? (authori[sz]ation|right) to work\b|\bpermanent work "
+                       r"authori[sz]ation\b", 0.95),
     ("sponsorship", r"\bsponsor", 0.95),
+    # "Are you an F1 student who has or will be applying for CPT, OPT, or STEM OPT?" (Boston Scientific, 2026-11-17):
+    # the profile's f1_student answer. After the sponsorship rule, so a sponsorship question naming F-1 stays there.
+    ("f1_student", r"\bF-?1\b.{0,12}\b(student|visa|status)\b|\bon an? F-?1\b", 0.95),
     # "Are you a citizen of any of the following countries: Group D (Armenia, ...)" (Analog Devices, 2026-11-16):
     # checked against the profile's citizenship, not the U.S.-citizen answer
     ("citizen_of_listed", r"\bcitizen (of|in) (any|one) (one )?of (these|the following|the listed)\b.{0,20}\bcountr", 0.95),
+    # "Please select all countries in which you currently hold citizenship or have an active permanent resident
+    # status" (Marvell, 2026-11-18): a country list, not the U.S.-status question below
     ("citizenship_country", r"\bcountry of citizenship\b|\bcitizenship country\b|\bcountry (of|where you hold) "
-                            r"citizenship\b|\bwhat is your citizenship\b|^\W*citizenship\W*$", 0.9),
+                            r"citizenship\b|\bwhat is your citizenship\b|^\W*citizenship\W*$|"
+                            r"\bcountr(y|ies)\b[^.?]{0,40}\b(hold|have|held)\b[^.?]{0,15}\bcitizenships?\b", 0.9),
     # a list of statuses ("US Citizen / Lawful Permanent Resident / Protected Person / None"; Muon Space, 2026-11-15)
     ("us_citizen", r"\b(immigration|citizenship)\b.{0,60}\bstatus\b|\bU\.?\s?S\.? persons?\b|"
                    r"^\W*please indicate your current status\W*$", 0.9),
@@ -195,6 +215,12 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                           r"|\b(have you been|are you currently|are you now)\b.{0,40}\b(employed|working|a contractor)\b"
                           r".{0,20}\b(with|for|by|at)\b", 0.9),
     ("major", r"\bmajor\b(?! life)|\bdiscipline\b|\bfield of study\b|\barea of study\b", 0.9),  # not "major life activities"
+    # "What is the highest level of education you have completed?" (Scout Motors, 2026-11-18): the finished degree
+    # (Bachelor's), not the Master's still in progress. Before the general degree rule.
+    # ("...you are pursuing or have completed" still means the degree in progress)
+    ("degree_completed", r"^(?!.*\b(?:pursu\w*|currently|in progress|working toward\w*|enrolled)\b).*?(?:"
+                         r"\b(?:highest|last)\b.{0,50}\b(?:completed|attained|obtained|earned|finished|achieved)\b|"
+                         r"\b(?:completed|attained|obtained|earned)\b.{0,30}\b(?:highest|degree|education)\b)", 0.95),
     ("degree", r"^\s*degree( type| level)?\s*\??\s*$|\bhighest degree\b|\b(type|level) of degree\b|"
                r"\bhighest (level of )?education\b|\beducation level\b", 0.95),
     ("degree", r"\bdegree\b", 0.85),
@@ -216,7 +242,9 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("clearance", r"\bclearance\b", 0.9),
     # military service, his or a spouse's or partner's: always No (Vatsal, 2026-11-16). Before the veteran rule.
     ("military_service", r"\b(spouse|domestic partner|partner)\b.{0,80}\b(military|armed forces|served)\b|"
-                         r"\b(served|serving|affiliated)\b.{0,60}\b(military|armed forces|national guard|reserves?)\b",
+                         r"\b(served|serving|affiliated)\b.{0,60}\b(military|armed forces|national guard|reserves?)\b|"
+                         # "Are you a veteran or active member of the armed forces?" (Soros, 2026-11-17)
+                         r"\bmembers? of the (u\.?s\.? )?(military|armed forces|national guard|reserves?)\b",
      0.95),
     ("eeo_hispanic", r"\bhispanic\b|\blatin[oax]\b", 0.9),
     ("eeo_race", r"\brace\b|\bracial\b|\bethnicit|\bethnic (background|identity|origin)\b", 0.85),  # "racial/ethnic"
@@ -233,6 +261,7 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("address_country", r"^\s*country\b", 0.85),
     ("address_state", r"^\s*(state|province)\b", 0.85),
     ("address_city", r"^\s*city\b", 0.85),
+    ("address_county", r"^\s*county\s*$", 0.85),
     ("signature_date", r"^\s*(today'?s )?date\s*$|^\s*date signed\s*$|\bsignature date\b", 0.9),
     ("language", r"^\s*(preferred )?language\s*$", 0.85),
     ("location_city", r"\blocation\b|\bwhere (do you|are you) (live|located|based)\b|\bcurrent city\b", 0.85),
@@ -247,17 +276,39 @@ FIELD_KEYS = {
     "workday:countryPhoneCode": "phone_country_code", "workday:extension": "phone_extension",
     "workday:addressLine1": "address_street", "workday:addressLine2": "address_line2", "workday:city": "address_city",
     "workday:countryRegion": "address_state", "workday:postalCode": "address_zip", "workday:country": "address_country",
+    "workday:regionSubdivision1": "address_county",
     "workday:source": "how_did_you_hear", "workday:candidateIsPreviousWorker": "previous_employee",
     "workday:veteranStatus": "eeo_veteran", "workday:gender": "eeo_gender", "workday:ethnicity": "eeo_race",
     "workday:acceptTermsAndAgreements": "terms_consent", "workday:linkedInAccount": "linkedin_url",
 }
 SKIP_FIELDS = {"resume_text", "cover_letter_text"}  # typed-in alternatives to an upload
-_US_STATES = {"WA": "Washington", "CA": "California", "NY": "New York", "OR": "Oregon", "TX": "Texas", "MA": "Massachusetts",
-              "IL": "Illinois", "NJ": "New Jersey", "CO": "Colorado", "GA": "Georgia", "FL": "Florida", "VA": "Virginia"}
+_US_STATES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California", "CO": "Colorado",
+    "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia", "FL": "Florida", "GA": "Georgia",
+    "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas", "KY": "Kentucky",
+    "LA": "Louisiana", "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota",
+    "MS": "Mississippi", "MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire",
+    "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio",
+    "OK": "Oklahoma", "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+    "SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont", "VA": "Virginia",
+    "WA": "Washington", "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming", "PR": "Puerto Rico",
+}
+
+
+def us_state_name(value: str) -> Optional[str]:
+    """'WA' -> 'Washington': for state lists that spell the names out (BambooHR, 2026-11-18)."""
+    return _US_STATES.get(value.strip().upper()) if value else None
 
 
 _FILE_KEYS = ("resume", "cover_letter", "transcript")
+_PLUS_PHONE_SITES = ("greenhouse", "lever", "ashby", "workday", "icims")  # take "+1..." as typed
 _DATE_KEYS = ("graduation_date", "start_date", "signature_date", "full_time_start")
+
+
+def _hispanic_choices_only(options: list[str]) -> bool:
+    text = " ".join(options).lower()
+    return bool(re.search(r"hispanic|latin", text)) and not re.search(
+        r"\b(asian|white|black|african|pacific|native|indian|alaska|two or more|caucasian)\b", text)
 
 
 def key_for(q: FormQuestion) -> tuple[Optional[str], float]:
@@ -271,12 +322,16 @@ def key_for(q: FormQuestion) -> tuple[Optional[str], float]:
     for key, pattern, confidence in LABEL_RULES:
         if q.type == "file" and key not in _FILE_KEYS:  # an upload takes a document, never a zip code (Riot: ".zip")
             continue
+        if key in _FILE_KEYS and q.options:  # a choice naming the resume isn't the upload: "I confirm the information
+            continue  # in my application and resume is true... Yes/No" was left empty as a file (Scout, 2026-11-18)
         if q.type == "date" and key not in _DATE_KEYS:  # only a date goes into a date box: "Yes" and "Master of
             continue  # Science" came out as "/01/2001" and "/01/" (Kensho, Analog Devices, 2026-11-16)
         if q.type == "file" and key == "resume" and not re.search(r"(?i)\bresume|\bcv\b", q.label) and \
                 re.search(r"(?i)additional|attachment|supporting|other", q.description or ""):
             continue  # "Upload a file" under Additional Attachments isn't the resume box (Camping World, 2026-11-16)
         if re.search(pattern, text, re.IGNORECASE):
+            if key == "eeo_race" and q.options and _hispanic_choices_only(q.options):
+                key = "eeo_hispanic"  # "What is your ethnicity?" offering only Hispanic or Latino (Soros, 2026-11-17)
             if key.startswith("eeo_") and q.section in ("eeoc", "demographic"):
                 confidence = max(confidence, 0.95)  # a question in the EEO survey means what it says
             return key, confidence
@@ -301,6 +356,7 @@ class AnswerContext:
     projects_done: Optional[int] = None  # projects in the master list
     documents: dict[str, str] = field(default_factory=dict)  # "transcript" / "undergrad_transcript" -> a file that exists
     grades: dict[str, str] = field(default_factory=dict)  # school -> GPA, from data/grades.yaml (forms only, rule 3)
+    today: Optional[date] = None  # tests pin it; otherwise the real date
 
 
 @dataclass
@@ -438,6 +494,10 @@ def _start_date(ctx: AnswerContext) -> Value:
         pick = sd.co_op
     elif ctx.employment == "full_time":
         pick = sd.full_time
+    elif ctx.employment == "internship" and not ctx.season and (free := parse_month_year(ctx.cfg.free_from)):
+        # no term named (Nelnet, 2026-11-17): the first day he's free (free_from, or today once that has passed)
+        start = max(date(free.year, free.month, 1), ctx.today or date.today())
+        pick = f"{start:%B} {start.day}, {start.year}"
     if not pick or pick.lower() == "ask":
         return Value(None, "profile earliest_start_date", note="start date for this kind of role is 'ask'")
     if ctx.employment == "internship" and ctx.season_year and not re.search(r"\d{4}", pick):
@@ -467,9 +527,16 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     if key == "email":
         return Value(t1.email, "profile email")
     if key == "phone":
+        digits = re.sub(r"\D", "", t1.phone or "")
+        if ctx.job is not None and ctx.job.ats not in _PLUS_PHONE_SITES and len(digits) == 11 and digits[0] == "1":
+            # company sites often reject "+": "Only use digits (0-9), dashes (-) or parentheses ()" (Boston Scientific,
+            # 2026-11-17), so a US number goes in as 206-280-0258
+            return Value(f"{digits[1:4]}-{digits[4:7]}-{digits[7:]}", "profile phone (US format for this site)")
         return Value(t1.phone, "profile phone")
     if key == "phone_type":
-        return Value("Mobile", "your phone is a mobile", aliases=("mobile", "cell", "cell phone", "mobile phone"))
+        # BMO's Workday lists only Business/Personal Primary/Secondary (2026-11-18): his mobile is his personal primary
+        return Value("Mobile", "your phone is a mobile", aliases=("mobile", "cell", "cell phone", "mobile phone"),
+                     candidates=("Mobile", "Cell", "Personal Primary", "Personal", "Home"))
     if key == "phone_country_code":
         us = (t1.phone or "").replace(" ", "").startswith("+1")
         return Value("United States of America (+1)" if us else None, "profile phone", aliases=("+1", "united states"))
@@ -483,6 +550,13 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value(t1.portfolio_url, "profile portfolio_url")
     if key == "school":
         return Value(t1.current_school, "profile current_school")
+    if key == "degree_completed":
+        done = [e for e in ctx.profile.education if e.end != "per_run"]
+        if not done:
+            return Value(None, "profile education", note="no finished degree in the profile")
+        bachelor = re.search(r"(?i)\bbachelor", done[0].degree)
+        return Value(done[0].degree, "profile education (finished degree)",
+                     aliases=("bachelor", "bachelors", "bachelor's", "undergraduate", "4 year") if bachelor else ())
     if key == "degree":
         return Value(t1.degree, "profile degree", aliases=("master", "masters", "ms", "m s", "graduate"))
     if key == "major":
@@ -505,6 +579,21 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
                      else ())
     if key == "work_authorization":
         return tier2(t2.work_authorization, "work_authorization")
+    if key == "visa_status":
+        none = re.search(r"(?i)\b(not applicable|n/?a)\b[^.?]{0,60}\b(do not|don't) (require|need)\b|\b(do not|don't) "
+                         r"(require|need)\b[^.?]{0,60}\b(not applicable|n/?a)\b", text)
+        needs = (tier2(t2.sponsorship, "sponsorship").text or "").strip().lower()
+        if none and needs == "no":
+            word = "NA" if re.search(r"\bNA\b", text) else "Not Applicable"
+            pick = next((o for o in q.options if re.search(r"(?i)not applicable|^n/?a$", o)), word)
+            return Value(pick, "the question's own instruction (no sponsorship needed)")
+        return Value(None, "visa type", note="names a visa type: Vatsal answers it (CLAUDE.md)")
+    if key == "f1_student":
+        return tier2(t2.f1_student, "f1_student")
+    if key == "permanent_work":
+        given = tier2(t2.us_citizen_or_permanent_resident, "us_citizen_or_permanent_resident")
+        yes = (given.text or "").strip().lower() in ("yes", "true")
+        return Value("Yes" if yes else "No", "profile us_citizen_or_permanent_resident (permanent right to work)")
     if key == "sponsorship":
         mentions = re.search(r"\b(CPT|OPT|F-?1)\b", f"{text} {' '.join(q.options)}")
         includes = re.search(r"(includ\w*|such as|e\.g\.|counts?|consider\w*)[^.?]{0,60}\b(CPT|OPT)\b"
@@ -696,6 +785,8 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         us = _norm(t1.address.country or "") in ("united states", "united states of america", "usa", "us")
         return Value(t1.address.country, "profile address", aliases=("united states", "usa", "us"),
                      candidates=("United States of America", "United States", "USA") if us else ())
+    if key == "address_county":
+        return Value(t1.address.county, "profile address")
     return Value(None, "", note="no profile value for this")
 
 
@@ -742,7 +833,9 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
         if key == "transcript" and q.type == "file":
             answers.append(_transcript(q, base, ctx))
             continue
-        approved = _approved_answer(q, ctx.approved) if q.type in ("text", "textarea") else None
+        # a remembered written answer only where no rule matched: rules follow the run (graduation date, salary...);
+        # a remembered "Winter '27" was about to go into Quest's graduation box (2026-11-17)
+        approved = _approved_answer(q, ctx.approved) if q.type in ("text", "textarea") and key is None else None
         if approved:
             answers.append(PlannedAnswer(**base, kind="auto", value=approved, confidence=1.0, source="data/answers.yaml",
                                          status="approved"))
@@ -901,7 +994,8 @@ def _decide(q: FormQuestion, value: Value, label_conf: float, cfg: Config) -> di
         return {"kind": "unknown" if q.required else "skip", "note": value.note or "no value in your profile",
                 "source": value.source}
     text, match_conf = value.text, 1.0
-    if q.type == "number" and not re.fullmatch(r"\s*\$?\s*\d[\d,]*(\.\d+)?\s*[kK]?\s*", value.text):
+    numbers_only = q.type == "number" or bool(re.search(r"(?i)\bnumbers? only\b|\bdigits only\b|\bnumeric\b", q.label))
+    if numbers_only and not re.fullmatch(r"\s*\$?\s*\d[\d,]*(\.\d+)?\s*[kK]?\s*", value.text):
         return {"kind": "unknown" if q.required else "skip", "source": value.source,
                 "note": f"the field takes a number only; your profile says '{value.text}'"}
     if q.type == "boolean":  # one checkbox: the value says whether to tick it, its label is not a choice
@@ -935,7 +1029,7 @@ def _decide(q: FormQuestion, value: Value, label_conf: float, cfg: Config) -> di
             return {"kind": "unknown" if q.required else "skip", "source": value.source,
                     "note": f"no option fits '{value.text}'", "confidence": round(score, 3)}
         text, match_conf = best, score
-    elif q.type == "textarea" and len(text) < 3:
+    elif q.type == "textarea" and len(text) < 3 and text.strip().upper() not in ("NA", "N/A"):  # "put NA" (BorgWarner)
         return {"kind": "unknown" if q.required else "skip", "source": value.source, "note": "needs a written answer"}
     return _finish(q, value, label_conf, text, match_conf, cfg)
 

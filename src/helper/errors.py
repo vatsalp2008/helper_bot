@@ -81,6 +81,9 @@ def explain(exc: BaseException) -> Optional[str]:
         if "Timeout" in kind or "Timeout" in text.split("\n")[0]:
             return (f"A page took too long to respond ({text.splitlines()[0][:160]}). The site may be slow or down; "
                     "try again in a minute.")
+        if m := re.search(r"net::(ERR_[A-Z_]+)", text):  # ERR_NETWORK_CHANGED: Wi-Fi reconnecting (2026-11-17)
+            return (f"The network dropped while loading a page ({m.group(1)}). Check the internet connection, then run "
+                    "the same command again; nothing was submitted.")
     if kind == "OperationalError" and "locked" in text:
         return "helper.db is busy: another helper command is writing to it. Wait for it to finish, then try again."
     if module.startswith(("requests", "urllib3")) and kind in ("ConnectionError", "Timeout", "ConnectTimeout",

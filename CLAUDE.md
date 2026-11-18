@@ -64,15 +64,16 @@ Enforce these in code, not only in instructions.
   - **No approval step:** company questions are drafted and filled as the pages open. Vatsal reviews everything on Workday's Review page before he submits.
 - **Form answers Vatsal set on 2026-11-14** (all in `data/profile.yaml`):
   - **Salary:** with `tier2.salary_from_posting`, a salary question gets the posting's own pay: the midpoint of its range, annual unless the question asks hourly or monthly, rounded (nearest $1,000 a year). With no pay in the posting, a text box gets `salary_expectation` ("Negotiable") and a numbers-only box goes to Vatsal.
-  - **AI screening and keeping the application for other roles** (for example HiredScore): yes, the choice that opts in (`tier2.ai_screening_consent`, `tier2.keep_for_other_roles`).
+  - **AI screening and keeping the application for other roles** (for example HiredScore): yes, the choice that opts in (`tier2.ai_screening_consent`, `tier2.keep_for_other_roles`). Always yes, however it's worded, such as "Do you permit Labcorp to process your data using AI tools...?" (Vatsal, 2026-11-17).
   - **Hispanic or Latino:** No (`tier2.eeo.hispanic_latino`). Other extra EEO questions, such as pronouns, keep the decline default.
   - **Relatives at the company:** none, always (Vatsal, 2026-11-15; `tier2.relatives_at_company`): "N/A" in a written box, "No" or "None" in a choice question.
-  - **Start dates** (Vatsal, 2026-11-15): internships can start now (he is free from January), so a "start now / immediately" choice is right and an immediate-start internship is only a note; full-time roles start in May (the summer option; `immediate_start_target: "May 2027"`). He is open to Spring 2027 work and co-ops anywhere, including school-year hours (Vatsal, 2026-11-16; `free_from: "January 2027"`); only fall terms clash with classes.
+  - **Start dates** (Vatsal, 2026-11-15): internships can start now (he is free from January), so a "start now / immediately" choice is right and an immediate-start internship is only a note; full-time roles start in May (the summer option; `immediate_start_target: "May 2027"`). He is open to Spring 2027 work and co-ops anywhere, including school-year hours (Vatsal, 2026-11-16; `free_from: "January 2027"`); only fall terms clash with classes. He can relocate, even during a semester (Vatsal, 2026-11-17): a far-away office or a "must live in the X area" requirement is only a note, never a reason to skip.
   - **Salary boxes** get the plain number ("36", "71000"): iCIMS rejects "$36 per hour".
   - **Commuting, on-site and hybrid attendance:** always Yes (Vatsal, 2026-11-15).
   - **Military service questions** (his, or a spouse's or partner's): "No", or the never-served choice (Vatsal, 2026-11-16). Protected-veteran questions keep the profile answer.
   - **Citizenship:** from the profile (`tier1.citizenship` / `citizenship_since`, git-ignored). **Past employers:** all his experience is in the master list, so any other employer (the company, its affiliates, dealers or contractors) gets "No".
   - **Immigration or citizenship status lists** (US Citizen / Permanent Resident / Protected Person / None): "None"; "Are you a U.S. person?": No (Vatsal, 2026-11-15). A list without a "None" choice (naming visa types) goes to him.
+  - **"Indefinite" or "permanent" work authorization in a posting** (Vatsal, 2026-11-17): apply anyway, now and for future postings; the eligibility check only notes it. A form question that asks it directly still gets the current, true answer.
   - **Transcripts:** `documents.transcript` (master's) and `documents.undergrad_transcript` are uploaded only when a form requires a transcript; the undergraduate one when the question asks for it. They're PDFs in the repo's top folder, which git ignores.
 - **Cover letters** (Vatsal, 2026-11-14): one with every resume, saved as `<Name>_CoverLetter.pdf` next to the resume, and uploaded wherever a form has a cover letter field (a text box gets the plain text). Once it passes helper's checks it needs no separate review, so it never holds up auto-submit (Vatsal, 2026-11-15).
   - **Format:** his template (`templates/cover_letter.tex.j2`): resume header, thin cyan line, 14pt paragraph spacing. Bold key words. Always "Dear Hiring Team,"; Northeastern campus jobs get "Dear Career Team," and his NUID after the name (`tier1.nuid`, profile only).
@@ -94,6 +95,7 @@ Enforce these in code, not only in instructions.
 Supported sites: Greenhouse, Lever, Ashby, Workday and iCIMS, plus the generic adapter for any other site.
 - **The generic adapter:** finds a Greenhouse, Lever, Ashby or Workday posting behind a company's own page and hands it over. Otherwise it reads the page's form by its labels, fills it, and auto-submits when everything is filled (see Auto-submit). A sign-in wall or a blocked page is left to Vatsal.
 - **Stopped sites:** Taleo, SmartRecruiters and SuccessFactors are never filled (accounts, rule 8). `helper resume <link>` still builds their resume and cover letter from the posting, and `helper assist <run_id>` (Vatsal, 2026-11-16) opens the posting in his normal browser, shows the files in Finder and prints a paste sheet (also for any posting he'd rather fill himself); after he submits, `helper mark <id> applied`. A company page whose Apply button leads to one of them gets the same stop message; one that leads to iCIMS (Jibe pages do) becomes an iCIMS run.
+- **Lever, for now** (Vatsal, 2026-11-17): Lever's bot check rejected every submit from helper's window (TRI, Quest), so Lever postings are applied to by hand. `helper find` lists them as "you apply"; build them with `helper resume <link>`, and they go to the list's Apply manually group with their `helper assist` command. Never disguise helper's browser to get past it.
 - **Employment sections** on Greenhouse forms get the jobs on the tailored resume (company, title, months and years, current role), the same entries Workday's My Experience gets (Vatsal, 2026-11-15).
 - **Bot filters:** helper identifies itself honestly. Never disguise its browser or requests (user agent, stealth tricks) to get past a site that turns it away. A robot check, a blocked page or a sign-in wall goes to Vatsal, or use `--jd-file`.
 - **Job boards that relay postings** (divulgavagas, thebigjobsite and the like) aren't the employer's posting. Before tailoring, check that the company helper read is the real employer; if it isn't, ask Vatsal for the employer's own link.
@@ -123,6 +125,44 @@ Supported sites: Greenhouse, Lever, Ashby, Workday and iCIMS, plus the generic a
 - **Clean runs:** every fill is logged in SQLite (`fill_runs`). A review run is clean when the submit was confirmed and helper filled every field with nothing for Vatsal to fix. `helper stats` shows each site's count.
 - **Workday auto-submits on its Review page** (Vatsal, 2026-11-16, `submit_mode: auto`): whether or not Vatsal stepped in along the way, since Workday shows Review only when every required field is filled. It still stops if the Review page shows errors or there isn't exactly one Submit button. Company-site forms (the generic adapter) auto-submit too (Vatsal, 2026-11-16) once every required field is filled, however it got filled, the form shows no errors, and there is exactly one final Submit button. iCIMS never auto-submits.
 - **Workday school field** (Vatsal, 2026-11-16): when Workday rejects My Experience because "School or University" is empty, helper deletes the education entries and goes on (Dexcom and Rocket accepted that). If an entry can't be deleted, it hands over.
+
+## Unattended job hunt (Vatsal, 2026-11-16)
+Five times a day (2am, 7am, noon, 5pm and midnight; Vatsal, 2026-11-18, replacing every 3 hours), this Claude Code session wakes itself and finds and applies on its own.
+- **The schedule:** CronCreate `2 0,2,7,12,17 * * *` with the prompt "Run the scheduled job hunt: follow CLAUDE.md 'Unattended job hunt'."
+  - It lives only in this session. A recurring job expires after 7 days, so every session renews it.
+  - helper never calls Claude itself: the session is the reasoning engine, as everywhere else.
+  - `caffeinate -is` runs in the background so the Mac stays awake.
+  - "Stop the job hunt" means CronDelete plus stopping caffeinate.
+- **The list:** a `postings` table in helper.db, statuses queued, applying, needs_you, ready_for_you and skipped.
+  - `helper queue` shows it; `exports/postings_queue.md` is rewritten after every change.
+  - The private web page https://claude.ai/artifact/7K1pQVuvwwhWqWhiDQ9keF reads one record, `hunt/list`. Its source is `templates/job_hunt_page.html`.
+  - A confirmed submit, or `helper mark <id> applied`, takes a posting off the list. A stuck fill sets needs_you with the reason. A resume-only run sets ready_for_you with its `helper assist` command.
+- **Vatsal's decisions:**
+  - Fewer than 10 good postings from the last 24 hours: apply to the good ones and say so with `helper queue note`. Never pad with stale or poor fits.
+  - Ineligible postings (U.S. citizenship or U.S.-person required, PhD only, a graduation window he doesn't fit) are not built. They're listed as skipped with the reason; `helper find` and `helper apply` do this themselves.
+  - A stuck window stays open (`--keep-open`, `stuck_window_hours`); he reviews it later.
+  - **Fixed errors get a fresh window** (Vatsal, 2026-11-17): when a fill stalls on a helper bug and the bug is fixed, stop that fill (TaskStop closes its window) and run `helper fill <run_id> --keep-open` again. Add `--replan` when the fix was in an answer rule: a single-page form otherwise reuses its first plan (Claude's answers are kept). Use `--rescan` instead when the fix was in how helper reads a company-site form: it reads the questions again, and new ones the rules can't answer come to Claude (exit 3; `helper continue`, then `helper fill` again). Never when a submit may have gone through (`submitted_unverified`, rule 10), and never in a window he's working in. Stalls only he can clear (CAPTCHA, emailed codes, answers only he knows) stay open.
+  - Windows are unlimited (`max_browser_windows: 0`), and a new session starts on schedule whatever is still open.
+- **Each session:**
+  1. **Renew the schedule:** CronList, then CronDelete the hunt's job and CronCreate it again with the same cron and prompt. Start `caffeinate -is` in the background if it isn't running.
+  2. **Leftovers first:** finish what earlier sessions started before new tailoring.
+     - Agents that a Claude usage limit stopped get resumed with SendMessage ("the limit has reset, continue"); their work is saved, so never start them over.
+     - Postings still queued, or runs still waiting on tailoring, come before new picks. Usage limits are the real ceiling on volume.
+     - Windows stuck on a helper bug that's now fixed get filled again (see "Fixed errors get a fresh window").
+  3. **Find:** `helper find --hours 24`. It reads Greenhouse, Lever, Ashby, Workday and SmartRecruiters feeds and the SimplifyJobs lists, checks eligibility, and lists ineligible postings as skipped.
+  4. **Pick:** at least 10 of the eligible postings by fit to the master list (software, data, ML, AI; early career). Include "you apply" ones (SmartRecruiters, Taleo, SuccessFactors). Never research positions (research scientist, researcher, "... Research" roles; Vatsal, 2026-11-17); `helper find` leaves them out.
+     - **A wide range of roles** (Vatsal, 2026-11-17): besides engineering, AI-adjacent business roles (an enterprise AI associate, solutions, analyst roles) and supply chain roles are good picks; "not engineering" is never a reason to skip. Quant trader roles count as close to software (Akuna, Optiver and other trading firms hire software people as quant traders). Skip only roles built on another discipline's degree (mechanical, electrical or hardware engineering, law, clinical).
+     - `helper queue add <url>...` for the picks.
+     - `helper queue add <url> --skip "not a fit: <why>"` for the others, so they don't come back.
+  5. **Start the runs:** helper-fillable postings get `helper apply <url>`. "You apply" postings get `helper resume <url>`, and become ready_for_you once the cover letter passes.
+  6. **Tailor:** in parallel with general-purpose agents, 2 runs each. The brief is this file's rules plus the tailor and cover letter loop; agents stop at the fill step and never run `helper fill`.
+  7. **Fill:** `helper fill <run_id> --keep-open` in the background, a few seconds apart, with one watcher over all of them (`scripts/watch_fills.sh <task output folder> <task ids>` in the background; restart it after each event).
+     - Answer `questions_needed.json` by his rules. Auto-submit sends what's complete.
+     - Leave CAPTCHAs, emailed codes and fields only he can answer in the open window. The list shows them as needs_you.
+  8. **Close the session:**
+     - `helper queue note "<found N, picked N, sent N, N need you, N ready for you>"`, including a shortfall if fewer than 10 good postings existed.
+     - `helper queue --page-file exports/queue_page.json`, then ArtifactData `get` hunt/list (for its version) and `set` hunt/list from that file with `if_version`. On the first write there's no version yet.
+  9. **Don't wait for open windows.** Answers to later questions come when their watcher fires, even during a later session.
 
 ## Tracker and Notion
 - `helper.db` (SQLite) is the system of record, and it holds Vatsal's imported Notion history.

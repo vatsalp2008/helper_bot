@@ -373,6 +373,8 @@ def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Conte
                 continue
             r.error("numbers", where, f"'{token}' isn't in {label}")
         for m in ctx.vocab.find(mask_comparisons(sentence)):
+            if same_company(m.text, job.company) or same_company(m.canonical, job.company):
+                continue  # the company's own name ("ServiceNow" is also a platform in the lexicon; 2026-11-17)
             if not any(m.canonical in i.allowed_tech for i in about) and not (
                     about is items and m.canonical in on_resume):
                 r.error("tech", where, f"'{m.text}' ({m.canonical}) isn't a technology {label} used")

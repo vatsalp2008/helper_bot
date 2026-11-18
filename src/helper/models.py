@@ -68,6 +68,8 @@ class Config(StrictModel):
     match_ask_threshold: float = Field(0.60, gt=0, le=1)
     fill_wait_timeout_minutes: int = Field(30, ge=1)
     fill_certifications: bool = False  # Workday's Certifications section (Vatsal, 2026-11-15: off for now)
+    max_browser_windows: int = Field(0, ge=0)  # 0 = no limit (Vatsal, 2026-11-16: the job hunt opens as many as it needs)
+    stuck_window_hours: float = Field(24, gt=0)  # `helper fill --keep-open`: how long a window that stopped stays open
     pause_ms: tuple[int, int] = (150, 600)
 
     @field_validator("default_grad_date", "alt_grad_date", "immediate_start_target", "free_from")
@@ -108,6 +110,7 @@ class Address(StrictModel):
     street: Optional[str] = None
     unit: Optional[str] = None
     city: Optional[str] = None
+    county: Optional[str] = None  # Workday's "County" box (Great American, 2026-11-18)
     state: Optional[str] = None
     postal_code: Optional[str] = None
     country: Optional[str] = None
@@ -185,6 +188,7 @@ class Tier2(StrictModel):
     work_authorization: Tier2Item = Field(default_factory=Tier2Item)
     sponsorship: Sponsorship = Field(default_factory=Sponsorship)
     us_citizen_or_permanent_resident: Tier2Item = Field(default_factory=Tier2Item)
+    f1_student: Tier2Item = Field(default_factory=Tier2Item)  # "Are you an F1 student ... CPT, OPT?" (2026-11-17)
     earliest_start_date: StartDates = Field(default_factory=StartDates)
     salary_expectation: Tier2Item = Field(default_factory=Tier2Item)
     salary_from_posting: bool = False  # answer with the posting's own pay (midpoint, rounded) when it states one
