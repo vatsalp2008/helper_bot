@@ -127,8 +127,8 @@ Supported sites: Greenhouse, Lever, Ashby, Workday and iCIMS, plus the generic a
 - **Workday school field** (Vatsal, 2026-11-16): when Workday rejects My Experience because "School or University" is empty, helper deletes the education entries and goes on (Dexcom and Rocket accepted that). If an entry can't be deleted, it hands over.
 
 ## Unattended job hunt (Vatsal, 2026-11-16)
-Five times a day (2am, 7am, noon, 5pm and midnight; Vatsal, 2026-11-18, replacing every 3 hours), this Claude Code session wakes itself and finds and applies on its own.
-- **The schedule:** CronCreate `2 0,2,7,12,17 * * *` with the prompt "Run the scheduled job hunt: follow CLAUDE.md 'Unattended job hunt'."
+Five times a day (2am, 7am, noon, 5pm and 10pm; Vatsal, 2026-11-18, replacing every 3 hours), this Claude Code session wakes itself and finds and applies on its own.
+- **The schedule:** CronCreate `2 2,7,12,17,22 * * *` with the prompt "Run the scheduled job hunt: follow CLAUDE.md 'Unattended job hunt'."
   - It lives only in this session. A recurring job expires after 7 days, so every session renews it.
   - helper never calls Claude itself: the session is the reasoning engine, as everywhere else.
   - `caffeinate -is` runs in the background so the Mac stays awake.
