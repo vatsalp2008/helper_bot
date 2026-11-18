@@ -9,6 +9,7 @@ from helper import hunt
 from helper.config import Paths, load_config
 from helper.tracker import queue
 from helper.tracker.commands import open_db
+from helper.tracker.repo import insert as insert_application
 
 URL = "https://job-boards.greenhouse.io/acme/jobs/1"
 
@@ -74,6 +75,21 @@ def test_marking_applied_and_resume_only_runs(repo: Path) -> None:
         assert queue.find(conn, URL) is None
         assert queue.add(conn, url="https://x.test/2", company="B", title="T") is not None
         assert queue.add(conn, url="https://x.test/2", company="B", title="T") is None  # already listed
+    finally:
+        conn.close()
+
+
+def test_marking_applied_finds_a_posting_listed_by_its_run_only(repo: Path) -> None:
+    # Airbnb and apexanalytix (2026-11-18): listed before their applications existed, so the rows held only the run
+    paths, cfg = _setup(repo)
+    hunt.on_run_started(paths, cfg, URL, SimpleNamespace(run_id="r4", application_id=None, options={}))
+    conn = open_db(paths, cfg)
+    try:
+        app_id = insert_application(conn, company="Acme", role_title="Software Engineer Intern", run_id="r4")
+        conn.commit()
+        assert queue.find(conn, URL)["application_id"] is None
+        hunt.on_marked(paths, conn, app_id, "applied")
+        assert queue.find(conn, URL) is None
     finally:
         conn.close()
 

@@ -207,6 +207,10 @@ def on_marked(paths: Paths, conn: Any, application_id: int, status: str) -> None
     """`helper mark <id> applied` (or any sent status): the posting leaves the list."""
     from .tracker.db import SUBMITTED_STATUSES
 
-    if status in SUBMITTED_STATUSES and queue.remove_sent(conn, application_id=application_id):
+    if status not in SUBMITTED_STATUSES:
+        return
+    # a posting listed before its application existed carries only the run id (Airbnb, apexanalytix, 2026-11-18)
+    row = conn.execute("SELECT run_id FROM applications WHERE id = ?", (application_id,)).fetchone()
+    if queue.remove_sent(conn, run_id=row[0] if row else None, application_id=application_id):
         conn.commit()
         refresh(paths, conn)
