@@ -6,6 +6,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 # Text that means the application went through (Greenhouse, Lever, Ashby).
 CONFIRMATION_RE = re.compile(
@@ -140,7 +141,10 @@ def is_confirmation(page: Any, form: Optional[Any] = None, hosts: tuple[str, ...
     frames += [f for f in page.frames if f not in frames and any(h in f.url for h in hosts)]
     for frame in frames:
         try:
-            if re.search(r"/confirmation|/thanks\b|/thank-you\b", frame.url):
+            # Phenom careers sites (Disney, 2026-11-18) send a finished application to their "apply-thankyou" page
+            # ("applythankyou" too), which /thank-you didn't match, so helper waited on after Vatsal submitted
+            if re.search(r"/confirmation|/thanks\b|/thank-you\b", frame.url) or \
+                    re.search(r"(?i)/(?:apply-?)?thank-?you/?$", urlparse(frame.url).path):
                 return True
             if CONFIRMATION_RE.search(frame.locator("body").inner_text(timeout=2000)):
                 return True

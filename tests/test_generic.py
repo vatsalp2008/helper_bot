@@ -506,6 +506,51 @@ def test_a_rippling_form_is_filled(browser: Any, tmp_path: Path) -> None:
     page.close()
 
 
+_DROPZONE = """<body><form><h1>Tech Data Analytics Intern</h1>
+<div class="phff-field"><label for="fn">First Name*</label><input id="fn" required></div>
+<div class="phff-field"><label for="em">Email*</label><input id="em" type="email" required></div>
+<div id="phff-field-cloudWidget" class="phff-resume-group"><p>Upload Resume*</p>
+  <div class="dz-clickable"><span>Upload Resume</span> RESUME/CV<p>DOC, DOCX, HTML, PDF or TXT</p></div></div>
+</form>
+<input type="file" class="dz-hidden-input" style="visibility:hidden;position:absolute;top:0;left:0;height:0;width:0">
+</body>"""
+
+
+def test_a_dropzone_upload_box_is_found_and_takes_the_resume(browser: Any, tmp_path: Path) -> None:
+    """Disney's careers site (2026-11-18): Dropzone's real file box sits at the end of the page with no name or label,
+    so helper never uploaded the resume."""
+    from helper.answers import PlannedAnswer
+
+    page = browser.new_page()
+    page.set_content(_DROPZONE)
+    upload = next(q for q in generic.discover(page) if q.type == "file")
+    assert (upload.label, upload.required) == ("Upload Resume", True)
+    pdf = tmp_path / "VatsalPatel_Resume.pdf"
+    pdf.write_bytes(b"%PDF-1.4 test")
+    results = generic.fill_form(page, [PlannedAnswer(field=upload.field_name, label=upload.label, type="file",
+                                                     required=True, kind="auto", value=str(pdf), confidence=1.0,
+                                                     source="resume")],
+                                pdf, country=None, city=None, pause=lambda: None)
+    assert [r.ok for r in results] == [True], [r.detail for r in results]
+    assert page.evaluate("() => document.querySelector('input.dz-hidden-input').files[0].name") == pdf.name
+    page.close()
+
+
+def test_a_phenom_thank_you_page_is_a_confirmation(browser: Any) -> None:
+    """Disney's careers site (2026-11-18): a finished application lands on the "apply-thankyou" page, which helper
+    didn't know, so it kept waiting after Vatsal submitted."""
+    page = browser.new_page()
+    page.route("https://join.example.com/**", lambda route: route.fulfill(
+        status=200, content_type="text/html", body="<body><h1>You're all set</h1></body>"))
+    for path, confirmed in [("global/en/apply-thankyou?jobSeqNo=X1&status=success", True),
+                            ("global/en/applythankyou?jobSeqNo=X1", True),
+                            ("global/en/hvhapply?jobSeqNo=X1", False),
+                            ("global/en/job/10164672/Thank-You-Card-Designer", False)]:
+        page.goto(f"https://join.example.com/{path}")
+        assert generic.is_confirmation(page) is confirmed, path
+    page.close()
+
+
 def test_a_submit_button_the_site_keeps_turned_off_is_counted_apart(browser: Any) -> None:  # apexanalytix, 2026-11-18
     page = browser.new_page()
     page.set_content('<form><button type="submit" data-testid="Apply" aria-disabled="true">Apply</button></form>')

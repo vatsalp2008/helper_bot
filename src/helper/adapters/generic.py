@@ -116,6 +116,21 @@ DISCOVER_JS = r"""
     }
     return '';
   };
+  // Dropzone keeps its real file box at the end of the page, nameless and away from the "Upload Resume" area it serves,
+  // so the resume was never uploaded (Disney's careers site, 2026-11-18): the clickable areas and the hidden boxes come
+  // in the same order, and the area's group names the box
+  const zoneLabel = c => {
+    if (!c.classList || !c.classList.contains('dz-hidden-input')) return '';
+    const zone = document.querySelectorAll('.dz-clickable')[[...document.querySelectorAll('input.dz-hidden-input')].indexOf(c)];
+    if (!zone) return '';
+    let group = zone;  // the widest box around the area that holds no other question: "Upload Resume*" with its mark
+    for (let up = zone.parentElement, i = 0; up && up !== document.body && i < 12; up = up.parentElement, i++) {
+      if (up.querySelector('input:not([type=hidden]):not(.dz-hidden-input), select, textarea')) break;
+      group = up;
+    }
+    labelEl = group;
+    return (group.innerText || '').split('\n').map(s => s.trim()).find(Boolean) || '';
+  };
   const out = [], done = new Set();
   all.forEach((c, n) => {
     if (done.has(c)) return;
@@ -126,7 +141,8 @@ DISCOVER_JS = r"""
     const box = wrapper(members);
     const role = c.getAttribute('role');
     labelEl = null;
-    const named = own(c, members.length > 1 || t === 'radio' ? members : null) || nearbyLabel(box, members);
+    const named = (t === 'file' && zoneLabel(c)) || own(c, members.length > 1 || t === 'radio' ? members : null)
+      || nearbyLabel(box, members);
     // a dropdown's own search box with no name of its own is part of the field beside it (Rippling's phone country
     // code, "Search", was asked of Vatsal as a required question; Raptor Maps, 2026-11-18)
     if (!named && role === 'combobox' && GENERIC.test((c.placeholder || c.getAttribute('aria-label') || '').trim())) return;

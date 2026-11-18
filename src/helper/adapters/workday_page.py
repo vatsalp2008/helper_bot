@@ -917,22 +917,34 @@ def fill_websites(page: Any, urls: list[str], pause: Callable[[], None]) -> list
             present.add(norm(url))
             added.append(url)
             pause()
+    boxes = group.locator(_URL_INPUTS)
+
+    def blank_row() -> Optional[int]:
+        return next((i for i, v in enumerate(boxes.evaluate_all("els => els.map(e => e.value)")) if not v.strip()), None)
+
     for url in todo:
-        before = group.locator(_URL_INPUTS).count()
-        button = group.locator("button[data-automation-id=add-button]")
-        if not button.count():
+        slot = blank_row()  # a row an earlier Add brought late takes this link (it was deleted as blank before)
+        if slot is None:
+            button = group.locator("button[data-automation-id=add-button]")
+            if not button.count():
+                failed.append(url)
+                continue
+            before = boxes.count()
+            # the first Add on a fresh page can do nothing, so LinkedIn, always first, was never added (Zillow, Bose,
+            # 2026-11-18): click again when no row comes; a new row can take a few seconds (Bloomberg Industry Group)
+            for _attempt in (1, 2):
+                button.first.click()
+                for _ in range(10):
+                    page.wait_for_timeout(500)
+                    if boxes.count() > before:
+                        break
+                if boxes.count() > before:
+                    break
+            slot = blank_row()
+        if slot is None:
             failed.append(url)
             continue
-        button.first.click()
-        boxes = group.locator(_URL_INPUTS)
-        for _ in range(8):  # a new row can take a few seconds (Bloomberg Industry Group, 2026-11-18)
-            page.wait_for_timeout(500)
-            if boxes.count() > before:
-                break
-        if boxes.count() <= before:
-            failed.append(url)
-            continue
-        boxes.nth(boxes.count() - 1).fill(url)
+        boxes.nth(slot).fill(url)
         present.add(norm(url))
         added.append(url)
         pause()

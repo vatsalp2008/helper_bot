@@ -764,6 +764,18 @@ def test_blank_website_rows_take_the_links_and_leftovers_go(browser: Any) -> Non
     page.close()
 
 
+def test_a_first_add_that_does_nothing_is_clicked_again(browser: Any) -> None:  # Zillow, Bose, 2026-11-18
+    """The first Add on a fresh page brought no row, so LinkedIn (always first) was reported as couldn't add."""
+    links = ["https://www.linkedin.com/in/example/", "https://github.com/example", "https://example.github.io/"]
+    page = _websites_page(browser, [])
+    page.evaluate("""() => { const b = document.querySelector('[data-automation-id=add-button]'); let clicks = 0;
+                             b.onclick = () => { clicks += 1; if (clicks > 1) addRow(''); }; }""")
+    (result,) = wp.fill_websites(page, links, pause=lambda: None)
+    values = page.locator("[role=group] [role=group] input").evaluate_all("els => els.map(e => e.value)")
+    assert result.ok and values == links and result.detail == ""
+    page.close()
+
+
 def test_review_submit_waits_for_a_late_button_without_the_usual_ids(browser: Any) -> None:
     """Bloomberg Industry Group, 2026-11-18: helper reached Review, found no Submit button and clicked nothing."""
     page = browser.new_page()
