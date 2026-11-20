@@ -14,12 +14,14 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from pydantic import ValidationError
 
 from .adapters.common import asks_for_emailed_code, visible_errors
 from .answers import NOTE_STYLE, AnswerContext, AnswerPlan, PlannedAnswer, format_plan, match_option, plan_answers
-from .autosubmit import REVIEW_ONLY, Gate, blockers, clean_review_runs, record_fill_run, run_problems, site_kind
+from .autosubmit import (REVIEW_ONLY, SECTION_ENTRIES, Gate, blockers, clean_review_runs, record_fill_run,
+                         run_problems, site_kind)
 from .browser import browser_session, captcha_visible, make_pause
 from .config import Paths, env_value, load_yaml
 from .errors import HelperError, NeedsUser, WaitingForClaude, problems
@@ -415,9 +417,13 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
             if hasattr(adapter, "fill_employment"):  # the jobs on the resume, for forms with an Employment section
                 results += adapter.fill_employment(form, lambda: _history(paths, cfg, state, folder, profile)[0],
                                                    make_pause(cfg))
+            if hasattr(adapter, "fill_education"):  # the profile's schools, for forms with an Education section
+                results += adapter.fill_education(form, lambda: _history(paths, cfg, state, folder, profile)[1],
+                                                  make_pause(cfg))
         _snapshot(page, form, folder / "filled.png")
         write_json(folder / "fill_log.json", [vars(r) for r in results])
-        failed_required = [r for r in results if not r.ok and _required(plan, r.field)]
+        failed_required = [r for r in results if not r.ok and (_required(plan, r.field)
+                                                              or r.field.startswith(SECTION_ENTRIES))]
         _record_status(paths, cfg, state, "filled")
         set_step(state, "fill", "done", f"{sum(r.ok for r in results)} field(s) filled")
         save_state(paths, state)
@@ -917,6 +923,12 @@ def _open_form(page: Any, adapter: Any, url: str, wait: float, poll: float, seen
     for attempt in (1, 2):
         if attempt == 1:
             page.goto(url, wait_until="domcontentloaded")
+            own = getattr(adapter, "own_form_url", None)
+            target = own(url, page.url) if own else None
+            if target:  # the posting link went to the company's careers page (Lucid, 2026-11-19)
+                _say("The posting link went to the company's own careers page; opening the same application form on "
+                     f"{urlparse(target).hostname} instead.")
+                page.goto(target, wait_until="domcontentloaded")
         else:
             _say("The page came up without the application form; reloading it once.")
             page.reload(wait_until="domcontentloaded")

@@ -71,3 +71,12 @@ def test_approved_families_list_possible_swaps(setup) -> None:  # type: ignore[n
     assert gitlab is not None and "experimentiq (GitHub Actions)" in gitlab.swaps
     unapproved = extract_keywords("Experience with GitLab CI pipelines", master, vocab, sets, TechFamiliesFile())
     assert unapproved.term("GitLab CI").swaps == []  # type: ignore[union-attr]
+
+
+def test_a_spaced_spelling_of_xgboost_is_found(setup) -> None:  # type: ignore[no-untyped-def]
+    # KLA's posting (2026-11-19) spells it "XG Boost"; the keyword step missed it, so projects with XGBoost scored low
+    master, vocab, sets = setup
+    kw = extract_keywords("Requirements\n- Hands-on experience with PyTorch, XG Boost or Random Forest", master, vocab,
+                          sets, TechFamiliesFile())
+    xgboost = kw.term("XGBoost")
+    assert xgboost is not None and xgboost.status == "in_items" and xgboost.spellings == ["XG Boost"]

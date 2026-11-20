@@ -372,6 +372,13 @@ def _fill_one(root: Any, block: Any, a: Any, pdf: Path, city: Optional[str],
         # a place search that wants one of its suggestions picked (Rippling's Location, 2026-11-18)
         ok, shown = _choose_suggestion(root, field, city or a.value.split(",")[0], a.value)
         return ok, shown if ok else a.value, "" if ok else shown
+    if (field.get_attribute("type") or "").lower() == "number":
+        # a numbers-only box: "Yes" failed with "Cannot type text into input[type=number]" (Snowflake, 2026-11-19)
+        number = re.search(r"\d+(?:\.\d+)?", a.value.replace(",", ""))
+        if number is None:
+            return False, a.value, f"a numbers-only box can't take '{a.value}'"
+        field.fill(number.group(0))
+        return True, number.group(0), ""
     field.fill(a.value)
     return True, a.value, ""
 

@@ -422,3 +422,199 @@ synonyms:
       - "skills: LLM Integration (Claude API, Gemini API, Ollama, LangChain, RAG); LLM is the master list's own abbreviation"
     approved: true
     note: Added 2026-11-18 for Bose's Software Engineer Co-op ("Interest in applying AI and large language models to engineering work").
+
+  - term: AI Governance
+    evidence:
+      - "swarm: an AI agent platform whose agents work in isolated browser sandboxes behind human review gates, with a default-deny compliance architecture and a user-as-principal legal posture with a permanent deny-list"
+      - "swarm: SHA-256 hash-chain audit logging (18 audit event types), PII redaction, an OAuth token vault with per-Bee scope isolation, and 5 Architecture Decision Records"
+    approved: true
+    note: Added 2026-11-18 for Little Caesars' AI Intern ("ensuring all solutions are developed with appropriate security and governance").
+
+  - term: Data Cleaning
+    evidence:
+      - "traffic_accident: preprocessing with leakage detection, imputation and weather bucketing on a stratified 772,840-row sample"
+      - "housing_price: preprocessing pipeline for missing values, encoding and scaling on 50,000+ property records"
+      - "pnwer: data-integrity checks that block publishing if totals don't reconcile or Washington's figures don't match the Embassy of Canada's published numbers"
+      - "already approved: Data Cleansing"
+    approved: true
+    note: Added 2026-11-18 for Sheetz's Business Intelligence Analytics Intern ("Assist with collecting, cleaning, and validating data from multiple sources").
+
+  - term: Relational Databases
+    evidence:
+      - "seattle_transit: Flask REST API handling 1000+ queries/second with sub-second response times, backed by PostgreSQL"
+      - "ecommerce_platform: an RDS instance per microservice (database-per-service); migrated one service's database from PostgreSQL to Cosmos DB, comparing relational and non-relational data modeling"
+      - "experimentiq: optimized the PostgreSQL-backed assignment log query with a composite index, ~800ms to ~40ms (20x), confirmed via EXPLAIN ANALYZE (sequential scan to index scan)"
+      - "themanager: PostgreSQL with Drizzle ORM"
+      - "skills: Databases & Data Warehousing (PostgreSQL, MySQL, SQLite); already approved: RDBMS"
+    approved: true
+    note: Added 2026-11-18 for PTC's Creo Software Engineering Intern (Summer 2027) ("Understanding of relational databases").
+
+  - term: Client/Server Architecture
+    evidence:
+      - "kalini_sde: full-stack dashboard with a React.js front end and a Flask REST API (5 production lines, sub-second latency)"
+      - "seattle_transit: Flask REST API handling 1000+ queries/second with sub-second response times"
+      - "themanager: Express backend with REST/MCP endpoints and a GraphQL API layer; Tauri v2 desktop app with real-time SSE updates"
+      - "afterglow: monorepo of 3 apps (web, realtime, api); strokes pass through an edge API (Cloudflare Workers + Hono); Yjs + y-websocket multiplayer rooms with SQLite-backed room persistence"
+      - "wardrobe: dual networking layer over WebSockets (real-time sync) and gRPC (structured backend calls)"
+    approved: true
+    note: Added 2026-11-18 for PTC's Creo Software Engineering Intern (Summer 2027) ("Basic understanding of REST APIs, client/server architectures, and version control systems such as Git").
+
+  - term: Web Application Development
+    evidence:
+      - "kalini_sde: full-stack dashboard (React.js front end, Flask REST API)"
+      - "nutritrack: food tracking web app (React 19, Vite) with a real-time nutritional dashboard"
+      - "pnwer: public-data-only web platform designed and built end to end (React, TypeScript, Vite, D3.js), redeployed automatically on Vercel"
+      - "afterglow: real-time, in-browser light-painting studio (React 19, TypeScript, Vite, Three.js)"
+      - "ecommerce_platform: React and TypeScript frontend over 9 microservices"
+      - "skills: Frontend Development and Backend Development groups; already claimable: Full-stack"
+    approved: true
+    note: Added 2026-11-18 for PTC's Creo Software Engineering Intern (Summer 2027) ("Familiarity with cloud technologies and web application development").
+
+  - term: Operational Improvement
+    evidence:
+      - "kalini_sde: automation tools (Python, Bash, 8 workflows, 3.2 hours daily savings, Slack API integration)"
+      - "kalini_sde: predictive maintenance (Random Forest, Logistic Regression, 85% accuracy, 20% downtime reduction, $50K quarterly savings)"
+      - "baps: grew program attendance by 30% over 2 years by identifying operational gaps through participant feedback and improving scheduling, communication and resource allocation"
+    approved: true
+    note: Added 2026-11-19 for MongoDB's 2027 AI and People Transformation Intern, NYC ("we welcome other backgrounds that demonstrate an interest in operational improvement").
+
+  - term: Cloud Data Warehouses
+    evidence:
+      - "experimentiq: dbt transformation layer (staging/intermediate/marts) over DuckDB (local) and Snowflake (production-scale)"
+      - "pulsetrader: migrated the analytical storage layer to BigQuery for scalable historical/batch querying"
+      - "skills: Databases & Data Warehousing (Snowflake, BigQuery); Cloud & DevOps: Google Cloud (including BigQuery)"
+    approved: true
+    note: Added 2026-11-19 for DraftKings' Data Engineer Intern (Summer 2027) ("Exposure to Python, Git, cloud data warehouses, or tools such as Snowflake, Databricks, dbt or AIrflow is a plus").
+
+  - term: Incident Investigation
+    evidence:
+      - "pnwer: 2 production incidents diagnosed and fixed (Statistics Canada outages); diagnosed and fixed two failed automation runs caused by Statistics Canada source outages"
+      - "chef: diagnosed and correctly attributed an unrelated CI flake (1 of 13 jobs failing at bundle install before any spec executed, a known upstream hardlink issue) rather than assuming it was caused by the change"
+      - "spiceai: root-caused a process deadlock in which a stale-bot workflow auto-closed PRs for a label and assignee that can't be set from a fork"
+      - "already approved: Root Cause Analysis, Troubleshooting, Debugging"
+    approved: true
+    note: Added 2026-11-19 for T-Mobile's Summer 2027 Site Reliability Engineering Internship ("Support incident investigation, troubleshooting, and root cause analysis, and document operational procedures").
+
+  - term: Business Intelligence
+    evidence:
+      - "f1_analytics: built a genuine Power BI report as an additional reporting layer alongside the React/D3.js dashboard, for business/analyst-facing contexts (Key Metrics: Power BI reporting layer)"
+      - "traffic_accident: built a Tableau Public dashboard translating model findings into a visual narrative for non-technical stakeholders"
+      - "skills: Data Science & Visualization (Tableau, Power BI); already approved: Data Visualization, Data Analytics"
+    approved: true
+    note: Added 2026-11-19 for Samsung Electronics America's Business Operations & Data Analytics Intern ("Foundational experience with Power BI or a comparable business-intelligence and visualization platform").
+
+  - term: Android Architecture Components
+    evidence:
+      - "transitlens: Room and DataStore, Android Jetpack's persistence and storage libraries (Room is one of the original Architecture Components), with Hilt dependency injection, in a Kotlin and Jetpack Compose Android app"
+      - "already claimable: Android, Jetpack Compose, Room, DataStore, Hilt (TransitLens's Technologies line)"
+    approved: true
+    note: Added 2026-11-19 for Lucid Motors' Intern, Infotainment Software, Summer 2027 ("Experience with Kotlin, Jetpack Compose, Android Architecture Components, MVVM, or similar application architectures").
+
+  - term: Information Retrieval
+    evidence:
+      - "ai_agent_discovery: built a RAG discovery platform helping developers find and compare AI agents; semantic search via LangChain, local Ollama embeddings and ChromaDB vector storage over 100+ indexed AI agents"
+      - "skills: LLM Integration (LangChain, RAG); Key Metrics: Semantic search with embeddings, RAG architecture"
+    approved: true
+    note: Added 2026-11-19 for Snowflake's Software Engineer Intern (AI / ML), Summer 2027 ("Recommended coursework ... information retrieval").
+
+  - term: Access Control
+    evidence:
+      - "swarm: OAuth token vault with per-Bee scope isolation, a default-deny compliance architecture and a permanent deny-list, with human review gates"
+      - "ecommerce_platform: Terraform-provisioned scoped IAM roles per service and a VPC with segmented subnets/security groups; JWT authentication"
+      - "already claimable: OAuth, OIDC, IAM, JWT, Authentication"
+    approved: true
+    note: Added 2026-11-19 for Snowflake's Software Engineer Intern (Core, Infrastructure & Security), Summer 2027 ("Exposure to security, cryptography, access control, and identity and access management technologies"; "Encryption, authentication (incl. SSO & OAuth), access control, network security").
+
+  - term: Software Design
+    evidence:
+      - "pnwer: wrote the team's technical documentation, including a decision log of 28 architecture and design tradeoffs and a setup guide"
+      - "swarm: 5 Architecture Decision Records for a monorepo of 7 packages and 2 apps"
+      - "afterglow: a framework-free, deterministic TypeScript core shared across tracking, rendering and collaboration packages, with ADR-documented architecture decisions"
+      - "already approved: System Design, Design Patterns, Object-Oriented Programming"
+    approved: true
+    note: Added 2026-11-19 for Lucid Motors' Product Security Engineering Intern, Summer 2027 ("Understanding of data structures and basic software design").
+
+  - term: Command-Line Tools
+    evidence:
+      - "skills: Shell/Bash (Programming Languages); Git (Tools & Platforms)"
+      - "kalini_sde: automation tools in Python and Bash (8 workflows, 3.2 hours daily savings)"
+      - "spiceai: validated all fixes against the full test suite (2,299 tests passing) with make lint-rust clean, zero warnings"
+      - "chef: reproduced the failure in plain Ruby; verified a suggested edit broke 5 of 7 with_umask specs; cookstyle --chefstyle clean"
+    approved: true
+    note: Added 2026-11-19 for Lucid Motors' Product Security Engineering Intern, Summer 2027 ("Familiarity with Git, command-line tools, debugging, and writing tests").
+
+  - term: Web Development
+    evidence:
+      - "skills: Frontend Development and Backend Development groups"
+      - "kalini_sde: full-stack dashboard (React.js front end, Flask REST API)"
+      - "pnwer: public-data web platform designed and built end to end (React, TypeScript, Vite, D3.js), redeployed automatically on Vercel"
+      - "already approved: Web Application Development"
+    approved: true
+    note: Added 2026-11-19 for Lucid Motors' Product Security Engineering Intern, Summer 2027 ("Web development, REST APIs, or databases").
+
+  - term: Query Optimization
+    evidence:
+      - "experimentiq: optimized the PostgreSQL-backed assignment log query (filtered by experiment ID and timestamp range) with a composite index, ~800ms to ~40ms (20x), confirmed via EXPLAIN ANALYZE (sequential scan to index scan); 45s to 0.8s metric computation"
+      - "spiceai: found and submitted a fix for a partition-pruning gap (an OR-combined predicate across two partition_by expressions silently returning the whole table) in a Rust query engine built on Apache DataFusion"
+      - "already approved: Performance Optimization, RDBMS, Relational Databases"
+    approved: true
+    note: Added 2026-11-19 for Snowflake's Software Engineer Intern (Database Engineering), Summer 2027 ("Various spaces within Database Query Engine (such as the compiler, query optimization, query execution & performance, SQL frameworks, etc.)").
+
+  - term: Software Testing
+    evidence:
+      - "afterglow: full CI pipeline with lint, typecheck, Vitest unit tests and Playwright end-to-end tests using fixture-injected camera input; a deterministic core validated with replay-based tests against 8+ recorded fixture sessions"
+      - "chef: added 4 RSpec tests, each verified to fail against stock main and pass with the fix; CI green across 13 unit-spec jobs with 10,939 examples"
+      - "spiceai: fixed the LIMIT wrong-results bug with 2 regression tests and validated all fixes against the full test suite (2,299 tests passing)"
+      - "streamline: built load testing and latency analysis tooling to measure p99 latency and system throughput"
+      - "already approved: Test Automation, Unit Testing, Regression Testing, Performance Testing"
+    approved: true
+    note: Added 2026-11-19 for Lucid Motors' Intern, OTA Test and Validation Automation, Summer 2027 ("Exposure to automation or software testing").
+
+  - term: Statistical Modeling
+    evidence:
+      - "experimentiq: statistical engine with power analysis, Welch's t-test, Mann-Whitney U, CUPED (30-45% variance reduction), sequential testing (O'Brien-Fleming) and DiD/PSM via DoWhy/EconML, over 10M+ simulated events"
+      - "housing_price: ensemble regression (XGBoost, Random Forest, Gradient Boosting) with hyperparameter tuning and cross-validation (R² 0.82 on 50,000+ property records), plus R-based statistical validation"
+      - "skills: Statsmodels (Machine Learning & AI frameworks); already approved: Statistical Analysis, Predictive Modeling, Hypothesis Testing"
+    approved: true
+    note: Added 2026-11-19 for LinkedIn's AI/ML Engineer Intern, Master's - Summer 2027 ("Work with BIG data, crunching millions of samples for statistical modeling, data mining, recommendation, or search relevance solutions").
+
+  - term: Neural Networks
+    evidence:
+      - "investment_prediction: LSTM/GRU time-series forecasting on 1.2M data points spanning 10+ years (68% directional accuracy)"
+      - "kalini_ml: predictive classification with TensorFlow and Scikit-learn (85% accuracy, 5+ algorithms)"
+      - "f1_analytics: trained XGBoost/TensorFlow models (73% podium accuracy, 3.2s MAE on lap times)"
+      - "afterglow: a small CNN trained on a Quick, Draw! subset, quantized and exported to ONNX, served via onnxruntime-web"
+      - "perceptnet: YOLO v8 + FPN camera branch and PointPillars LiDAR branch fused via an MLP fusion head"
+      - "skills: LSTM/GRU, TensorFlow, PyTorch; already claimable: Deep Learning; already approved: Multi-layer Perceptron"
+    approved: true
+    note: Added 2026-11-19 for LinkedIn's AI/ML Engineer Intern, Master's - Summer 2027 ("Proficiency in clustering, collaborative filtering, and classification techniques (Naive Bayes, SVM, NN, Boosting Methods, etc.)").
+
+  - term: Scenario Analysis
+    evidence:
+      - "pnwer: interactive dashboard where a user picks a sector or business and a jurisdiction on a map to see trade volume, jobs, GDP, tariff costs, and an \"if USMCA ends\" scenario projection"
+      - "scenarioforge: 50+ scenario library across 8 categories with closed-loop evaluation measuring collision/near-miss rates (23% mAP degradation in fog)"
+    approved: true
+    note: Added 2026-11-19 for Epsilon's Identity Analytics Intern - Summer 2027 ("This candidate will develop scenario analyses to meet business objectives based on various identity strategies").
+
+  - term: Exploratory Data Analysis
+    evidence:
+      - "traffic_accident: stratified 10% sample (772,840 rows) of 7.7M US accident records; preprocessing with leakage detection, imputation and weather bucketing; class imbalance (80.5%/19.5%) found and addressed"
+      - "traffic_accident: SHAP explainability and a Folium geographic heatmap validated against WSDOT data"
+      - "f1_analytics: 500K+ historical data points across 10+ seasons, with driver comparisons and full telemetry"
+      - "already approved: Data Analysis, Data Profiling, Data Visualization"
+    approved: true
+    note: Added 2026-11-19 for Epsilon's Identity Analytics Intern - Summer 2027 ("perform exploratory analyses and proof of concepts for methods under exploration").
+
+  - term: Vector Databases
+    evidence:
+      - "ai_agent_discovery: semantic search via LangChain, local Ollama embeddings, ChromaDB vector storage (ChromaDB is a vector database) in a RAG discovery platform over 100+ AI agents"
+      - "skills: LLM Integration (LangChain, RAG); already claimable: embeddings (Key Metrics: Semantic search with embeddings)"
+    approved: true
+    note: Added 2026-11-19 for Lucid Motors' Intern, AI & Data (Applied AI/Machine Learning), Summer 2027 ("Experience building with large language models (LLMs), including prompt engineering, RAG, embeddings, and vector databases").
+
+  - term: Knowledge Graphs
+    evidence:
+      - "echocoach: designed a persistent \"weakness graph\" (via Cognee) so each new session routed toward topics the user had previously struggled with"
+      - "skills: Voice AI: Cognee (graph-vector memory)"
+    approved: true
+    note: Added 2026-11-19 for Lucid Motors' Intern, AI & Data (Applied AI/Machine Learning), Summer 2027 ("Exposure to knowledge representation techniques such as knowledge graphs"). Exposure level only; the graph is EchoCoach's Cognee weakness graph.

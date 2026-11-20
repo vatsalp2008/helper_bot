@@ -75,6 +75,27 @@ def test_company_career_links_find_their_board() -> None:
     assert job.company == "Airbnb" and job.apply_url.startswith("https://job-boards.greenhouse.io/airbnb/jobs/")
 
 
+def test_a_branded_careers_domain_finds_the_company_board() -> None:
+    # Waymo's SimplifyJobs link (2026-11-19) is careers.withwaymo.com; its board is "waymo"
+    assert gh._board_candidates("https://careers.withwaymo.com/jobs?gh_jid=8401116") == ["withwaymo", "waymo"]
+    assert gh._board_candidates("https://www.joinroot.com/careers?gh_jid=1") == ["joinroot", "root"]
+    assert gh._board_candidates("https://acmehq.com/careers?gh_jid=1") == ["acmehq", "acme"]
+    assert gh._board_candidates("https://careers.airbnb.com/positions/1?gh_jid=1") == ["airbnb"]
+    assert gh._board_candidates("https://gopro.com/careers?gh_jid=1") == ["gopro"]  # too short to be a prefix
+    session = FakeSession({"waymo": {**FIGMA, "company_name": "Waymo"}})
+    job = gh.fetch_job("https://careers.withwaymo.com/jobs?gh_jid=8401116", session)
+    assert job.company == "Waymo" and job.apply_url.startswith("https://job-boards.greenhouse.io/waymo/jobs/")
+
+
+def test_a_posting_link_that_left_greenhouse_opens_its_embed_form() -> None:
+    # Lucid (2026-11-19): the job-boards link went to lucidmotors.com/careers/search/<id>?gh_jid=<id>
+    link = "https://job-boards.greenhouse.io/lucidmotors/jobs/5290921007"
+    assert gh.own_form_url(link, "https://lucidmotors.com/careers/search/5290921007?gh_jid=5290921007") == \
+        "https://job-boards.greenhouse.io/embed/job_app?for=lucidmotors&token=5290921007"
+    assert gh.own_form_url(link, link) is None  # still on Greenhouse: its own page holds the form
+    assert gh.own_form_url("https://careers.airbnb.com/positions/1?gh_jid=1", "https://careers.airbnb.com/x") is None
+
+
 def test_a_closed_posting_says_so() -> None:
     with pytest.raises(HelperError, match="no open job 1"):
         gh.fetch_job("https://job-boards.greenhouse.io/acme/jobs/1", FakeSession({}))
@@ -274,3 +295,84 @@ def test_an_embedded_form_opens_on_its_own_page(monkeypatch: pytest.MonkeyPatch)
     own.main_frame = Frame("https://job-boards.greenhouse.io/acme/jobs/1")
     monkeypatch.setattr(gh.common, "find_form", lambda p, *a, **k: p.main_frame)
     assert gh.find_form(own) is own.main_frame and own.visits == []
+
+
+def test_the_window_opens_greenhouse_form_when_the_link_goes_to_the_company_site(browser: Any) -> None:
+    # Lucid (2026-11-19): its careers page shows the form only behind an Apply button and has its own email box,
+    # where helper typed the email and found nothing else
+    from helper import apply as ap
+
+    page = browser.new_page()
+
+    def handle(route: Any) -> None:
+        url = route.request.url
+        if url.startswith("https://job-boards.greenhouse.io/lucidmotors/jobs/"):
+            route.fulfill(status=302, headers={"location": "https://lucidmotors.com/careers/search/7?gh_jid=7"})
+        elif url.startswith("https://lucidmotors.com/"):
+            route.fulfill(status=200, content_type="text/html",
+                          body="<h1>Intern</h1><input id='email' placeholder='Newsletter'><button>Apply</button>")
+        elif url.startswith("https://job-boards.greenhouse.io/embed/job_app"):
+            route.fulfill(status=200, content_type="text/html",
+                          body="<form id='application-form'><input id='first_name'><input id='email'></form>")
+        else:
+            route.abort()
+
+    page.route("**/*", handle)
+    form = ap._open_form(page, gh, "https://job-boards.greenhouse.io/lucidmotors/jobs/7", 0.05, 0.05, {})
+    assert form is not None and form.url == "https://job-boards.greenhouse.io/embed/job_app?for=lucidmotors&token=7"
+    page.close()
+
+
+def test_the_profile_schools_fill_the_education_section(browser: Any) -> None:
+    # Lucid (2026-11-19): its forms required School, Degree, Discipline and dates, helper left them empty, and all five
+    # submits stopped there
+    from helper.adapters.workday_page import SchoolEntry
+    from helper.dates import MonthYear
+
+    schools = [SchoolEntry("Northeastern University", "Master of Science", "Computer Science", MonthYear(2025, 9),
+                           MonthYear(2027, 12)),
+               SchoolEntry("University of Mumbai", "Bachelor of Engineering", "Computer Engineering",
+                           MonthYear(2021, 10), MonthYear(2025, 5))]
+    page = browser.new_page()
+    page.goto(f"file://{(FIXTURES / 'greenhouse_education.html').resolve()}")
+    results = gh.fill_education(page.main_frame, lambda: schools, lambda: None)
+    assert [(r.ok, r.detail) for r in results] == [(True, ""), (True, "")], results
+
+    def picked(box: str) -> str:
+        return page.get_attribute(f"#{box}", "data-selected") or page.input_value(f"#{box}")
+
+    assert [picked(b) for b in ("school--0", "degree--0", "discipline--0", "start-month--0", "start-year--0",
+                                "end-month--0", "end-year--0")] == [
+        "Northeastern University", "Master's Degree", "Computer Science", "September", "2025", "December", "2027"]
+    # never the MBA for a Master of Science, never Computer Science for Computer Engineering
+    assert [picked(b) for b in ("school--1", "degree--1", "discipline--1", "start-month--1", "end-year--1")] == [
+        "University of Mumbai", "Bachelor's Degree", "Computer Engineering", "October", "2025"]
+    page.close()
+
+
+def test_a_form_without_an_education_section_is_left_alone(browser: Any) -> None:
+    page = browser.new_page()
+    page.set_content("<form><input id='first_name'></form>")
+    assert gh.fill_education(page.main_frame, lambda: (_ for _ in ()).throw(AssertionError("not asked")),
+                             lambda: None) == []
+    page.close()
+
+
+def test_a_discipline_missing_from_the_list_takes_its_broader_field(browser: Any) -> None:
+    # Lucid (2026-11-19): Greenhouse's discipline list has "Engineering" but no "Computer Engineering"
+    from helper.adapters.workday_page import SchoolEntry
+    from helper.dates import MonthYear
+
+    fixture = (FIXTURES / "greenhouse_education.html").read_text(encoding="utf-8")
+    listed = '''discipline: ["Computer Engineering", "Computer Science", "Computer and Information Sciences",
+                 "Electrical Engineering", "Mathematics", "Other"],'''
+    assert listed in fixture
+    page = browser.new_page()
+    page.set_content(fixture.replace(listed, 'discipline: ["Computer Science", "Electrical Engineering", '
+                                             '"Engineering", "Mathematics", "Other"],'))
+    school = SchoolEntry("University of Mumbai", "Bachelor of Engineering", "Computer Engineering",
+                         MonthYear(2021, 10), MonthYear(2025, 5))
+    results = gh.fill_education(page.main_frame, [school], lambda: None)
+    assert [(r.ok, r.detail) for r in results] == [(True, "")]
+    assert page.get_attribute("#discipline--0", "data-selected") == "Engineering"  # never Electrical Engineering
+    page.close()

@@ -111,6 +111,39 @@ def test_a_video_player_and_a_get_notified_box_are_not_an_application_form(brows
     page.close()
 
 
+def test_an_oracle_posting_is_read_whole(browser: Any) -> None:
+    # Atlantic Health (2026-11-19): the page's JobPosting data held only the description, so "PharmD student" and the
+    # work authorization rule in its qualifications never reached the eligibility check
+    description = ("<p>The ACO team is seeking a Pharmacy (Data Analytics) Intern.</p>"
+                   + "<p>Analyze pharmacy and clinical data to find trends.</p>" * 6)
+    ld = json.dumps({"@context": "http://schema.org", "@type": "JobPosting", "title": "Pharmacy (Data Analytics) Intern",
+                     "description": description,
+                     "hiringOrganization": {"@type": "Organization", "name": "Candidate Experience site"}})
+    html = (f'<html><head><script type="application/ld+json">{ld}</script></head><body>'
+            f'<h1>Pharmacy (Data Analytics) Intern</h1>{description}</body></html>')
+    details = {"items": [{"Title": "Pharmacy (Data Analytics) Intern", "ExternalDescriptionStr": description,
+                          "ExternalResponsibilitiesStr": None,
+                          "ExternalQualificationsStr": "<ul><li>PharmD student entering the third professional year."
+                          "</li><li>Must be legally authorized to work in the United States as a U.S. citizen, "
+                          "national, asylee, refugee, or lawful permanent resident.</li></ul>"}]}
+    asked: list[str] = []
+
+    def serve(route: Any) -> None:
+        if "recruitingCEJobRequisitionDetails" in route.request.url:
+            asked.append(route.request.url)
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(details))
+        else:
+            route.fulfill(status=200, content_type="text/html", body=html)
+
+    page = browser.new_page()
+    page.route("https://mockhealth.fa.us2.oraclecloud.com/**", serve)
+    page.goto("https://mockhealth.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/job/34551")
+    _, _, text = generic.read_posting(page)
+    assert "PharmD student" in text and "asylee" in text and "clinical data" in text
+    assert len(asked) == 1 and "siteNumber%3DCX_1001" in asked[0] and "Id%3D%2234551%22" in asked[0]
+    page.close()
+
+
 def test_a_sign_in_wall_is_left_to_vatsal(browser: Any) -> None:
     page = browser.new_page()
     page.goto(f"file://{(FIXTURES / 'generic_sign_in_wall.html').resolve()}")

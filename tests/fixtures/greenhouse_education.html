@@ -1,0 +1,72 @@
+<!doctype html>
+<!-- A Greenhouse job-boards form's Education section, as on Lucid's form (2026-11-19, "education_required"): School,
+     Degree, Discipline and the two months are dropdowns (role=combobox with react-select-<id>-option-<n> options; the
+     school list answers only once something is typed), the years are number boxes, and "Add another" adds the next
+     numbered entry (school--1 ...). A picked option is kept in data-selected. -->
+<html>
+<head><meta charset="utf-8"><title>Apply</title></head>
+<body>
+<form id="application-form">
+  <label for="first_name">First Name*</label><input id="first_name">
+  <div class="education">
+    <p>Education</p>
+    <div id="schools"></div>
+    <button type="button" id="add-school">Add another</button>
+  </div>
+  <button type="submit" id="submit">Submit application</button>
+</form>
+<script>
+  const LISTS = {
+    school: ["Northeastern University", "Northeastern Illinois University", "Northeastern State University",
+             "University of Mumbai", "University of Washington", "Other"],
+    degree: ["High School", "Associate's Degree", "Bachelor's Degree", "Master's Degree",
+             "Master of Business Administration (M.B.A.)", "Juris Doctor (J.D.)", "Doctor of Medicine (M.D.)",
+             "Doctor of Philosophy (Ph.D.)", "Engineer's Degree", "Other"],
+    discipline: ["Computer Engineering", "Computer Science", "Computer and Information Sciences",
+                 "Electrical Engineering", "Mathematics", "Other"],
+    month: ["January","February","March","April","May","June","July","August","September","October","November",
+            "December"],
+  };
+  function closeAll() { document.querySelectorAll('[role=listbox]').forEach(l => l.remove()); }
+  function open(input) {
+    closeAll();
+    const term = (input.value || '').toLowerCase();
+    if (input.dataset.list === 'school' && !term) return;  // the school list searches as you type
+    const list = document.createElement('div');
+    list.setAttribute('role', 'listbox');
+    LISTS[input.dataset.list].filter(o => o.toLowerCase().includes(term)).forEach((o, i) => {
+      const el = document.createElement('div');
+      el.setAttribute('role', 'option');
+      el.id = 'react-select-' + input.id + '-option-' + i;
+      el.textContent = o;
+      el.addEventListener('click', () => { input.value = ''; input.dataset.selected = o; closeAll(); });
+      list.appendChild(el);
+    });
+    input.insertAdjacentElement('afterend', list);
+  }
+  function wire(input) {
+    input.addEventListener('click', () => open(input));
+    input.addEventListener('input', () => open(input));
+    input.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+  }
+  function addSchool() {
+    const i = document.querySelectorAll('#schools .entry').length;
+    const div = document.createElement('div');
+    div.className = 'entry';
+    div.innerHTML = `
+      <label for="school--${i}">School*</label><input id="school--${i}" role="combobox" data-list="school">
+      <label for="degree--${i}">Degree*</label><input id="degree--${i}" role="combobox" data-list="degree">
+      <label for="discipline--${i}">Discipline*</label><input id="discipline--${i}" role="combobox" data-list="discipline">
+      <label for="start-month--${i}">Start date month*</label><input id="start-month--${i}" role="combobox" data-list="month">
+      <label for="start-year--${i}">Start date year*</label><input id="start-year--${i}" type="number">
+      <label for="end-month--${i}">End date month*</label><input id="end-month--${i}" role="combobox" data-list="month">
+      <label for="end-year--${i}">End date year*</label><input id="end-year--${i}" type="number">`;
+    document.getElementById('schools').appendChild(div);
+    div.querySelectorAll('[role=combobox]').forEach(wire);
+  }
+  addSchool();
+  document.getElementById('add-school').addEventListener('click', addSchool);
+  document.getElementById('application-form').addEventListener('submit', e => e.preventDefault());
+</script>
+</body>
+</html>

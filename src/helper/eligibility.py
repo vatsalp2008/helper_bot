@@ -164,6 +164,10 @@ _PERMANENT_AUTH_RE = re.compile(
 _US_PERSON_RE = re.compile(
     r"(?i)\b(?:must be|required to be|need to be|candidates? must be)\b[^.\n]{0,20}?\bU\.?S\.? persons?\b"
     r"|\bU\.?S\.? persons? (?:status )?(?:is |are )?(?:required|only)\b|\bonly (?:open to )?U\.?S\.? persons\b"
+    # "Must be legally authorized to work in the United States as a U.S. citizen, national, asylee, refugee, or lawful
+    # permanent resident" (Atlantic Health, 2026-11-19): the U.S. person statuses spelled out, which F-1 isn't
+    r"|\b(?:must|required to|need to)\b[^.\n]{0,40}?\bauthori[sz]ed to work\b[^.\n]{0,40}?\bas an?\s+(?:U\.?S\.?\s+)?"
+    r"citizen\b[^.\n]{0,80}?\b(?:asylees?|refugees?|(?:lawful )?permanent residents?)\b"
 )
 _CITIZEN_RE = re.compile(
     r"(?i)\b(?:must be|requires?|required to be|only|open to)\b[^.\n]{0,40}?\bU\.?S\.? citizens?(?:hip)?\b"
@@ -344,9 +348,10 @@ def _grad_window(sentences: list[str]) -> tuple[Optional[tuple[int, int]], Optio
                 found = True
         if not found:
             # "Graduating in Summer/Fall/Winter 2027 or Spring/Summer 2028" (Atoms, 2026-11-18): seasons joined by
-            # slashes, in lists joined by "or", span from the earliest season to the latest
+            # slashes, in lists joined by "or", span from the earliest season to the latest. So does a plain list:
+            # "Graduation date in Fall 2027 or Spring 2028" (MongoDB, 2026-11-19) read as Fall 2027 alone before
             m = re.search(rf"(?i)\b(?:in|during)\s+({_SEASON_LIST}(?:\s*(?:,|or|and)\s*{_SEASON_LIST})*)", s)
-            if m and "/" in m.group(1):
+            if m and ("/" in m.group(1) or len(re.findall(rf"(?i)\b(?:{_SEASONS})\b", m.group(1))) > 1):
                 spans = [r for g in re.finditer(rf"(?i)((?:{_SEASONS})(?:\s*/\s*(?:{_SEASONS}))*)\s+(\d{{4}})",
                                                 m.group(1))
                          for season in re.split(r"\s*/\s*", g.group(1))
@@ -551,7 +556,8 @@ def check_eligibility(
         no_sponsor = _matching(sentences, _NO_SPONSOR_RE)
         if no_sponsor:
             flag("no_sponsorship", "warning", "It won't sponsor visas. CPT/OPT isn't sponsorship, so the resume still "
-                 "gets built; confirm with recruiting that CPT/OPT is fine. Your sponsorship answer stays No.", no_sponsor)
+                 "gets built; confirm with recruiting that CPT/OPT is fine. Your sponsorship answer stays No, unless "
+                 "a form's question counts CPT/OPT as sponsorship.", no_sponsor)
         unclear = [s for s in _matching(sentences, _CPT_OPT_RE) if s not in positive]
         if unclear:
             flag("cpt_opt_mentioned", "warning", "It mentions CPT/OPT without saying clearly whether they count. Read "

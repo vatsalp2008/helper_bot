@@ -184,3 +184,22 @@ def test_filling_the_saved_forms(browser: Any, tmp_path: Path) -> None:
             checked = page.evaluate("() => [...document.querySelectorAll('input[type=checkbox]:checked')].map(c => c.name)")
             assert {"Notion Website", "Master's", "New York, NY", "San Francisco, CA"} <= set(checked)
         page.close()
+
+
+def test_a_numbers_only_box_gets_the_number(browser: Any) -> None:
+    # Snowflake's "number of hours per week you can work ... in the office" (2026-11-19): the on-site rule's "Yes" made
+    # Playwright fail with "Cannot type text into input[type=number]"
+    from types import SimpleNamespace
+
+    page = browser.new_page()
+    page.set_content("<div id='b'><label>Hours per week</label><input type='number'></div>")
+    block = page.locator("#b")
+
+    def fill(value: str):  # type: ignore[no-untyped-def]
+        a = SimpleNamespace(type="text", value=value, key="hours_per_week")
+        return dom._fill_one(page.main_frame, block, a, Path("r.pdf"), None, lambda s: s)
+
+    assert fill("40") == (True, "40", "") and page.input_value("#b input") == "40"
+    assert fill("40 hours per week") == (True, "40", "")
+    assert fill("Yes") == (False, "Yes", "a numbers-only box can't take 'Yes'")
+    page.close()

@@ -91,10 +91,18 @@ def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:
     return common.is_confirmation(page, form, hosts=HOSTS)
 
 
+SUBMIT_BUTTONS = ("button.ashby-application-form-submit-button", "button:has-text('Submit Application')")
+
+
 def submit(form: Any) -> bool:
     """Auto mode only: click Submit once."""
-    return common.click_submit(form, ("button.ashby-application-form-submit-button",
-                                      "button:has-text('Submit Application')"))
+    return common.click_submit(form, SUBMIT_BUTTONS)
+
+
+def submit_buttons(form: Any) -> list[Any]:
+    """The Submit button while the form is still there. With it, a submit the form refused is seen as not sent:
+    Snowflake's "Your form needs corrections" was logged as submitted_unverified and put in Notion (2026-11-19)."""
+    return common.visible_buttons(form, SUBMIT_BUTTONS)
 
 
 def is_submit_request(url: str, method: str) -> bool:

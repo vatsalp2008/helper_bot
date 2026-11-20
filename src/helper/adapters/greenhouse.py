@@ -55,13 +55,20 @@ def parse_ref(url: str) -> Optional[GreenhouseRef]:
     return None
 
 
+# A branded domain around the company's name: careers.withwaymo.com is board "waymo" (Waymo, 2026-11-19).
+_BRAND_AFFIXES = (re.compile(r"^(?:with|join|get|go|try|use|hello|meet)(?=[a-z0-9]{4})"),
+                  re.compile(r"(?<=[a-z0-9]{4})(?:hq|app|inc|careers|jobs|team)$"))
+
+
 def _board_candidates(url: str) -> list[str]:
-    """For a company careers page with ?gh_jid=, the board token is usually the company's domain name."""
+    """For a company careers page with ?gh_jid=, the board token is usually the company's domain name, or that name
+    without a brand prefix or suffix. Job ids are unique across Greenhouse, so a wrong guess only costs a 404."""
     host = (urlparse(url).hostname or "").lower().removeprefix("www.")
     labels = [p for p in host.split(".") if p not in ("com", "io", "co", "org", "net", "ai", "careers", "jobs", "www")]
     out: list[str] = []
     for label in labels:
-        for candidate in (label, label.replace("-", "")):
+        plain = label.replace("-", "")
+        for candidate in (label, plain, *(affix.sub("", plain) for affix in _BRAND_AFFIXES)):
             if candidate and candidate not in out:
                 out.append(candidate)
     return out
@@ -224,6 +231,20 @@ def css_id(dom: str) -> str:
 
 _keyboard = common.keyboard
 _FORM_ANCHORS = ("#first_name", "#email", "#application-form", "#application_form")
+EMBED_FORM = f"{APPLY_BASE}/embed/job_app"
+
+
+def own_form_url(url: str, landed: str) -> Optional[str]:
+    """Where the form is when the posting link left Greenhouse. A board with its own careers site sends job-boards
+    links there: Lucid's went to lucidmotors.com/careers/search/<id>?gh_jid=<id>, whose form sits behind an Apply
+    button, and helper typed only the email, into the site's own email box (2026-11-19). Greenhouse's embed page is
+    the same application form a careers site loads, on Greenhouse itself."""
+    if not landed or "greenhouse.io" in (urlparse(landed).hostname or ""):
+        return None
+    ref = parse_ref(url)
+    if ref is None or not ref.board:
+        return None
+    return f"{EMBED_FORM}?for={ref.board}&token={ref.job_id}"
 
 
 def find_form(page: Any, timeout_ms: int = 20000) -> Optional[Any]:
@@ -241,9 +262,10 @@ def find_form(page: Any, timeout_ms: int = 20000) -> Optional[Any]:
     return common.find_form(page, _FORM_ANCHORS, hosts=("greenhouse.io",), timeout_ms=timeout_ms) or form
 
 
-def choose_option(root: Any, dom: str, wanted: str, *, search: Optional[str] = None,
-                  timeout_ms: int = 6000) -> tuple[bool, str]:
-    """Open the dropdown for one field, optionally type to search, and click the best matching option."""
+def choose_option(root: Any, dom: str, wanted: str, *, search: Optional[str] = None, timeout_ms: int = 6000,
+                  score: Optional[Callable[[str], float]] = None, threshold: float = 0.8) -> tuple[bool, str]:
+    """Open the dropdown for one field, optionally type to search, and click the best matching option. `score` rates
+    one option's text (default: how closely it says `wanted`)."""
     from ..answers import match_option
 
     box = root.locator(css_id(dom))
@@ -262,8 +284,12 @@ def choose_option(root: Any, dom: str, wanted: str, *, search: Optional[str] = N
                 return False, "no options appeared"
             root.wait_for_timeout(800)
     texts = [t.strip() for t in options.all_inner_texts()]
-    best, score = match_option(wanted, texts)
-    if best is None or score < 0.8:
+    if score is None:
+        best, fit = match_option(wanted, texts)
+    else:
+        rated = sorted(((score(t), -len(t), t) for t in texts if t), reverse=True)
+        best, fit = (rated[0][2], rated[0][0]) if rated else (None, 0.0)
+    if best is None or fit < threshold:
         _keyboard(root).press("Escape")
         return False, f"no option matches '{wanted}' (options: {', '.join(texts[:12])})"
     options.nth(texts.index(best)).click()
@@ -427,6 +453,80 @@ def fill_employment(root: Any, work: Union[list[Any], Callable[[], list[Any]]],
     return results
 
 
+def fill_education(root: Any, schools: Union[list[Any], Callable[[], list[Any]]],
+                   pause: Callable[[], None]) -> list[FieldResult]:
+    """The form's Education section (the job's data says "education_required" or "education_optional"): one entry per
+    school in the profile, with school, degree, discipline and start and end month and year. Lucid's five forms had a
+    required one (2026-11-19); helper left it empty and every submit stopped there. Forms without it are left alone."""
+    from .workday_page import degree_score, school_search_terms, study_score, study_search_terms
+    from ..answers import match_option
+
+    if not root.locator("#school--0").count():
+        return []
+    try:
+        schools = schools() if callable(schools) else schools
+    except HelperError as exc:
+        return [FieldResult("education-0", "Education", False, None, f"couldn't list your schools: {exc}")]
+    section = root.locator("#school--0").locator("xpath=ancestor::*[.//button[normalize-space()='Add another']][1]")
+    results: list[FieldResult] = []
+    for i, s in enumerate(schools):
+        field, label = f"education-{i}", f"Education {i + 1}: {s.degree}, {s.school}"
+        if not root.locator(f"#school--{i}").count():
+            add = section.locator("button", has_text="Add another")
+            if not add.count():
+                break  # the form takes one school: the first (current) one is in
+            add.last.click()
+            try:
+                root.locator(f"#school--{i}").wait_for(timeout=5000)
+            except Exception:
+                results.append(FieldResult(field, label, False, None, "the next education entry didn't appear"))
+                break
+        problems: list[str] = []
+        try:
+            ok, chosen = False, "not tried"
+            for term in school_search_terms(s.school):
+                ok, chosen = choose_option(root, f"school--{i}", s.school, search=term, timeout_ms=8000,
+                                           score=lambda t: match_option(s.school, [t])[1], threshold=0.85)
+                if ok:
+                    break
+            if not ok:
+                problems.append(f"school: {chosen}")
+            if root.locator(f"#degree--{i}").count():
+                ok, chosen = choose_option(root, f"degree--{i}", s.degree, score=lambda t: degree_score(s.degree, t),
+                                           threshold=0.85)
+                if not ok:
+                    problems.append(f"degree: {chosen}")
+            if s.field_of_study and root.locator(f"#discipline--{i}").count():
+                # the field's own name, else its broader field: Greenhouse's list has no "Computer Engineering", only
+                # "Engineering" (Lucid, 2026-11-19), which is still true of his Bachelor of Engineering
+                head = s.field_of_study.split()[-1].lower()
+
+                def fits(t: str) -> float:
+                    return max(study_score(s.field_of_study, t), 0.86 if t.strip().lower() == head else 0.0)
+                for term in study_search_terms(s.field_of_study):
+                    ok, chosen = choose_option(root, f"discipline--{i}", s.field_of_study, search=term, score=fits,
+                                               threshold=0.85)
+                    if ok:
+                        break
+                if not ok:
+                    problems.append(f"discipline: {chosen}")
+            for which, when in (("start", s.start), ("end", s.end)):
+                if when is None:
+                    continue
+                if root.locator(f"#{which}-month--{i}").count():
+                    ok, chosen = choose_option(root, f"{which}-month--{i}", _MONTHS[when.month - 1])
+                    if not ok:
+                        problems.append(f"{which} month: {chosen}")
+                if root.locator(f"#{which}-year--{i}").count():
+                    root.locator(f"#{which}-year--{i}").fill(str(when.year))
+        except Exception as exc:
+            problems.append(f"{type(exc).__name__}: {str(exc)[:120]}")
+        span = " to ".join(w.display() for w in (s.start, s.end) if w)
+        results.append(FieldResult(field, label, not problems, span, "; ".join(problems)))
+        pause()
+    return results
+
+
 def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:
     return common.is_confirmation(page, form, hosts=("greenhouse.io",))
 
@@ -437,6 +537,11 @@ SUBMIT_BUTTONS = ("button[type=submit]:has-text('Submit')", "#submit_app", "inpu
 def submit(form: Any) -> bool:
     """Auto mode only: click Submit once."""
     return common.click_submit(form, SUBMIT_BUTTONS)
+
+
+def submit_buttons(form: Any) -> list[Any]:
+    """The Submit button while the form is still there, so a submit the form's own checks stopped counts as not sent."""
+    return common.visible_buttons(form, SUBMIT_BUTTONS)
 
 
 def is_submit_request(url: str, method: str) -> bool:

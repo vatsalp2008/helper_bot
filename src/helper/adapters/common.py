@@ -86,6 +86,16 @@ def tick(el: Any) -> bool:
     return ticked()
 
 
+def visible_buttons(form: Any, selectors: tuple[str, ...]) -> list[Any]:
+    """The visible buttons of the first selector that finds any: the form's Submit while the form is still there."""
+    for selector in selectors:
+        buttons = form.locator(selector)
+        shown = [buttons.nth(i) for i in range(buttons.count()) if buttons.nth(i).is_visible()]
+        if shown:
+            return shown
+    return []
+
+
 def click_submit(form: Any, selectors: tuple[str, ...]) -> bool:
     """Click the form's Submit button once (auto mode only). Only when exactly one visible, enabled button matches."""
     for selector in selectors:
@@ -108,7 +118,12 @@ VISIBLE_ERRORS_JS = r"""
     .filter(e => visible(e) && (e.innerText || '').trim())
     .map(e => e.innerText.replace(/\s+/g, ' ').trim().slice(0, 120));
   const invalid = [...document.querySelectorAll('[aria-invalid=true]')].filter(visible).length;
-  return [...new Set(texts)].concat(invalid ? [invalid + ' field(s) marked invalid'] : []);
+  // Ashby's box after a refused submit (Snowflake, 2026-11-19): "Your form needs corrections. Missing entry for
+  // required field: ..."
+  const said = ((document.body && document.body.innerText) || '').match(
+    /your form needs corrections|missing entry for required field|please (?:fix|correct) the (?:errors?|fields?) below/i);
+  return [...new Set(texts)].concat(invalid ? [invalid + ' field(s) marked invalid'] : [])
+    .concat(said ? ['the form says: ' + said[0]] : []);
 }
 """
 

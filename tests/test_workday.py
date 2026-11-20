@@ -289,6 +289,61 @@ def test_education_with_a_school_box_named_school(browser: Any) -> None:  # Visa
     page.close()
 
 
+def test_a_page_without_work_or_education_sections_is_not_a_miss(browser: Any) -> None:
+    # DraftKings' campus portal (2026-11-19): My Experience had only the resume and LinkedIn, and helper listed both
+    # jobs and both schools as "NOT filled: no room to add it"
+    from helper.dates import MonthYear
+    work = [wp.WorkEntry("Machine Learning Intern", "Kalini Industries", None, MonthYear(2024, 1), MonthYear(2024, 6),
+                         False, "")]
+    schools = [wp.SchoolEntry("Northeastern University", "Master of Science", "Computer Science",
+                              MonthYear(2025, 9), MonthYear(2027, 5))]
+    page = browser.new_page()
+    page.set_content("<h3 id='Resume-section'>Resume/CV</h3><div role='group' aria-labelledby='Resume-section'>"
+                     "<input type='file'></div>")
+    assert wp.fill_work(page, work, lambda: None) == []
+    assert wp.fill_education(page, schools, lambda: None) == []
+    # a section that is there but offers no Add button still says so
+    page.set_content("<h3>Work Experience</h3><div>Add your jobs</div>")
+    results = wp.fill_work(page, work, lambda: None)
+    assert [(r.ok, r.detail) for r in results] == [(False, "no room to add it")]
+    page.close()
+
+
+def test_field_of_study_tries_a_shorter_search_and_says_what_the_list_showed(browser: Any) -> None:
+    # Cadence (2026-11-19): 'Computer Science' found nothing in its list, and the note said only that
+    assert wp.study_search_terms("Computer Science") == ["Computer Science", "Computer"]
+    assert wp.study_search_terms("Mathematics") == ["Mathematics"]
+    assert wp.study_score("Computer Science", "Computer & Information Sciences") >= 0.85
+    assert wp.study_score("Computer Science", "Computer Engineering") < 0.85
+    fixture = (FIXTURES / "workday_mock_education.html").read_text(encoding="utf-8")
+    listed = 'data-choices="Computer Science|Computer Engineering|Computer and Information Science"'
+    assert listed in fixture
+
+    def study_box(choices: str) -> Any:
+        page = browser.new_page()
+        page.set_content(fixture.replace(listed, f'data-choices="{choices}"'))
+        return page, page.locator("[data-automation-id=formField-fieldOfStudy]")
+
+    def accept(t: str) -> float:
+        return wp.study_score("Computer Science", t)
+
+    page, box = study_box("Computer &amp; Information Sciences|Computer Engineering|Information Technology")
+    ok, chosen, _ = wp.choose_prompt(page, box, wp.study_search_terms("Computer Science"), accept, threshold=0.85,
+                                     keep_existing=False)
+    assert ok and wp.selected_items(box) == ["Computer & Information Sciences"]
+    page.close()
+    page, box = study_box("Computer Engineering|Electrical Engineering")
+    ok, _, why = wp.choose_prompt(page, box, wp.study_search_terms("Computer Science"), accept, threshold=0.85,
+                                  keep_existing=False)
+    assert not ok and wp.selected_items(box) == [] and "(it listed: Computer Engineering)" in why
+    page.close()
+    page, box = study_box("Biology|Chemistry")
+    ok, _, why = wp.choose_prompt(page, box, wp.study_search_terms("Computer Science"), accept, threshold=0.85,
+                                  keep_existing=False)
+    assert not ok and why.endswith("(the search listed nothing)")
+    page.close()
+
+
 def test_degree_choices_never_pick_another_named_degree() -> None:
     visa = ["Master of Business Administration - MBA ( (ISCED 7)",
             "Master’s or Equivalent (ISCED 7: MA, MSc, MEng, MBA, LLM, et cetera)", "Doctorate (ISCED 8)"]

@@ -111,7 +111,10 @@ def match_option(value: str, options: list[str], aliases: tuple[str, ...] | list
             # an alias ("Asian") counts, but a closer match ("South Asian" for "Asian (South Asian)") still wins
             if aliases and any(_norm(a) and (_norm(a) == n or re.search(rf"\b{re.escape(_norm(a))}\b", n))
                                for a in aliases):
-                score = max(score, 0.9)
+                # an option that starts with an alias counts like one that starts with the value itself ("Never
+                # been a contractor or an employee" for the past-employer rule's "never", Lucid, 2026-11-19)
+                prefix = any(_norm(a) and n.startswith(_norm(a) + " ") for a in aliases)
+                score = max(score, 0.95 if prefix else 0.9)
         if score > best_score or (score == best_score and best is not None and len(option) < len(best)):
             best, best_score = option, score  # on a tie the closer (shorter) option wins
     return best, round(best_score, 3)
@@ -149,10 +152,16 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("cover_letter", r"\bcover letter\b", 0.95),
     ("resume", r"\bresume\b|\bcv\b|^\W*upload (a |your )?files?\b(?!.*\b(additional|other|supporting)\b)", 0.95),
     # ^ Workday's resume box can say only "Upload a file (5MB max)" (ASML, 2026-11-16)
-    ("preferred_first_name", r"\bpreferred (first )?name\b|\bnickname\b", 0.95),
+    # "Chosen Name" (MongoDB on Greenhouse, 2026-11-19) asks the same thing
+    ("preferred_first_name", r"\b(preferred|chosen) (first )?name\b|\bnickname\b", 0.95),
     ("first_name", r"\bfirst name\b|\bgiven name\b", 0.95),
     ("last_name", r"\blast name\b|\bsurname\b|\bfamily name\b", 0.95),
     ("full_name", r"\bfull (legal )?name\b|^\s*(legal )?name\s*\??\s*$", 0.9),
+    # "Would you like to receive communications via SMS and/or WhatsApp ... we will only communicate with you via email"
+    # (Lucid, 2026-11-19) is a consent choice, not the email box: it was matched against the email address
+    ("sms_consent", r"\b(receive|send|opt[- ]?in|consent|agree)\b.{0,80}\b(sms|whatsapp|text messag\w*)\b"
+                    r"|\b(sms|whatsapp|text messag\w*)\b.{0,80}\b(receive|opt[- ]?in|consent|agree|communications?|updates)\b",
+     0.9),
     ("email", r"\be-?mail\b", 0.95),
     ("phone_extension", r"\bextension\b|^\s*ext\.?\s*$", 0.9),
     ("phone_type", r"\bphone (device )?type\b|\bdevice type\b|\btype of phone\b", 0.9),
@@ -191,8 +200,12 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("work_authorization", r"\b(legally )?(authori[sz]ed|eligible|permitted) to work\b|\bwork authori[sz]ation\b"
                            r"|\bright to work\b", 0.95),
     ("us_citizen", r"\bcitizen\b|\bpermanent resident\b|\bgreen card\b|\bU\.?\s?S\.? persons?\b", 0.9),
+    # "Please confirm the number of hours per week you can work and be present in the office..." (Snowflake,
+    # 2026-11-19) asks for a number: the on-site rule's "Yes" went into a numbers-only box, which refused it
+    ("hours_per_week", r"\b(number of|how many) hours\b.{0,60}\b(per|a|each) week\b|\bhours (per|a|each) week\b"
+                       r".{0,80}\b(can you|you can|able|available|commit)\b", 0.9),
     # commuting to the office, on-site or hybrid attendance: always yes (Vatsal, 2026-11-15)
-    ("onsite_ok", r"\b(willing|able|can you|comfortable|confirm|meet this requirement)\b.{0,120}\b(commut\w*|on-?site|"
+    ("onsite_ok",r"\b(willing|able|can you|comfortable|confirm|meet this requirement)\b.{0,120}\b(commut\w*|on-?site|"
                   r"in[- ]office|in the office|in person|in-person|hybrid)\b|\b(commut\w*|on-?site|in[- ]office|"
                   r"in person|in-person|hybrid)\b.{0,160}\b(willing|able to|can you|meet this requirement|comfortable)\b|"
                   r"\backnowledge\b.{0,80}\b(days? (a week |per week )?in the office|in the office \d|on-?site)\b",
@@ -213,7 +226,9 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("previous_employee", r"\b(ever|previously|before|formerly|former)\b.*\b(work(ed)?|employ\w*|contractor|consultant)\b"
                           r"|\b(work(ed)?|employ\w*)\b.*\bin the past\b"
                           r"|\b(have you been|are you currently|are you now)\b.{0,40}\b(employed|working|a contractor)\b"
-                          r".{0,20}\b(with|for|by|at)\b", 0.9),
+                          r".{0,20}\b(with|for|by|at)\b"
+                          # "Are you a current contractor for Lucid, or any of its entities?" (Lucid, 2026-11-19)
+                          r"|\bare you a current (employee|contractor|consultant)\b", 0.9),
     ("major", r"\bmajor\b(?! life)|\bdiscipline\b|\bfield of study\b|\barea of study\b", 0.9),  # not "major life activities"
     # "What is the highest level of education you have completed?" (Scout Motors, 2026-11-18): the finished degree
     # (Bachelor's), not the Master's still in progress. Before the general degree rule.
@@ -638,6 +653,13 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
                 return Value(none[0], "profile us_citizen_or_permanent_resident (none of these statuses)",
                              confidence=given.confidence)
         return given
+    if key == "sms_consent":
+        return Value(None, "", note="a text-message consent choice: Claude answers it")
+    if key == "hours_per_week":
+        role = f"{ctx.job.role_title if ctx.job is not None else ''} {q.label}"
+        if re.search(r"(?i)\bsummer\b|\bfull[- ]time\b", role):
+            return Value("40", "rule: a summer internship or full-time role is full time, 40 hours a week")
+        return Value(None, "rule: hours per week", note="school-year hours are Vatsal's to give")
     if key == "onsite_ok":
         return Value("Yes", "rule: commuting and on-site work, always yes (Vatsal, 2026-11-15)",
                      aliases=("yes", "i can", "i am willing", "i am able"))
@@ -759,7 +781,8 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         if any(same_company(e, ctx.job.company) or contains_word(q.label, e) for e in ctx.past_employers):
             return Value(None, "master list", note="the question names an employer in your master list: answer it yourself")
         return Value("No", "master list: no work there (it holds all your experience)", confidence=1.0,
-                     aliases=("i have not", "have not worked", "never worked", "never been employed", "none of the above"))
+                     aliases=("i have not", "have not worked", "never worked", "never been employed", "none of the above",
+                              "never"))  # "Never been a contractor or an employee" (Lucid, 2026-11-19)
     if key == "location_city":
         state = _US_STATES.get((t1.address.state or "").upper(), t1.address.state or "")
         parts = [p for p in (t1.address.city, state, t1.address.country) if p]

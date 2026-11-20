@@ -141,6 +141,7 @@ def test_approved_answers_are_reused() -> None:
 
 def test_label_keys() -> None:
     assert key_for(q("Preferred First Name"))[0] == "preferred_first_name"
+    assert key_for(q("Chosen Name"))[0] == "preferred_first_name"  # MongoDB, 2026-11-19
     assert key_for(q("LinkedIn Profile"))[0] == "linkedin_url"
     assert key_for(q("What is your expected graduation date?"))[0] == "graduation_date"
 
@@ -461,6 +462,24 @@ def test_t_mobile_in_a_question_is_not_a_phone_number() -> None:  # T-Mobile, 20
     question = q("Have you previously or are you currently working as a contractor for T-Mobile?", "select", ["Yes", "No"])
     assert one(question).key != "phone"
     assert one(q("Mobile phone number")).key == "phone"
+
+
+def test_lucid_contractor_sms_and_hours_questions() -> None:  # Lucid and Snowflake, 2026-11-19
+    current = one(q("Are you a current contractor for Lucid, or any of its entities?", "select", ["Yes", "No"]))
+    assert (current.key, current.value) == ("previous_employee", "No")
+    past = one(q("Have you previously worked for Lucid, or any of its entities, as a contractor?", "select",
+                 ["Currently a contractor", "Previously a contractor", "Previously an employee",
+                  "Never been a contractor or an employee"]))
+    assert (past.kind, past.value) == ("auto", "Never been a contractor or an employee")
+    sms = one(q("Would you like to receive communications via SMS and/or WhatsApp to the number provided on your "
+                "application? If you select no, we will only communicate with you via email and/or telephone calls.",
+                "select", ["Yes", "No"]))
+    assert sms.key == "sms_consent" and sms.value is None  # a choice for Claude, never the email address
+    assert one(q("Email")).key == "email"
+    hours = one(q("Please confirm the number of hours per week you can work and be present in the office location "
+                  "specified in the job description (full-time is 40 hours per week)"))
+    assert (hours.key, hours.value) == ("hours_per_week", "40")
+    assert one(q("Are you able to work on-site in our Seattle office?", "select", ["Yes", "No"])).value == "Yes"
 
 
 def test_questions_about_past_employers_follow_the_master_list() -> None:  # T-Mobile, 2026-11-16

@@ -107,6 +107,16 @@ def test_a_us_person_requirement_blocks_a_visa_holder() -> None:  # Anduril, 202
         == "warning"
 
 
+def test_spelled_out_us_person_statuses_block_a_visa_holder() -> None:  # Atlantic Health, 2026-11-19
+    atlantic = check("Must be legally authorized to work in the United States as a U.S. citizen, national, asylee, "
+                     "refugee, or lawful permanent resident.", title="Pharmacy (Data Analytics) Intern")
+    assert atlantic.blocked and levels(atlantic)["us_person_required"] == "blocker"
+    # the immigration law notice many postings carry names the same statuses without requiring them
+    notice = check("U.S. citizens, nationals, lawful permanent residents, asylees and refugees are protected from "
+                   "citizenship status discrimination.")
+    assert "us_person_required" not in levels(notice)
+
+
 def test_us_abbreviation_does_not_split_the_sentence() -> None:  # ICF, 2026-11-16
     icf = check("Bachelor's degree in computer science.\n- Due to contract requirements, U.S. Citizenship is required\n"
                 "Preferred: Python.")
@@ -400,6 +410,16 @@ def test_slash_joined_seasons_make_one_window() -> None:  # Atoms, 2026-11-18
     assert "Jun 2027 to Aug 2028" in atoms.grad_date_reason
     early = check("Graduating in Spring/Summer 2026.", title="Software Engineering Intern - 2027 Winter Term")
     assert levels(early)["grad_window"] == "blocker"
+
+
+def test_or_joined_seasons_make_one_window() -> None:  # MongoDB, 2026-11-19: Spring 2028 was dropped
+    mongodb = check("Have a minimum of one quarter/semester remaining in university studies after the internship "
+                    "concludes. Graduation date in Fall 2027 or Spring 2028.",
+                    title="2027 - AI and People Transformation Intern, NYC")
+    assert mongodb.grad_date == "December 2027" and not mongodb.blocked
+    assert "Sep 2027 to Jun 2028" in mongodb.grad_date_reason
+    one = check("Graduation date in Fall 2027.", title="Software Engineering Intern")
+    assert one.grad_date == "December 2027" and "Sep 2027 to Dec 2027" in one.grad_date_reason
 
 
 def test_a_residency_requirement_is_a_note_and_or_later_graduation_blocks() -> None:  # Quest, ServiceNow, 2026-11-17

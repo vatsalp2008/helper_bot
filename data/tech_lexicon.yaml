@@ -89,6 +89,7 @@ aliases:
   RAG: [retrieval-augmented generation]
   Prompt Engineering: [prompt-engineered, prompt engineered]
   Random Forest: [Random Forests]
+  XGBoost: [XG Boost]  # KLA's Software Application Engineer Intern posting (2026-11-19)
   CLIP: [CLIP Embeddings]
   MediaPipe Tasks Vision: [MediaPipe]
   CRDT: [CRDTs]

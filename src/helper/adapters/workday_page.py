@@ -316,6 +316,7 @@ def choose_prompt(page: Any, where: Any, terms: list[str], accept: Callable[[str
     if existing and (keep_existing or any(accept(e) >= threshold for e in existing)):
         return True, "; ".join(existing), "already chosen"
     box = where.locator("input:not([type=hidden])").first
+    seen: list[str] = []  # what the last search listed, for the note when nothing matched
     for term in [t for t in dict.fromkeys(terms) if t]:
         box.click()
         box.fill("")
@@ -338,11 +339,13 @@ def choose_prompt(page: Any, where: Any, terms: list[str], accept: Callable[[str
             if accept(added[-1]) >= threshold:
                 _close_popup(page)
                 return True, added[-1], ""
+            seen = added[-1:]  # Workday picked its lone result by itself
             _remove_last_selection(where)
             existing = selected_items(where)
             continue
         options = page.locator(PROMPT_OPTIONS)
         texts = [" ".join(t.split()) for t in options.all_inner_texts()]
+        seen = [t for t in texts if t]
         scored = sorted(((accept(t), i) for i, t in enumerate(texts) if t), key=lambda x: (-x[0], x[1]))
         if scored and scored[0][0] >= threshold:
             options.nth(scored[0][1]).click()
@@ -366,7 +369,9 @@ def choose_prompt(page: Any, where: Any, terms: list[str], accept: Callable[[str
             existing = selected_items(where)  # nothing stuck: try the next term
     box.fill("")
     _close_popup(page)
-    return False, terms[0] if terms else "", f"no search result matches '{terms[0] if terms else ''}'"
+    # what the list offered, so a miss can be fixed later (Cadence's Field of Study, 2026-11-19, said only this)
+    shown = f" (it listed: {'; '.join(seen[:6])})" if seen else " (the search listed nothing)"
+    return False, terms[0] if terms else "", f"no search result matches '{terms[0] if terms else ''}'{shown}"
 
 
 def _close_popup(page: Any) -> None:
@@ -519,6 +524,17 @@ def _add_entry(page: Any, section: str, kind: str) -> Optional[str]:
     return new[0] if new else None
 
 
+def has_section(page: Any, section: str, kind: str, title: str) -> bool:
+    """Whether the page asks for these entries at all. DraftKings' campus portal (2026-11-19) has no Work Experience
+    or Education section on My Experience (it asks for the school among its questions), and helper listed every job
+    and school as "NOT filled: no room to add it". A section that is there but has no Add button still says so."""
+    if entry_ids(page, kind):
+        return True
+    if page.locator(f"[id={json.dumps(section)}], [role=group][aria-labelledby={json.dumps(section)}]").count():
+        return True
+    return bool(page.get_by_role("heading", name=re.compile(rf"^\s*{re.escape(title)}\s*$", re.I)).count())
+
+
 def _slot(page: Any, section: str, kind: str, key_field: str, wanted: str, used: set[str]) -> Optional[str]:
     """The entry to fill: one already holding this item, else an empty one, else a new one."""
     ids = [i for i in entry_ids(page, kind) if i not in used]
@@ -542,7 +558,9 @@ def _date_in(page: Any, base_id: str, my: Optional[MonthYear]) -> None:
 
 
 def fill_work(page: Any, entries: list[WorkEntry], pause: Callable[[], None]) -> list[FieldResult]:
-    results = []
+    results: list[FieldResult] = []
+    if not has_section(page, "Work-Experience-section", "workExperience", "Work Experience"):
+        return results
     used: set[str] = set()
     for n, e in enumerate(entries, 1):
         label = f"Work experience {n}: {e.title}, {e.company}"
@@ -639,6 +657,22 @@ def school_search_terms(school: str) -> list[str]:
     return [t for t in dict.fromkeys([short, school]) if t]
 
 
+def study_search_terms(field: str) -> list[str]:
+    """The field of study as written, then its longest word: Cadence's list (2026-11-19) found nothing for
+    'Computer Science', and 'Computer' lists every computing field to choose from."""
+    words = re.findall(r"[A-Za-z]+", field)
+    short = max(words, key=len) if len(words) > 1 else ""
+    return [t for t in dict.fromkeys([field, short]) if t]
+
+
+def study_score(field: str, option: str) -> float:
+    """How well a list entry names his field: the same name, or one holding all its words ('Computer and
+    Information Sciences' for Computer Science; plurals count), but never another field ('Computer Engineering')."""
+    def stems(text: str) -> set[str]:
+        return {w[:-1] if len(w) > 4 and w.endswith("s") else w for w in _norm_words(text)}
+    return max(match_option(field, [option])[1], 0.9 if stems(field) <= stems(option) else 0.0)
+
+
 def _norm(text: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
 
@@ -652,7 +686,9 @@ def _section_text(page: Any) -> str:
 
 
 def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], None]) -> list[FieldResult]:
-    results = []
+    results: list[FieldResult] = []
+    if not has_section(page, "Education-section", "education", "Education"):
+        return results
     used: set[str] = set()
     for n, s in enumerate(schools, 1):
         label = f"Education {n}: {s.degree}, {s.school}"
@@ -703,10 +739,9 @@ def fill_education(page: Any, schools: list[SchoolEntry], pause: Callable[[], No
                 notes += _choose_degree(page, degree, s.degree)
             study = _field_of(page, base + "fieldOfStudy")
             if study.count() and s.field_of_study:
-                ok, _, why = choose_prompt(page, study, [s.field_of_study],
-                                           lambda t: max(match_option(s.field_of_study, [t])[1],
-                                                         0.9 if _norm_words(s.field_of_study) <= _norm_words(t) else 0.0),
-                                           threshold=0.85, keep_existing=False)
+                ok, _, why = choose_prompt(page, study, study_search_terms(s.field_of_study),
+                                           lambda t: study_score(s.field_of_study, t), threshold=0.85,
+                                           keep_existing=False)
                 if not ok:
                     notes.append(f"field of study: {why}")
             if s.gpa and _by_id(page, base + "gradeAverage").count():  # Vatsal, 2026-11-15: forms may get GPA

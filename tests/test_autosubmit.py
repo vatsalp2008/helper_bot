@@ -298,3 +298,50 @@ def test_a_submit_the_form_refuses_is_not_logged_as_sent(monkeypatch: Any) -> No
         browser.close()
     assert outcome == "timeout"  # never "unverified": nothing was sent, and helper doesn't click Submit again
     assert any("didn't take the submit; nothing was sent" in s and "Please make a selection." in s for s in said)
+
+
+_ASHBY_REFUSAL = """<form>
+  <div class="_box_1x2y" id="box" style="display:none"><p>Your form needs corrections</p>
+    <ul><li>Missing entry for required field: A U.S. person is a citizen ...</li></ul></div>
+  <button type="button" class="ashby-application-form-submit-button">Submit Application</button>
+</form>
+<script>
+document.querySelector('button').onclick = () => { document.getElementById('box').style.display = 'block'; };
+</script>"""
+
+
+def test_an_ashby_form_that_needs_corrections_is_not_logged_as_sent(monkeypatch: Any) -> None:
+    """Snowflake (2026-11-19): after Vatsal's Submit, Ashby's box said "Your form needs corrections. Missing entry for
+    required field: ...", and helper logged submitted_unverified and added a Notion row. Its POST went out, but the
+    form is still there with its Submit button and that box: nothing was sent."""
+    playwright_api = pytest.importorskip("playwright.sync_api")
+    import helper.apply as ap
+    from helper.adapters import ashby
+
+    said: list[str] = []
+    monkeypatch.setattr(ap, "_say", said.append)
+    with playwright_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch(headless=True)
+        except Exception as exc:
+            pytest.skip(f"Chromium isn't installed: {exc}")
+        page = browser.new_page()
+        page.set_content(_ASHBY_REFUSAL)
+        before = ap.visible_errors(page.main_frame)
+        assert before == []
+        page.click("button")
+        outcome = ap._wait_for_submit(page, ashby, {"value": True}, 0.12, 0.25, page.main_frame, errors_before=before)
+        browser.close()
+    assert outcome == "timeout"  # never "unverified"
+    assert any("didn't take the submit; nothing was sent" in s and "Your form needs corrections" in s for s in said)
+
+
+def test_a_half_filled_school_entry_blocks_auto_submit() -> None:
+    # Lucid (2026-11-19): the second school's Discipline found no match, the entry's boxes are required once it is
+    # there, and auto-submit clicked anyway, so the form stopped the submit
+    answers = [answer("first_name")]
+    results = [FieldResult("first_name", "First Name", True, "x"),
+               FieldResult("education-1", "Education 2: Bachelor of Engineering, University of Mumbai", False,
+                           "Oct. 2021 to May 2025", "discipline: no option matches 'Computer Engineering'")]
+    reasons = blockers(gate(answers=answers, results=results))
+    assert any("Education 2: Bachelor of Engineering" in r and "wasn't filled completely" in r for r in reasons)

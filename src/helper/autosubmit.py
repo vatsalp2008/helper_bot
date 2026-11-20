@@ -73,6 +73,9 @@ def blockers(g: Gate) -> list[str]:
         result = filled.get(a.field)
         if result is None or not result.ok:
             reasons.append(f"'{label}' wasn't filled")
+    for r in g.results:  # a school or job entry left half done: its boxes are required once the entry is there
+        if not r.ok and r.field.startswith(SECTION_ENTRIES):  # (Lucid's second school, 2026-11-19)
+            reasons.append(f"'{r.label[:57]}' wasn't filled completely ({r.detail[:70]})")
     flags = [f.get("message", "") for f in g.eligibility.get("flags", []) if f.get("level") in ("warning", "blocker")]
     if flags:
         reasons.append("eligibility flags: " + "; ".join(m[:90] for m in flags))
@@ -85,6 +88,9 @@ def blockers(g: Gate) -> list[str]:
     if not g.has_submit_button:
         reasons.append("helper couldn't find exactly one Submit button")
     return list(dict.fromkeys(reasons))
+
+
+SECTION_ENTRIES = ("education-", "employment-")  # entries helper adds to a form's Education and Employment
 
 
 def run_problems(results: list[Any], captcha_seen: bool, notes: Optional[list[str]] = None) -> list[str]:

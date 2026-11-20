@@ -298,8 +298,49 @@ def copyright_owner(text: str) -> str:
     return "" if not name or name.lower() in ("all", "the") or _GENERIC_SITE_NAME.match(name) else name
 
 
+_ORACLE_JOB_RE = re.compile(r"(?i)/hcmUI/CandidateExperience/[^/]+/sites/([^/]+)/(?:[^/]+/)*job/(\d+)")
+# The site's own requisition endpoint, asked from the page (same origin, as the page's scripts do): read-only
+_ORACLE_DETAILS_JS = r"""
+async ([site, id]) => {
+  const finder = `ById;Id="${id}",siteNumber=${site}`;
+  const url = '/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails?expand=all&onlyData=true&finder='
+    + encodeURIComponent(finder);
+  try {
+    const r = await fetch(url, {headers: {Accept: 'application/json'}});
+    if (!r.ok) return null;
+    const item = ((await r.json()).items || [])[0];
+    return item ? [item.ExternalDescriptionStr, item.ExternalResponsibilitiesStr, item.ExternalQualificationsStr]
+      .filter(Boolean) : null;
+  } catch (e) { return null; }
+}
+"""
+
+
+def oracle_description(page: Any) -> str:
+    """The whole posting on an Oracle Candidate Experience page: its description, responsibilities and
+    qualifications. The page's JobPosting data carries only the description, so the qualifications were never read
+    (Atlantic Health, 2026-11-19: "PharmD student" and its work authorization rule were missed)."""
+    m = _ORACLE_JOB_RE.search(urlparse(page.url).path)
+    if not m:
+        return ""
+    try:
+        parts = page.evaluate(_ORACLE_DETAILS_JS, [m.group(1), m.group(2)])
+    except Exception:
+        return ""
+    return "\n\n".join(html_to_text(p).strip() for p in parts or [] if isinstance(p, str) and p.strip()).strip()
+
+
 def read_posting(page: Any) -> tuple[str, str, str]:
     """(role title, company, description) from the page itself."""
+    title, company, text = _read_posting(page)
+    if "oraclecloud" in (urlparse(page.url).hostname or ""):
+        whole = oracle_description(page)
+        if len(whole) > len(text):
+            text = whole
+    return title, company, text
+
+
+def _read_posting(page: Any) -> tuple[str, str, str]:
     data = page.evaluate(r"""() => {
       const t = el => el ? (el.innerText || '').trim() : '';
       const meta = n => (document.querySelector(`meta[property="${n}"], meta[name="${n}"]`) || {}).content || '';
