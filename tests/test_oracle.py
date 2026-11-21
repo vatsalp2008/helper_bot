@@ -199,6 +199,38 @@ def test_required_fields_left_empty_are_named_before_submit(page: Any) -> None:
     assert oracle._required_gaps(page) == ["City"]
 
 
+def test_a_box_oracle_locked_with_its_value_is_left_alone(page: Any) -> None:
+    # Vertiv and Ralliant (2026-11-20): the email Oracle verified sits in a read-only box; helper waited 30 seconds to
+    # type into it, then said "These required fields look empty: Email Address"
+    page.set_content("""<div class="input-row" data-helper-key="generic:email"><label class="input-row__label
+        input-row__label--required">Email Address</label><input type="email" readonly value="alex@mockmail.test"></div>
+      <div class="input-row" data-helper-key="generic:city"><label class="input-row__label input-row__label--required">
+        City</label><input></div>""")
+    assert oracle._required_gaps(page) == ["City"]
+    assert oracle._locked(page.main_frame, "generic:email") and not oracle._locked(page.main_frame, "generic:city")
+
+
+def test_oracle_s_planned_outage_page_says_so(page: Any) -> None:
+    # Honeywell (2026-11-20): the maintenance page was reported as "couldn't find a Next button"
+    page.set_content("<h1>Planned Outage</h1><p>The Oracle Cloud Fusion Applications service you are trying to access "
+                     "is currently undergoing scheduled maintenance. Rest assured, the service will be restored once "
+                     "the maintenance is complete.</p>")
+    assert oracle._stage(page) == "outage"
+    # a posting that asks for outage experience is no outage
+    page.set_content("<div class='apply-flow'><h2>Plant Engineer</h2><p>Support planned outage work and scheduled "
+                     "maintenance.</p><input name='x'></div>")
+    assert oracle._stage(page) != "outage"
+
+
+def test_the_fill_summary_names_the_site_signed_in_to() -> None:
+    from helper.apply import _flow_summary
+
+    result = oracle.FlowResult()
+    result.account = "email entered"
+    assert "Oracle sign-in: email entered." in _flow_summary(result, [], 1, "oracle")  # Ralliant's said "Workday account"
+    assert "Workday account: email entered." in _flow_summary(result, [], 1, "workday")
+
+
 def test_an_entry_oracle_marks_invalid_is_finished(page: Any, tmp_path: Path) -> None:
     # Vertiv (2026-11-20): an education entry carried over without its Degree: "The Degree field is required."
     from helper.adapters.workday_page import SchoolEntry

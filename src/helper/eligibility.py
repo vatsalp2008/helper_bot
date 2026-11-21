@@ -250,8 +250,9 @@ _LOCATION_LINE_RE = re.compile(r"(?im)^\s*(?:location|locations|office|based in)
 _RETURNING_RE = re.compile(
     # "ability to return to a degree program full-time after completion of the internship" (The Aerospace
     # Corporation, 2026-11-20)
-    r"(?i)\breturn(?:ing)? to (?:(?:a|an|the|your|their) )?(?:school|university|college|studies|campus"
-    r"|(?:degree|academic|university) program)"
+    # "returning to an accredited degree-seeking academic program after the internship" (Intuitive, 2026-11-20)
+    r"(?i)\breturn(?:ing)? to (?:(?:a|an|the|your|their) )?(?:[\w-]+ ){0,3}?(?:school|university|college|studies"
+    r"|campus|(?:degree|academic|university) program)"
     r"|\bcontinu(?:e|ing) (?:your |their )?(?:studies|education|enrollment|degree)"
     r"|\b(?:remain|still be) enrolled\b"
     # "Must have one or more course(s) remaining in a Bachelors or Graduate degree program post internship" (T-Mobile),

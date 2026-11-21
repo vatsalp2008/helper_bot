@@ -757,7 +757,7 @@ def handle_account(page: Any, ctx: FlowContext, out: FlowResult) -> bool:
         if outcome == "done":
             out.account = "created" if action == "create" else "signed in"
             ctx.on_account(out.account)  # next time, sign in first (Bloomberg, Postman, 2026-11-16)
-            ctx.say(f"Workday account: {out.account} ({creds.email}).")
+            ctx.say(f"Workday account: {out.account}.")  # never the login itself (CLAUDE.md: not printed or logged)
             return True
         if (action, outcome) in (("create", "exists"), ("sign_in", "bad_login")):
             continue

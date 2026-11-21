@@ -76,7 +76,7 @@ TRANSIENT = re.compile(r"(?i)couldn't reach|connection|ssl|timed? ?out|timeout|t
 REUSED_AFTER_DAYS = 180  # a Greenhouse posting first published this long ago and refreshed today was reused (Octaura)
 WORKDAY_TERMS = ("intern", "new grad", "early career", "entry level", "university")  # ~5 searches a company site
 SMARTRECRUITERS_TERMS = ("intern", "graduate", "entry", "associate")
-YOU_APPLY = {"smartrecruiters", "taleo", "successfactors",  # helper never fills these (rule 8): `helper assist`
+YOU_APPLY = {"smartrecruiters", "taleo", "successfactors", "ukg",  # helper never fills these (rule 8): `helper assist`
              "lever"}  # Lever's bot check rejects submits from helper's window (TRI, Quest; Vatsal, 2026-11-17)
 
 

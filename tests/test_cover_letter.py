@@ -168,6 +168,31 @@ def test_the_company_name_is_never_a_gap(ready: Path) -> None:  # ServiceNow, 20
     assert not any("is a gap" in str(e) and "Cassandra Labs" in str(e) for e in report.errors), report.errors
 
 
+def test_a_tool_the_resume_swapped_in_can_be_named_for_its_project(ready: Path) -> None:
+    # The tailoring agents (2026-11-20): a project the resume framed with a same-family tool (data/tech_families.yaml,
+    # all approved) was refused in the letter, "isn't a technology <project> used", though the resume shows it there
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="May 2027"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    tailor = TAILOR.model_copy(deep=True)
+    project = next(p for p in tailor.projects if p.project_id == "experimentiq")
+    project.tech_tags = ["Python", "Flask", "PostgreSQL"]
+    project.bullets = [b.replace("**FastAPI**", "**Flask**") for b in project.bullets]
+
+    def letter(tool: str) -> Any:
+        return CoverLetterOutput.model_validate({**LETTER, "paragraphs": [
+            P[0], P[1] + f" In ExperimentIQ, the assignment service ran on {tool}.", *P[2:]]})
+
+    report = validate_letter(letter("Flask"), ctx, items, job(), tailor, profile)
+    assert not any("'Flask'" in str(e) for e in report.errors), [str(e) for e in report.errors]
+    # a tool that project's resume entry doesn't name is still refused, family or not
+    report = validate_letter(letter("Django"), ctx, items, job(), tailor, profile)
+    assert any("'Django' (Django) isn't a technology experimentiq used" in str(e) for e in report.errors), \
+        [str(e) for e in report.errors]
+
+
 def test_naming_the_role_is_not_claiming_its_words(ready: Path) -> None:  # Cymer, 2026-11-20
     paths = Paths(ready)
     ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,

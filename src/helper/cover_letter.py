@@ -304,10 +304,11 @@ def validate_letter(out: CoverLetterOutput, ctx: Context, items: list[MasterItem
                       *(f"{e.school} {e.degree} {e.major} {e.location}" for e in profile.education)])
     others = _other_item_names(ctx, ids)
     on_resume = _resume_tech(tailor, ctx)
+    item_tech = _item_tech(tailor, ctx)
     # The role title's own numbers ("Summer 2027") and the graduation date may be named; they aren't claims.
     given = [number_key(m) for m in find_numbers(f"{job.role_title} {tailor.grad_date}")]
     for n, paragraph in enumerate(paragraphs, 1):
-        _check_paragraph(paragraph, n, items, ctx, job, tailor, extra, posting, others, on_resume, r, given)
+        _check_paragraph(paragraph, n, items, ctx, job, tailor, extra, posting, others, on_resume, r, given, item_tech)
     if len(paragraphs) == 4:
         names = _role_names(job.role_title, job.location)
         if names and not any(n in _letter_words(paragraphs[0].replace("**", "")) for n in names):
@@ -332,6 +333,18 @@ def _other_item_names(ctx: Context, on_resume: list[str]) -> dict[str, str]:
     return names
 
 
+def _item_tech(tailor: TailorOutput, ctx: Context) -> dict[str, set[str]]:
+    """Each item's technologies as its own resume entry names them (bullets and tech tags). A project the resume framed
+    with a same-family tool (data/tech_families.yaml) may be told with that tool in the letter too (agents,
+    2026-11-20: "'Flask' isn't a technology <project> used" for a project the resume showed on Flask)."""
+    def tech(texts: list[str]) -> set[str]:
+        return {m.canonical for t in texts for m in ctx.vocab.find(mask_comparisons(t.replace("**", "")))}
+
+    out = {e.entry_id: tech(e.bullets) for e in tailor.experience}
+    out.update({p.project_id: tech([*p.bullets, *p.tech_tags]) for p in tailor.projects})
+    return out
+
+
 def _resume_tech(tailor: TailorOutput, ctx: Context) -> set[str]:
     """Technologies the resume itself names: in bullets, tags and skills lines."""
     strings = [b for e in tailor.experience for b in e.bullets]
@@ -350,7 +363,7 @@ def _blank_quote(m: re.Match[str]) -> str:
 
 def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Context, job: Job, tailor: TailorOutput,
                      extra: str, posting: str, others: dict[str, str], on_resume: set[str], r: Report,
-                     given: Optional[list[Any]] = None) -> None:
+                     given: Optional[list[Any]] = None, item_tech: Optional[dict[str, set[str]]] = None) -> None:
     where = f"paragraph {n}"
     if _EM_DASH_RE.search(paragraph) or _EN_DASH_RE.search(paragraph):
         r.error("dashes", where, "no em dashes, en dashes or --; use a comma or a period")
@@ -387,8 +400,8 @@ def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Conte
         for m in ctx.vocab.find(mask_comparisons(sentence)):
             if same_company(m.text, job.company) or same_company(m.canonical, job.company):
                 continue  # the company's own name ("ServiceNow" is also a platform in the lexicon; 2026-11-17)
-            if not any(m.canonical in i.allowed_tech for i in about) and not (
-                    about is items and m.canonical in on_resume):
+            if not any(m.canonical in i.allowed_tech or m.canonical in (item_tech or {}).get(i.id, set())
+                       for i in about) and not (about is items and m.canonical in on_resume):
                 r.error("tech", where, f"'{m.text}' ({m.canonical}) isn't a technology {label} used")
     spans = [(m.start, m.end) for m in ctx.vocab.find(mask_comparisons(checked))]
     texts = [ctx.item_text(i) for i in items] + [extra]

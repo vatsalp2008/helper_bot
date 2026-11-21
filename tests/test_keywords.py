@@ -106,3 +106,13 @@ def test_t_mobile_fiber_is_no_go_framework(setup) -> None:  # type: ignore[no-un
                           TechFamiliesFile())
     fiber = kw.term("Fiber")
     assert fiber is not None and fiber.spellings == ["Go Fiber"]
+
+
+def test_open_data_is_not_an_open_source_signal(setup) -> None:  # type: ignore[no-untyped-def]
+    # GTI Energy, 2026-11-20: "data from open-source repositories" is open data, not open-source code
+    master, vocab, sets = setup
+    for text in ("Scrape and wrangle data from open-source repositories.", "Work with open-source datasets.",
+                 "Experience with open source data and open-source intelligence."):
+        assert extract_keywords(text, master, vocab, sets, TechFamiliesFile()).open_source_signals == [], text
+    kw = extract_keywords("Contributions to open-source projects are a plus.", master, vocab, sets, TechFamiliesFile())
+    assert kw.open_source_signals == ["open-source"]

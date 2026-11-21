@@ -45,6 +45,32 @@ def _quiet(func):  # type: ignore[no-untyped-def]
 # --------------------------------------------------------------------------- finding
 
 
+PLACEHOLDER_COMPANIES = ("", "?", "unknown")
+
+
+def named_job(paths: Paths, cfg: Any, job: Any, url: str, company: Optional[str] = None) -> Any:
+    """The job with its employer named: `--company` when given, else the list's company when the posting page named
+    none (UKG boards without a footer link came out "Unknown" and would have put that in the letter; Werner, AFL,
+    Encore, 2026-11-20)."""
+    if company:
+        return job.model_copy(update={"company": company})
+    if (job.company or "").strip().lower() not in PLACEHOLDER_COMPANIES:
+        return job
+    listed = _listed_company(paths, cfg, url)
+    return job.model_copy(update={"company": listed}) if listed else job
+
+
+@_quiet
+def _listed_company(paths: Paths, cfg: Any, url: str) -> Optional[str]:
+    conn = _open(paths, cfg)
+    try:
+        row = queue.find(conn, url)
+        name = (row["company"] or "").strip() if row is not None else ""
+        return name if name.lower() not in PLACEHOLDER_COMPANIES else None
+    finally:
+        conn.close()
+
+
 def latest_find(paths: Paths) -> Optional[Path]:
     found = sorted(paths.runs.glob("find-*/candidates.json"))
     return found[-1] if found else None

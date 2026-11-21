@@ -730,3 +730,42 @@ synonyms:
       - "already approved: Data Visualization, Business Intelligence"
     approved: true
     note: Added 2026-11-20 for T-Mobile's Summer 2027 Data Analyst Internship ("Strong communication and data presentation skills"; "Present insights clearly to technical and non-technical audiences").
+
+  - term: Data Cleanup
+    evidence:
+      - "traffic_accident: preprocessing with leakage detection, imputation and weather bucketing on a stratified 772,840-row sample"
+      - "housing_price: preprocessing pipeline for missing values, encoding and scaling on 50,000+ property records"
+      - "pnwer: data-integrity checks that block publishing if totals don't reconcile or Washington's figures don't match the Embassy of Canada's published numbers"
+      - "already approved: Data Cleaning, Data Cleansing"
+    approved: true
+    note: Added 2026-11-20 for Pivotal's Internship, Supply Chain Analyst (Summer 2027) ("Support data cleanup and standardization efforts across part and supplier records").
+
+  - term: Quantitative Analysis
+    evidence:
+      - "experimentiq: statistical engine with power analysis, Welch's t-test, Mann-Whitney U, CUPED (30-45% variance reduction), sequential testing (O'Brien-Fleming) and DiD/PSM via DoWhy/EconML over 10M+ simulated events"
+      - "investment_prediction: LSTM/GRU time-series forecasting on 1.2M data points spanning 10+ years, 68% directional accuracy with robust backtesting across market conditions"
+      - "pulsetrader: Flink tumbling-window aggregation of trade events (VWAP, buy/sell ratio, z-scores) and anomaly detection"
+      - "housing_price: ensemble regression on 50,000+ property records (R² 0.82, RMSE $45,000, MAE $32,000) with R-based statistical validation"
+      - "already approved: Statistical Analysis, Statistical Modeling, Predictive Modeling"
+    approved: true
+    note: Added 2026-11-20 for Constellation's 2027 PowerFolio Data Analyst Intern, Houston ("Perform load data forecasts, trend analysis and other statistical estimates to prepare quantitative analysis for transactions"; "strong quantitative and problem solving skills").
+
+  - term: Business Process Automation
+    evidence:
+      - "kalini_sde: automation tools (Python, Bash, 8 workflows, 3.2 hours daily savings, Slack API integration)"
+      - "swarm: added a Stripe API integration for automated billing workflows"
+      - "themanager: added a QuickBooks API integration for automated financial data sync"
+      - "pnwer: daily GitHub Actions automation layer that refreshes trade news, opens a GitHub issue for each new U.S. tariff action on Canada, rebuilds trade data when new monthly figures publish, and triggers automatic Vercel redeployment"
+      - "already approved: Workflow Automation, Process Improvement, Operational Improvement"
+    approved: true
+    note: Added 2026-11-20 for Werner Electric Supply's AI Intern (Summer 2027) ("This internship provides hands on experience supporting business process automation and emerging AI solutions"). Automated billing, financial data sync and operations workflows in Python, Bash and APIs; no Microsoft Power Platform, Power Automate or UIPath.
+
+  - term: Data Wrangling
+    evidence:
+      - "traffic_accident: preprocessing with leakage detection, imputation and weather bucketing on a stratified 772,840-row sample of 7.7M US accident records"
+      - "housing_price: preprocessing pipeline for missing values, encoding and scaling on 50,000+ property records"
+      - "pnwer: Python (pandas) data pipeline pulling official public data from 5 sources (Census, StatCan, BLS, BEA, Bank of Canada), with data-integrity checks that block publishing if totals don't reconcile"
+      - "experimentiq: dbt transformation layer (staging/intermediate/marts) over DuckDB and Snowflake"
+      - "already approved: Data Cleaning, Data Cleansing, ETL"
+    approved: true
+    note: Added 2026-11-20 for Mom's Meals' Data Analytics Intern ("Develop skills in data wrangling, transformation, and pipeline orchestration").

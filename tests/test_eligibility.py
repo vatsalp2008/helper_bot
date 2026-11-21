@@ -426,6 +426,9 @@ def test_a_co_op_the_posting_calls_a_summer_internship_is_a_summer_term() -> Non
     # T-Mobile, 2026-11-20
     ("Must have one or more course(s) remaining in a Bachelors or Graduate degree program post internship.",
      "Software Engineering Internship"),
+    # Intuitive, 2026-11-20: adjectives between "an" and "academic program"
+    ("University Enrollment: Must be currently enrolled in and returning to an accredited degree-seeking academic "
+     "program after the internship.", "Data Engineering Intern"),
 ])
 def test_other_ways_of_saying_back_to_school_after_it(text: str, title: str) -> None:
     e = check(text, title=title)

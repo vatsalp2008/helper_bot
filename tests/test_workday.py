@@ -356,6 +356,61 @@ def test_a_page_without_work_or_education_sections_is_not_a_miss(browser: Any) -
     page.close()
 
 
+WORK_OR_OTHER = """
+<div data-automation-id="applyFlowPage">
+<div role="group" aria-labelledby="Work-or-Other-Experience-section">
+  <h4 id="Work-or-Other-Experience-section">Work or Other Experience</h4>
+  <div id="entries">
+  <div role="group" aria-labelledby="Work-or-Other-Experience-1-panel">
+    <h5 id="Work-or-Other-Experience-1-panel">Work or Other Experience 1</h5>
+    <div data-automation-id="formField-jobTitle"><label for="workExperience-5--jobTitle">Job Title
+      <abbr title="required">*</abbr></label><input id="workExperience-5--jobTitle" type="text"></div>
+    <div data-automation-id="formField-companyName"><label for="workExperience-5--companyName">Company</label>
+      <input id="workExperience-5--companyName" type="text"></div>
+    <div data-automation-id="formField-location"><label for="workExperience-5--location">Location</label>
+      <input id="workExperience-5--location" type="text"></div>
+  </div></div>
+  <button data-automation-id="add-button" onclick="add()">Add Another</button>
+</div>
+<div role="group" aria-labelledby="primaryQuestionnaire-section"><h4 id="primaryQuestionnaire-section">Questions</h4>
+  <div data-automation-id="formField-why"><label for="why">Why Jabil?</label><input id="why" type="text"></div>
+</div></div>
+<script>
+function add() {
+  const n = document.querySelectorAll('#entries > [role=group]').length + 1, i = 5 + n;
+  const g = document.createElement('div');
+  g.setAttribute('role', 'group'); g.setAttribute('aria-labelledby', `Work-or-Other-Experience-${n}-panel`);
+  g.innerHTML = `<h5 id="Work-or-Other-Experience-${n}-panel">Work or Other Experience ${n}</h5>` +
+    ['jobTitle', 'companyName', 'location'].map(k => `<div data-automation-id="formField-${k}"><label ` +
+      `for="workExperience-${i}--${k}">${k}</label><input id="workExperience-${i}--${k}" type="text"></div>`).join('');
+  document.getElementById('entries').appendChild(g);
+}
+</script>"""
+
+
+def test_a_work_or_other_experience_section_is_the_jobs_section(browser: Any) -> None:
+    # Jabil (2026-11-20): helper looked for "Work Experience" only, so the jobs came to Claude as loose questions,
+    # the planner typed the home address in as the job's location, the second job had "no room", and Workday refused
+    # the page with eight "Page Error"s
+    from helper.dates import MonthYear
+    work = [wp.WorkEntry("Software Development Intern", "Kalini Industries", "Springfield, IL", MonthYear(2024, 1),
+                         MonthYear(2024, 4), False, ""),
+            wp.WorkEntry("Teaching Assistant", "Northeastern University", "Boston, MA", MonthYear(2026, 1),
+                         MonthYear(2026, 4), False, "")]
+    page = browser.new_page()
+    page.set_content(WORK_OR_OTHER)
+    assert wp.section_id(page, "Work-Experience-section", "workExperience", wp.WORK_TITLE) == \
+        "Work-or-Other-Experience-section"
+    questions, _ = wp.discover(page, skip_special=True)
+    assert [q.label for q in questions] == ["Why Jabil?"]  # the job's fields are fill_work's
+    results = wp.fill_work(page, work, lambda: None)
+    assert all(r.ok for r in results), [(r.label, r.detail) for r in results]
+    assert [page.input_value(f"#workExperience-{i}--companyName") for i in (5, 7)] == ["Kalini Industries",
+                                                                                     "Northeastern University"]
+    assert page.input_value("#workExperience-5--location") == "Springfield, IL"
+    page.close()
+
+
 def test_field_of_study_tries_a_shorter_search_and_says_what_the_list_showed(browser: Any) -> None:
     # Cadence (2026-11-19): 'Computer Science' found nothing in its list, and the note said only that
     assert wp.study_search_terms("Computer Science") == ["Computer Science", "Computer", "Science"]
@@ -459,10 +514,14 @@ def test_account_step(browser: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPa
     page = browser.new_page()
     page.goto(f"file://{(FIXTURES / 'workday_mock_account.html').resolve()}#{mode}")
     out = wd.FlowResult()
-    ctx = flow_context(tmp_path, credentials=wd.Credentials("alex@example.com", "right-pass"), has_account=has_account)
+    said: list[str] = []
+    ctx = flow_context(tmp_path, credentials=wd.Credentials("alex@example.com", "right-pass"), has_account=has_account,
+                       say=said.append)
     assert wd.handle_account(page, ctx, out) and out.account == expected
     assert page.evaluate("() => window.signInAttempts") == attempts
     assert page.evaluate("() => window.honeypot") == ""  # the hidden bot trap stays empty
+    # the login is never printed (2026-11-20: "Workday account: signed in (<his email>)" went to the fill's output)
+    assert f"Workday account: {expected}." in said and not any("alex@example.com" in s for s in said), said
     page.close()
 
 

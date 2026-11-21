@@ -211,7 +211,17 @@ def _visible(page: Any, selector: str) -> list[Any]:
     return [loc.nth(i) for i in range(loc.count()) if loc.nth(i).is_visible()]
 
 
+# Honeywell (2026-11-20, a Friday night): Oracle's "Planned Outage" page, which helper reported as "couldn't find a Next
+# button". Its own sentence only: an energy posting can ask for "planned outage" experience.
+_OUTAGE_RE = re.compile(r"(?i)\bservice you are trying to access is (?:currently )?undergoing scheduled maintenance\b")
+
+
 def _stage(page: Any) -> str:
+    try:
+        if _OUTAGE_RE.search(page.main_frame.locator("body").inner_text(timeout=2000)[:3000]):
+            return "outage"
+    except Exception:
+        pass
     if _visible(page, "input[name=primary-email]"):
         return "email"
     if common.asks_for_emailed_code(page):
@@ -386,6 +396,10 @@ def _one_page(page: Any, ctx: FlowContext, out: FlowResult, refilled: set[str], 
     if stage == "code":
         return _hand_over(page, ctx, "Oracle emailed you a verification code. Enter it in the window; helper carries "
                                      "on with the application when the page moves.") == "timeout"
+    if stage == "outage":
+        return _hand_over(page, ctx, "Oracle's site is down for scheduled maintenance (its 'Planned Outage' page), so "
+                                     "nothing was filled. Reload the window once it's back and helper carries on, or "
+                                     "close it and try again later.") == "timeout"
     if stage == "left":
         return _hand_over(page, ctx, "Oracle left the application and shows another page (it ends sessions left open "
                                      "for many hours). helper never clicks SUBMIT on Oracle, so nothing was sent unless "
@@ -449,7 +463,8 @@ def _form_page(page: Any, ctx: FlowContext, out: FlowResult, refilled: set[str])
     before = signature(page)
     root = page.main_frame
     questions = [q for q in generic.discover(root)
-                 if not _HONEYPOT_RE.search(f"{q.label} {q.field_name}") and not _IMPORT_RE.search(q.label)]
+                 if not _HONEYPOT_RE.search(f"{q.label} {q.field_name}") and not _IMPORT_RE.search(q.label)
+                 and not _locked(root, q.field_name)]
     _name_phone_parts(questions)
     answers = ctx.plan(questions) if questions else []
     if answers:
@@ -635,12 +650,26 @@ _REQUIRED_GAPS_JS = r"""() => {
     if (!visible(row) || row.closest('[data-helper-entry-form]')) continue;
     const label = row.querySelector('.input-row__label--required');
     if (!label) continue;
-    const filled = row.classList.contains('input-row--filled')
+    const locked = [...row.querySelectorAll('input, textarea')].some(i => (i.readOnly || i.disabled) && i.value);
+    const filled = row.classList.contains('input-row--filled') || locked
       || row.querySelector('.cx-select-pill-section--selected, [aria-checked=true], input:checked');
     if (!filled) out.push((label.innerText || '').replace(/\s+/g, ' ').replace(/\s*\*\s*$/, '').trim());
   }
   return out.filter(Boolean);
 }"""
+
+
+_LOCKED_JS = r"""b => { const i = b.matches('input, textarea') ? b : b.querySelector('input, textarea');
+  return !!(i && (i.readOnly || i.disabled) && i.value); }"""
+
+
+def _locked(root: Any, key: str) -> bool:
+    """A box Oracle locked with its value in it: the email it verified with the code (Vertiv and Ralliant, 2026-11-20:
+    filling it waited 30 seconds for a box that never takes typing, then "These required fields look empty")."""
+    try:
+        return bool(root.locator(f"[data-helper-key={json.dumps(key)}]").first.evaluate(_LOCKED_JS))
+    except Exception:
+        return False
 
 
 def _required_gaps(page: Any) -> list[str]:

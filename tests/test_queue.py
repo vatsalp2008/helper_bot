@@ -228,7 +228,7 @@ def test_a_built_lever_run_goes_to_apply_manually(repo: Path) -> None:  # Vatsal
     assert row["status"] == "apply_manually" and "helper assist run-lever" in row["reason"]
     from helper.find import YOU_APPLY
 
-    assert "lever" in YOU_APPLY
+    assert "lever" in YOU_APPLY and "ukg" in YOU_APPLY  # UKG: Apply needs an account (rule 8)
 
 
 def test_a_window_closed_while_a_flow_waits_shows_on_the_list(repo: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -297,3 +297,25 @@ def test_a_placeholder_company_takes_the_name_its_run_read(repo: Path) -> None: 
     assert queue.fill_details(conn, URL, company="Someone Else")  # a real name, once there, stays
     assert queue.find(conn, URL)["company"] == "CAS"
     conn.close()
+
+
+def test_a_page_that_names_no_employer_takes_the_list_company(repo: Path) -> None:
+    # UKG boards without a footer link (Werner, AFL, Encore, 2026-11-20) came out "Unknown", which the letter would use
+    from helper.models import Job
+
+    paths, cfg = _setup(repo)
+    url = "https://recruiting2.ultipro.com/WER1000WERE/JobBoard/9cc9/OpportunityDetail?opportunityId=48ee"
+    conn = open_db(paths, cfg)
+    try:
+        queue.add(conn, url=url, company="Werner Electric Supply", title="AI Intern (Summer 2027)", ats="ukg",
+                  source="list")
+        conn.commit()
+    finally:
+        conn.close()
+    page = Job(url=url, ats="generic", company="Unknown", role_title="AI Intern (Summer 2027)", description_text="x",
+               source="browser", fetched_at="2026-11-20T17:50:00")
+    assert hunt.named_job(paths, cfg, page, url).company == "Werner Electric Supply"
+    assert hunt.named_job(paths, cfg, page, url, "Werner").company == "Werner"  # --company wins
+    named = page.model_copy(update={"company": "Acuity"})
+    assert hunt.named_job(paths, cfg, named, url).company == "Acuity"  # a page's own name stays
+    assert hunt.named_job(paths, cfg, page, "https://example.com/not-listed").company == "Unknown"

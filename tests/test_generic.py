@@ -33,6 +33,12 @@ def test_which_adapter_takes_a_link() -> None:
     assert adapter_for(taleo, purpose="resume") is generic
     with pytest.raises(NeedsUser, match="never automates LinkedIn"):
         adapter_for("https://www.linkedin.com/jobs/view/123", purpose="resume")
+    # UKG Pro boards need an account to apply (rule 8): resume-only, like Taleo (2026-11-20)
+    ukg = ("https://recruiting2.ultipro.com/WER1000WERE/JobBoard/9cc9fbca-288f-4c69-99d7-b81d31b89844/"
+           "OpportunityDetail?opportunityId=48ee1836-bd71-4533-a83a-a5170a0e984d")
+    with pytest.raises(NeedsUser, match="helper doesn't fill UKG"):
+        adapter_for(ukg)
+    assert adapter_for(ukg, purpose="resume") is generic
 
 
 def test_known_systems_behind_a_company_page_are_found() -> None:

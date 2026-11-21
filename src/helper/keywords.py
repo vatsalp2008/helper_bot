@@ -32,8 +32,10 @@ _BULLET_PREFIX_RE = re.compile(r"^\s*(?:[-•*·▪◦–]|\d+[.)])\s+")
 _WEIGHTS: dict[str, int] = {"required": 3, "responsibilities": 2, "preferred": 1, "other": 1}
 
 # Spec 7.2: include a merged open source project when the posting values these.
+# Open data isn't open-source code: "Scrape and wrangle data from open-source repositories" (GTI Energy, 2026-11-20).
 _OPEN_SOURCE_RE = re.compile(
-    r"(?i)\bopen[- ]source\b|\bcode reviews?\b|\bdebug(?:ging|ged)?\b|\bunfamiliar code(?:\s?bases?)?\b"
+    r"(?i)(?<!data from )(?<!datasets from )\bopen[- ]source\b(?![- ](?:data(?:sets?)?|intelligence)\b)"
+    r"|\bcode reviews?\b|\bdebug(?:ging|ged)?\b|\bunfamiliar code(?:\s?bases?)?\b"
     r"|\breliability\b|\bsite reliability\b|\bSRE\b"
 )
 

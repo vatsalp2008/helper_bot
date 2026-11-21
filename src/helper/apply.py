@@ -596,7 +596,7 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
         set_step(state, "fill", "done", f"{sum(r.ok for r in result.results)} field(s) filled"
                                         + ("; stopped on the Review page" if result.reached_review else ""))
         save_state(paths, state)
-        _say(_flow_summary(result, planned, wait))
+        _say(_flow_summary(result, planned, wait, job.ats))
         submitted_by_helper = False
         if mode == "auto" and job.ats not in REVIEW_ONLY:
             reasons = _flow_blockers(paths, cfg, folder, job, planned, result, page, adapter, pauses)
@@ -931,9 +931,12 @@ def _has_workday_account(paths: Paths, cfg: Config, state: Any, job: Job) -> boo
     return row is not None
 
 
-def _flow_summary(result: Any, planned: list[PlannedAnswer], wait: float) -> str:
+ACCOUNT_LABELS = {"oracle": "Oracle sign-in", "icims": "iCIMS account"}  # Ralliant's Oracle run said "Workday account"
+
+
+def _flow_summary(result: Any, planned: list[PlannedAnswer], wait: float, ats: str = "workday") -> str:
     ok = [r for r in result.results if r.ok]
-    account = f" Workday account: {result.account}." if result.account else ""
+    account = f" {ACCOUNT_LABELS.get(ats, 'Workday account')}: {result.account}." if result.account else ""
     lines = [f"Filled {len(ok)} of {len(result.results)} field(s).{account}"]
     for r in result.results:
         if not r.ok:

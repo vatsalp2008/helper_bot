@@ -31,7 +31,11 @@ NEXT_WORDS = re.compile(r"^\s*(next|continue|save and continue)\s*$", re.IGNOREC
 LISTBOX_OPTIONS = "ul[role=listbox]:not([data-automation-id=selectedItemList]) li[role=option]"
 PROMPT_OPTIONS = "[data-automation-id=activeListContainer] [role=option]"
 SELECTED_ITEMS = "[data-automation-id=selectedItemList] [data-automation-id=promptOption]"
-SPECIAL_SECTIONS = re.compile(r"^(Work-Experience|Education|Certifications|Skills|Languages|Resume/CV|Websites)-")
+# Jabil (2026-11-20) titles its jobs "Work or Other Experience": its fields came to Claude as loose questions, typed
+# over helper's own entry (the home address as the job's location), and Workday refused the page with "Page Error"s.
+SPECIAL_SECTIONS = re.compile(r"^(Work(?:-or-Other)?-Experience|Education|Certifications|Skills|Languages|Resume/CV"
+                              r"|Websites)-")
+WORK_TITLE = re.compile(r"^\s*Work(?: or Other)? Experience\s*$", re.I)
 DATE_SECTIONS = ("Month", "Day", "Year")
 
 # One entry per visible question block: {key, label, type, required, options, section, current, selected, dates}.
@@ -80,8 +84,9 @@ DISCOVER_JS = r"""
     const key = 'workday:' + id;
     f.setAttribute('data-helper-key', key);
     const input = f.querySelector('input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]), textarea');
+    const entry = [...f.querySelectorAll('[id]')].some(e => /^(?:workExperience|education)-\d+--/.test(e.id));
     out.push({
-      key, label, type, required, options, section,
+      key, label, type, required, options, section, entry,
       current: type === 'select' ? text(f.querySelector('button[aria-haspopup=listbox]')) : (input ? input.value || '' : ''),
       selected: [...f.querySelectorAll('[data-automation-id=selectedItemList] [data-automation-id=promptOption]')]
                   .map(p => p.getAttribute('data-automation-label') || text(p)),
@@ -266,8 +271,8 @@ def discover(page: Any, *, skip_special: bool = False, section: str = "questions
     """The page's questions, with dropdown choices read by opening each dropdown."""
     questions, found = [], {}
     for f in page.evaluate(DISCOVER_JS):
-        if skip_special and SPECIAL_SECTIONS.match(f["section"] or ""):
-            continue
+        if skip_special and (SPECIAL_SECTIONS.match(f["section"] or "") or f.get("entry")):
+            continue  # fill_work and fill_education fill these
         options = f["options"]
         if f["type"] == "select":
             options = dropdown_options(page, block(page, f["key"]))
@@ -551,7 +556,7 @@ def _add_entry(page: Any, section: str, kind: str) -> Optional[str]:
     return new[0] if new else None
 
 
-def has_section(page: Any, section: str, kind: str, title: str) -> bool:
+def has_section(page: Any, section: str, kind: str, title: str | re.Pattern[str]) -> bool:
     """Whether the page asks for these entries at all. DraftKings' campus portal (2026-11-19) has no Work Experience
     or Education section on My Experience (it asks for the school among its questions), and helper listed every job
     and school as "NOT filled: no room to add it". A section that is there but has no Add button still says so."""
@@ -559,7 +564,29 @@ def has_section(page: Any, section: str, kind: str, title: str) -> bool:
         return True
     if page.locator(f"[id={json.dumps(section)}], [role=group][aria-labelledby={json.dumps(section)}]").count():
         return True
-    return bool(page.get_by_role("heading", name=re.compile(rf"^\s*{re.escape(title)}\s*$", re.I)).count())
+    name = title if isinstance(title, re.Pattern) else re.compile(rf"^\s*{re.escape(title)}\s*$", re.I)
+    return bool(page.get_by_role("heading", name=name).count())
+
+
+SECTIONS_JS = r"""() => [...document.querySelectorAll('[role=group][aria-labelledby$="-section"]')].map(g => {
+  const id = g.getAttribute('aria-labelledby'), h = document.getElementById(id);
+  return {id, title: h ? (h.innerText || h.textContent || '').replace(/\s+/g, ' ').trim() : '',
+          ids: [...g.querySelectorAll('[id*="--"]')].map(e => e.id)};
+})"""
+
+
+def section_id(page: Any, default: str, kind: str, title: re.Pattern[str]) -> str:
+    """The id naming the section that holds these entries, which its Add button sits under. It follows the page's own
+    title: Work-Experience-section on most sites, Work-or-Other-Experience-section at Jabil (2026-11-20)."""
+    try:
+        groups = page.evaluate(SECTIONS_JS)
+    except Exception:
+        return default
+    entry = re.compile(rf"^{re.escape(kind)}-\d+--")
+    holding = [g for g in groups if any(entry.match(i) for i in g["ids"])]
+    if holding:
+        return min(holding, key=lambda g: len(g["ids"]))["id"]  # the innermost one
+    return next((g["id"] for g in groups if title.match(g["title"])), default)
 
 
 def _slot(page: Any, section: str, kind: str, key_field: str, wanted: str, used: set[str]) -> Optional[str]:
@@ -586,13 +613,14 @@ def _date_in(page: Any, base_id: str, my: Optional[MonthYear]) -> None:
 
 def fill_work(page: Any, entries: list[WorkEntry], pause: Callable[[], None]) -> list[FieldResult]:
     results: list[FieldResult] = []
-    if not has_section(page, "Work-Experience-section", "workExperience", "Work Experience"):
+    section = section_id(page, "Work-Experience-section", "workExperience", WORK_TITLE)
+    if not has_section(page, section, "workExperience", WORK_TITLE):
         return results
     used: set[str] = set()
     for n, e in enumerate(entries, 1):
         label = f"Work experience {n}: {e.title}, {e.company}"
         try:
-            i = _slot(page, "Work-Experience-section", "workExperience", "companyName", e.company, used)
+            i = _slot(page, section, "workExperience", "companyName", e.company, used)
             if i is None:
                 results.append(FieldResult(f"workday:work:{n}", label, False, None, "no room to add it"))
                 continue

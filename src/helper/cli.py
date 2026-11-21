@@ -159,6 +159,9 @@ def apply(
     paths = _paths()
     cfg = load_config(paths)
     job = fetch_job(url, jd_text=jd_file.read_text(encoding="utf-8") if jd_file else None)
+    from .hunt import named_job
+
+    job = named_job(paths, cfg, job, url)  # a page that names no employer takes the list's company
     if dry_run:
         from .apply import preview
 
@@ -191,7 +194,7 @@ def resume(
     jd_file: Annotated[
         Optional[Path], typer.Option("--jd-file", exists=True, dir_okay=False, help="The job description as text.")
     ] = None,
-    company: Annotated[Optional[str], typer.Option("--company", help="Company name.")] = None,
+    company: Annotated[Optional[str], typer.Option("--company", help="Company name (with a link: replaces the page's).")] = None,
     role: Annotated[Optional[str], typer.Option("--role", help="Role title, short (it names the PDF).")] = None,
     location: Annotated[Optional[str], typer.Option("--location", help="Job location, if known.")] = None,
     projects: Annotated[Optional[int], typer.Option("--projects", min=1, max=8, help="Projects on the resume.")] = None,
@@ -211,10 +214,13 @@ def resume(
         if not url:
             raise HelperError("pass a posting link, or --jd-file with the job description saved as text")
         from .apply import fetch_job
+        from .hunt import named_job
         from .pipeline import start_run
 
-        started = start_run(paths, load_config(paths), fetch_job(url, purpose="resume"), command="resume", projects=projects,
-                            include_experience=include_experience, grad_date=grad_date)
+        cfg = load_config(paths)
+        job = named_job(paths, cfg, fetch_job(url, purpose="resume"), url, company)  # --company, else the list's
+        started = start_run(paths, cfg, job, command="resume", projects=projects, include_experience=include_experience,
+                            grad_date=grad_date)
     else:
         if not company or not role:
             raise HelperError("--company and --role are required with --jd-file")

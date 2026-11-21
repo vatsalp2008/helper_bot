@@ -7,7 +7,8 @@ from types import ModuleType
 from ..ats import detect_ats
 from ..errors import NeedsUser
 
-MANUAL = {"smartrecruiters": "SmartRecruiters", "taleo": "Taleo", "successfactors": "SuccessFactors"}
+MANUAL = {"smartrecruiters": "SmartRecruiters", "taleo": "Taleo", "successfactors": "SuccessFactors",
+          "ukg": "UKG"}  # UKG Pro (recruiting.ultipro.com): Apply needs an account (CAS, Melaleuca, 2026-11-20)
 
 
 def adapter_for(url: str, purpose: str = "apply") -> ModuleType:
