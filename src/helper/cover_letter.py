@@ -107,6 +107,12 @@ _MATERIALS_RE = re.compile(r"(?i)\b(supplement\w*|extra|additional|new)\s+(teach
 _QUOTED_RE = re.compile(r"[\"“]([^\"”]{3,200})[\"”]")
 
 
+def _flat(text: str) -> str:
+    """Text for comparing quotes: one space between words, lower case, and a hyphen for the hyphen characters postings
+    use ("AI‑assisted" with U+2011, Ralliant's Oracle posting, 2026-11-20). En and em dashes stay what they are."""
+    return " ".join(text.split()).lower().replace("\u2010", "-").replace("\u2011", "-")
+
+
 def is_northeastern_campus(job: Job) -> bool:
     return same_company(job.company, "Northeastern University") or bool(re.search(r"(?i)\bnortheastern\b", job.company))
 
@@ -279,13 +285,13 @@ def validate_letter(out: CoverLetterOutput, ctx: Context, items: list[MasterItem
         r.error("structure", "stories", f"{', '.join(unknown)} isn't on this resume; stories come from {', '.join(ids)}")
     if not 2 <= len(out.stories) <= 3:
         r.error("structure", "stories", f"{len(out.stories)} stories; go deep on two or three")
-    posting = " ".join(job.description_text.split()).lower()
+    posting = _flat(job.description_text)
     paragraphs = out.paragraphs
     if out.hook:
-        hook = " ".join(out.hook.split()).lower().strip("\"“”. ")
+        hook = _flat(out.hook).strip("\"“”. ")
         if hook not in posting:
             r.error("hook", "hook", f"'{out.hook}' isn't in the posting; quote the posting's own words")
-        elif paragraphs and hook not in " ".join(paragraphs[0].replace("**", "").split()).lower():
+        elif paragraphs and hook not in _flat(paragraphs[0].replace("**", "")):
             r.error("hook", "paragraph 1", "paragraph 1 must quote the hook")
     words = sum(word_count(p) for p in paragraphs)
     if not WORD_LIMITS[0] <= words <= WORD_LIMITS[1]:
@@ -293,7 +299,8 @@ def validate_letter(out: CoverLetterOutput, ctx: Context, items: list[MasterItem
     elif not TARGET_WORDS[0] <= words <= TARGET_WORDS[1]:
         r.warn("length", "letter", f"{words} words; the target is {TARGET_WORDS[0]} to {TARGET_WORDS[1]}")
     # Names the posting itself uses (its team, products, places) aren't claims; tools are still checked as tools.
-    extra = " ".join([job.company, job.role_title, job.description_text, profile.header.location,
+    # The posting's location counts too: "Support Center - Akron, OH" often appears only there (Sterling, 2026-11-19).
+    extra = " ".join([job.company, job.role_title, job.description_text, job.location or "", profile.header.location,
                       *(f"{e.school} {e.degree} {e.major} {e.location}" for e in profile.education)])
     others = _other_item_names(ctx, ids)
     on_resume = _resume_tech(tailor, ctx)
@@ -302,11 +309,8 @@ def validate_letter(out: CoverLetterOutput, ctx: Context, items: list[MasterItem
     for n, paragraph in enumerate(paragraphs, 1):
         _check_paragraph(paragraph, n, items, ctx, job, tailor, extra, posting, others, on_resume, r, given)
     if len(paragraphs) == 4:
-        def words(text: str) -> str:  # dashes and commas as word breaks: a title's en dash can't be in a letter (rule 4)
-            return " ".join(re.sub(r"[\u2010-\u2015,\-]", " ", text).lower().split())
-
-        core = words(re.sub(r"\s*[\(\[].*?[\)\]]", "", job.role_title))
-        if core and core not in words(paragraphs[0].replace("**", "")):
+        names = _role_names(job.role_title, job.location)
+        if names and not any(n in _letter_words(paragraphs[0].replace("**", "")) for n in names):
             r.warn("structure", "paragraph 1", f"name the role ('{job.role_title}')")
         close = paragraphs[3].replace("**", "")
         if not (re.search(r"\bMaster", close) and "Northeastern" in close):
@@ -336,6 +340,14 @@ def _resume_tech(tailor: TailorOutput, ctx: Context) -> set[str]:
     return {m.canonical for text in strings for m in ctx.vocab.find(mask_comparisons(text.replace("**", "")))}
 
 
+def _blank_quote(m: re.Match[str]) -> str:
+    """A quote of the posting, blanked out at its own length; a period inside its closing mark still ends the sentence,
+    so the next sentence's first word isn't read as a name ("…products." Keeping, CAS, 2026-11-20)."""
+    end = m.group(1).rstrip()[-1:]
+    end = end if end in ".!?" else ""
+    return " " * (len(m.group(0)) - len(end)) + end
+
+
 def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Context, job: Job, tailor: TailorOutput,
                      extra: str, posting: str, others: dict[str, str], on_resume: set[str], r: Report,
                      given: Optional[list[Any]] = None) -> None:
@@ -356,8 +368,8 @@ def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Conte
     except RenderError as exc:
         r.error("render", where, str(exc))
     plain = paragraph.replace("**", "")
-    checked = _QUOTED_RE.sub(lambda m: " " * len(m.group(0)) if " ".join(m.group(1).split()).lower().strip(". ")
-                             in posting else m.group(0), plain)  # quoting the posting isn't a claim
+    checked = _QUOTED_RE.sub(lambda m: _blank_quote(m) if _flat(m.group(1)).strip(". ") in posting else m.group(0),
+                             plain)  # quoting the posting isn't a claim
     # Facts belong to the item a sentence is about, as on the resume: a sentence naming no item continues the last
     # one named in the paragraph; before any is named, any of the resume's items may back it.
     current: list[MasterItem] = []
@@ -403,14 +415,56 @@ def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Conte
         r.error("wording", where, "Northeastern is never described as a nonprofit (BAPS Charities is the nonprofit)")
     if _MATERIALS_RE.search(plain):
         r.error("wording", where, "the TA work never mentions creating materials")
+    gap_text = _without_role_title(plain, job.role_title)
     for term in tailor.keyword_audit.gaps:
         if term.strip().lower() == job.company.strip().lower():
             continue  # the company's own name is never a gap (ServiceNow, 2026-11-16)
-        if in_text(term, plain):
+        if in_text(term, gap_text):
             r.error("gaps", where, f"'{term}' is a gap in the keyword audit; leave it out")
     for name, item_id in others.items():
         if re.search(rf"(?<![\w/]){re.escape(name)}(?![\w/])", plain):
             r.error("items", where, f"'{name}' ({item_id}) isn't on this resume")
+
+
+_SEASON_WORDS = {"spring", "summer", "fall", "autumn", "winter"}
+_PLACE_WORDS = {"us", "usa", "u.s.", "united", "states", "remote", "hybrid", "onsite", "on-site", "in-person", "city",
+                "nyc"}
+
+
+def _letter_words(text: str) -> str:
+    """Lowercase words with dashes and commas as word breaks: a title's en dash can't be in a letter (rule 4)."""
+    return " ".join(re.sub(r"[‐-―,\-]", " ", text).lower().split())
+
+
+def _role_names(title: str, location: Optional[str]) -> list[str]:
+    """The role's name as paragraph 1 may give it: the whole title, or the title without its trailing place, term or
+    year ("Markets - Quantitative Analysis, Summer Analyst - New York City - US, 2027" is the Markets Quantitative
+    Analysis Summer Analyst role; spelling out the rest read like a form field; Citi, 2026-11-20)."""
+    core = re.sub(r"\s*[\(\[].*?[\)\]]", "", title)
+    names = [_letter_words(core)]
+    parts = [p for p in re.split(r"\s+[-‐-―|]\s+|\s*,\s*", core) if p.strip()]
+    place = set(_letter_words(location or "").split())
+    while len(parts) > 1:
+        tail = _letter_words(parts[-1]).split()
+        if not tail or not all(w in place or w in _PLACE_WORDS or w in _SEASON_WORDS or re.fullmatch(r"(?:19|20)\d\d", w)
+                               for w in tail):
+            break
+        parts.pop()
+        names.append(_letter_words(" ".join(parts)))
+    return [n for n in names if n]
+
+
+def _without_role_title(text: str, title: str) -> str:
+    """The text with the role's own name taken out: naming the role isn't claiming its words. "Internship - Contract
+    Management and AI" made 'contract management' (a keyword gap) unwritable, so the letter couldn't say which role it
+    was for (Cymer, 2026-11-20). Only the title's multi-word parts go; the same words anywhere else still count."""
+    title = re.sub(r"\s*[\(\[].*?[\)\]]", " ", title)
+    parts = {title.strip(), *(p.strip() for p in re.split(r"\s+[-‐-―|:]\s+|\s*,\s*", title))}
+    for part in sorted(parts, key=len, reverse=True):
+        tokens = re.findall(r"[\w'.&+#]+", part)
+        if len(tokens) >= 2:
+            text = re.sub(r"(?i)(?<!\w)" + r"[\s,\-]+".join(map(re.escape, tokens)) + r"(?!\w)", " ", text)
+    return text
 
 
 _ALIASES = {"chef": ["chef/chef", "Chef Infra"], "spiceai": ["spiceai", "Spice.ai"], "ta": ["Teaching Assistant"],

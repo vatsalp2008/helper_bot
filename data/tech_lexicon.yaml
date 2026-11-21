@@ -34,6 +34,7 @@ aliases:
   TanStack Query: [React Query]
   WebGL: [WebGL2]
   Vision Framework: [Apple Vision, VisionKit, Vision framework, Vision]
+  Fiber: [Go Fiber, GoFiber, gofiber]
   Core ML: [CoreML]
   Core Data: [CoreData]
   TensorFlow Lite: [TFLite, TF Lite, LiteRT]
@@ -175,11 +176,16 @@ case_sensitive: [Go, R, C, Ray, Swift, Rust, Ruby, Express, Flask, Combine, Room
                  Rancher, Cypress, Puppeteer, Espresso, Prettier, Yarn, Windsurf, SAP, Pillow, Flax, Gazebo,
                  Gymnasium, Polars, Pinecone, SAS, Airflow, Cassandra, Redshift, Parquet, ORC, Solidity, Sass, LaTeX,
                  Svelte, Gatsby, Recoil, Cloud Run, Cloud Functions, Jenkins, Confluence, Asana, Hibernate, Mongoose,
-                 Sinatra]
+                 Sinatra,
+                 # "the rest of Melaleuca" isn't REST (2026-11-20)
+                 REST, RESTful]
 
-exclude: [Vision]
+# T-Mobile's "Fiber Growth team" (2026-11-20) isn't Go's Fiber framework: bare "Fiber" is the product far more
+# often than the framework, so only "Go Fiber" or "GoFiber" name it
+exclude: [Vision, Fiber]
 
-ignore: ["R&D", "Q&A", "C-suite", "C-level", "go-to-market", "A/B", "R squared", "R-squared", "R²", "R^2"]
+ignore: ["R&D", "Q&A", "C-suite", "C-level", "go-to-market", "A/B", "R squared", "R-squared", "R²", "R^2",
+         "Rocky Mountains", "Rocky Mountain"]  # Melaleuca's "the Rocky Mountains" isn't Rocky Linux (2026-11-20)
 
 implies:
   Supabase: [PostgreSQL]  # Supabase's database is PostgreSQL

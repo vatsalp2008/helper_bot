@@ -22,15 +22,17 @@ from typing import Any, Optional
 from .tracker.db import now_iso
 
 REVIEW_ONLY = {"icims": "iCIMS runs always stop before Submit for you",
+               "oracle": "Oracle runs stop at Submit for you while helper's Oracle filling is new",
 }
 AUTO_CAPABLE = ("greenhouse", "lever", "ashby", "workday", "generic")  # Workday and company sites from 2026-11-16
-DEDICATED = ("greenhouse", "lever", "ashby", "workday", "icims")  # sites with their own adapter
+DEDICATED = ("greenhouse", "lever", "ashby", "workday", "icims", "oracle")  # sites with their own adapter
 STOPPED = ("taleo", "smartrecruiters", "successfactors")  # never filled (rule 8)
 
 
 def site_kind(ats: Optional[str]) -> str:
     """The auto-submit site a run belongs to. Pages the company-site (generic) adapter fills keep their system's name
-    (jobvite, oracle, rippling...), but they follow the company-site rule (Laborie, Fortinet, 2026-11-16)."""
+    (jobvite, rippling...), but they follow the company-site rule (Laborie, 2026-11-16). Oracle has its own adapter
+    since 2026-11-19."""
     a = (ats or "").lower() or "unknown"
     return a if a in DEDICATED or a in STOPPED or a == "unknown" else "generic"
 

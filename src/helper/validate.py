@@ -117,9 +117,10 @@ class Report:
 
 @functools.lru_cache(maxsize=2048)
 def phrase_regex(phrase: str) -> re.Pattern[str]:
-    """Case-insensitive whole-phrase match; hyphens and spaces count as the same; an added plural s is fine."""
-    parts = [re.escape(p) for p in re.split(r"[\s\-]+", phrase.strip()) if p]
-    body = r"[\s\-]+".join(parts) if parts else re.escape(phrase)
+    """Case-insensitive whole-phrase match; hyphens and spaces count as the same; an added plural s is fine. Postings'
+    own hyphen characters (U+2010, and U+2011 in "AI‑assisted", Ralliant's Oracle posting, 2026-11-20) are hyphens."""
+    parts = [re.escape(p) for p in re.split(r"[\s\-\u2010\u2011]+", phrase.strip()) if p]
+    body = r"[\s\-\u2010\u2011]+".join(parts) if parts else re.escape(phrase)
     return re.compile(r"(?<![A-Za-z0-9])" + body + r"(?:s|es)?(?![A-Za-z0-9])", re.IGNORECASE)
 
 

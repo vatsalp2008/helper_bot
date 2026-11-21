@@ -13,7 +13,7 @@ MANUAL = {"smartrecruiters": "SmartRecruiters", "taleo": "Taleo", "successfactor
 def adapter_for(url: str, purpose: str = "apply") -> ModuleType:
     """The adapter for a posting link. `purpose` "resume" only reads the posting (no form), so sites helper never
     fills can still give their job description for a resume and cover letter."""
-    from . import ashby, generic, greenhouse, icims, lever, workday
+    from . import ashby, generic, greenhouse, icims, lever, oracle, workday
 
     ats = detect_ats(url)
     if ats == "greenhouse" or greenhouse.parse_ref(url):
@@ -26,6 +26,8 @@ def adapter_for(url: str, purpose: str = "apply") -> ModuleType:
         return workday
     if icims.parse_ref(url):
         return icims
+    if oracle.parse_ref(url):  # Oracle's Candidate Experience, page by page (2026-11-19)
+        return oracle
     if ats == "workday":
         raise NeedsUser("This Workday link isn't a job posting (it should contain /job/<location>/<title>_<id>). Open "
                         "the posting on Workday and use that link.")

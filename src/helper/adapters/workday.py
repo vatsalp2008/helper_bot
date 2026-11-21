@@ -33,6 +33,7 @@ from . import workday_page as wp
 from .common import FieldResult
 
 HOSTS = ("myworkdayjobs.com", "myworkdaysite.com", "workday.com")
+ACCOUNT_FORM_WAIT = 30  # seconds for the sign-in form before helper says so (it keeps watching after)
 _JOBS_RE = re.compile(r"^https?://(?P<tenant>[\w-]+)\.(?P<dc>wd\d+)\.myworkdayjobs\.com/(?:[a-z]{2}-[A-Z]{2}/)?"
                       r"(?P<site>[^/?#]+)/(?P<path>job/[^?#]+?)/?(?:/apply(?:/[^?#]*)?)?(?:[?#].*)?$")
 _SITE_RE = re.compile(r"^https?://(?P<dc>wd\d+)\.myworkdaysite\.com/(?:[a-z]{2}-[A-Z]{2}/)?recruiting/(?P<tenant>[^/]+)/"
@@ -196,6 +197,7 @@ class FlowResult:
     account: Optional[str] = None  # "signed in" | "created" | "by Vatsal"
     notes: list[str] = field(default_factory=list)
     done: set[str] = field(default_factory=set)  # slow sections already filled (skills, certifications)
+    closed: Optional[str] = None  # the site's words when the posting has been taken down
 
 
 def find_form(page: Any, timeout_ms: int = 20000) -> Optional[Any]:
@@ -256,19 +258,30 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
         _trace(page, step, kind, trace)
         if kind == "account" and not account_screen(page):
             # the step title can show before the sign-in form does (Symbotic, wd504): wait for the form, never Next
-            if not _wait_until(page, ctx, lambda: bool(account_screen(page)) or wp.step_kind(wp.current_step(page))
-                               != "account", seconds=30):
-                ctx.say("Workday's account page didn't show its sign-in form. Sign in or create the account in the "
-                        "window; helper continues after that.")
-                if not _wait_until(page, ctx, lambda: wp.step_kind(wp.current_step(page)) != "account"):
+            def form_or_moved_on() -> bool:
+                return bool(account_screen(page)) or wp.step_kind(wp.current_step(page)) != "account"
+
+            if not _wait_until(page, ctx, form_or_moved_on, seconds=ACCOUNT_FORM_WAIT):
+                ctx.say(f"Workday's account page hasn't shown its sign-in form after {ACCOUNT_FORM_WAIT} seconds. "
+                        "helper keeps watching and signs in once it shows; you can also sign in or create the "
+                        "account in the window yourself.")
+                # the form can still come on a slow page (Symbotic, 2026-11-20, with 15 windows open): before, helper
+                # waited for Vatsal alone and left the form it was there to fill
+                if not _wait_until(page, ctx, form_or_moved_on):
                     return out
-                out.account = out.account or "by Vatsal"
+                if not account_screen(page):
+                    out.account = out.account or "by Vatsal"
             continue
         if account_screen(page) and kind in ("account", "questions"):
             if not handle_account(page, ctx, out):
                 return out
             continue
         if step is None:
+            gone = wp.posting_gone(page)
+            if gone:  # HPE (2026-11-19) waited a day on "The page you are looking for doesn't exist."
+                ctx.say(f"This posting is closed: Workday says '{gone}'. Nothing was sent.")
+                out.closed = gone
+                return out
             if _start_apply(page):
                 # an Apply button that never opens the application looped here silently for hours (Labcorp,
                 # 2026-11-17): after a few tries, say so and leave it to Vatsal
@@ -619,7 +632,8 @@ def account_screen(page: Any) -> Optional[str]:
 
 _ACCOUNT_OUTCOMES = (
     ("exists", r"already (exists|in use|registered|associated)|account (with|for) this email"),
-    ("locked", r"locked|too many (attempts|tries)"),
+    # words, not letters: "blocked" (a bot check) is no locked account (Rockwell, Symbotic, 2026-11-20)
+    ("locked", r"\blocked\b|\btoo many (attempts|tries)\b"),
     ("bad_login", r"wrong (email|password)|incorrect|invalid (email|password|user|credentials|sign ?in)|"
                   r"(email|password).{0,40}(not match|isn't right|is not right)"),
     ("verify", r"verif|activat|confirm your (email|account)|check your (email|inbox)"),
@@ -763,16 +777,18 @@ def handle_account(page: Any, ctx: FlowContext, out: FlowResult) -> bool:
                     out.account = "signed in"
                     return True
             break
+    shown = re.sub(r"[\w.%+-]+@[\w.-]+\.\w+", "<email>", message)[:160]  # the login is never printed
     reasons = {
         "bad_login": "Workday didn't accept the email and password, and the account already exists",
         "locked": "Workday says the account is locked",
         "captcha": "a CAPTCHA is showing (helper never solves one, rule 6)",
-        "error": f"Workday said: {message}",
+        "error": f"Workday said: {shown}",
         "unknown": "helper couldn't tell whether the account step worked",
         "exists": "an account with this email exists, but signing in didn't work",
     }
-    ctx.say(f"Paused at the account step: {reasons.get(outcome, outcome)}. Sign in yourself in the window (or use "
-            "'Forgot your password?'); helper never retries a sign-in, and it continues once you're past this step.")
+    said = f" (Workday: \"{shown}\")" if shown and outcome != "error" else ""  # his to read, word for word
+    ctx.say(f"Paused at the account step: {reasons.get(outcome, outcome)}{said}. Sign in yourself in the window (or "
+            "use 'Forgot your password?'); helper never retries a sign-in, and it continues once you're past this step.")
     return _wait_for_account(page, ctx, out)
 
 

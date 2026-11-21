@@ -384,6 +384,18 @@ def test_a_rippling_posting_names_the_employer_not_the_hiring_site() -> None:  #
     assert rippling_employer("https://ats.rippling.com/jobs/123") == ""
 
 
+def test_a_ukg_posting_names_the_employer_by_its_own_site() -> None:  # CAS and Melaleuca, 2026-11-20
+    from helper.adapters.generic import _GENERIC_SITE_NAME, ukg_employer
+
+    # UKG's host gave "Unknown" (recruiting.ultipro.com) and "Recruiting2" (recruiting2.ultipro.com); the employer
+    # is named only by the footer link to its own site, and spelled as its description spells it
+    assert _GENERIC_SITE_NAME.match("Recruiting2")
+    assert ukg_employer("https://www.cas.org/careers", "Posting Details ... CAS uses intuitive technology") == "CAS"
+    assert ukg_employer("https://melaleucajobs.com/", "At Melaleuca, you can feel it immediately.") == "Melaleuca"
+    assert ukg_employer("https://melaleucajobs.com/", "A wellness company in Idaho Falls.") == ""  # never a guess
+    assert ukg_employer("", "CAS uses intuitive technology") == ""
+
+
 _FABRIC_SELECT = """<form>
 <div class="field"><label for="fab-select1">State *</label>
   <div class="fab-Select"><div><button data-menu-id="fab-menu1" aria-haspopup="true" type="button">–Select–</button></div>

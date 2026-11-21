@@ -173,6 +173,8 @@ def _choose_from_menu(root: Any, block: Any, wanted: str) -> tuple[bool, Optiona
 
 
 _COMBOBOX = "[role=combobox]"
+# a dropdown's choices: options, or the cells of the grid Oracle's cx-select opens (Vertiv, 2026-11-19)
+_OPTIONS = "[role=option]:visible, [role=gridcell]:visible"
 _SHOWN_JS = "e => (e.value !== undefined ? e.value : e.innerText || '').replace(/\\s+/g, ' ').trim()"
 _UNPICKED = re.compile(r"(?i)^(select|choose|search|pick)\b.{0,15}$|^$")
 
@@ -180,14 +182,14 @@ _UNPICKED = re.compile(r"(?i)^(select|choose|search|pick)\b.{0,15}$|^$")
 def _open_options(root: Any, combo: Any, timeout_ms: int) -> tuple[Any, list[str]]:
     """Click an ARIA combobox and read the options its list shows ([] when none show)."""
     combo.click(timeout=5000)
-    items = root.locator("[role=option]:visible")
+    items = root.locator(_OPTIONS)
     try:
         items.first.wait_for(state="visible", timeout=timeout_ms)
     except Exception:
         return items, []
     ref = combo.get_attribute("aria-controls") or combo.get_attribute("aria-owns")
     if ref:  # the list this box opened, when it names it
-        own = root.locator(f"[id={json.dumps(ref)}] [role=option]")
+        own = root.locator(f"[id={json.dumps(ref)}] [role=option], [id={json.dumps(ref)}] [role=gridcell]")
         if own.count():
             items = own
     return items, [" ".join(t.split()) for t in items.all_inner_texts()]
@@ -228,7 +230,7 @@ def _choose_from_listbox(root: Any, combo: Any, wanted: str) -> tuple[bool, Opti
         combo.fill("")
         combo.type(re.split(r"[(,]", wanted)[0].strip()[:30], delay=40)
         try:
-            items = root.locator("[role=option]:visible")
+            items = root.locator(_OPTIONS)
             items.first.wait_for(state="visible", timeout=4000)
             texts = [" ".join(t.split()) for t in items.all_inner_texts()]
         except Exception:
@@ -268,6 +270,29 @@ def _choose_aria_radio(block: Any, wanted: str) -> tuple[bool, Optional[str], st
                 return True, labels[index], ""
             time.sleep(0.15)
     return False, labels[index], f"the site didn't keep the pick on '{labels[index]}'"
+
+
+def _choose_pills(block: Any, wanted: list[str]) -> tuple[bool, Optional[str], str]:
+    """Oracle's multi-select pills (buttons in a ul role=list; "Check all of the following statements that apply to
+    you:", Honeywell, 2026-11-20): click each wanted pill once and check Oracle marks it selected."""
+    pills = block.locator("button.cx-select-pill-section")
+    labels = [" ".join(pills.nth(i).inner_text().split()) for i in range(pills.count())]
+    chosen = []
+    for want in wanted:
+        index = _pick(want, labels)
+        if index is None:
+            return False, want, f"no option matches '{want}' (choices: {', '.join(labels[:8])})"
+        pill = pills.nth(index)
+        if "cx-select-pill-section--selected" not in (pill.get_attribute("class") or ""):
+            pill.click()
+            for _ in range(10):
+                if "cx-select-pill-section--selected" in (pill.get_attribute("class") or ""):
+                    break
+                time.sleep(0.15)
+            else:
+                return False, labels[index], f"the site didn't keep the pick on '{labels[index]}'"
+        chosen.append(labels[index])
+    return True, "; ".join(chosen), ""
 
 
 def fill_dom_form(root: Any, answers: list[Any], resume_pdf: Path, *, city: Optional[str],
@@ -331,6 +356,8 @@ def _fill_one(root: Any, block: Any, a: Any, pdf: Path, city: Optional[str],
         boxes = _labels(block, kind)
         if not boxes and a.type == "radio" and block.locator("[role=radio]").count():
             return _choose_aria_radio(block, a.value)
+        if not boxes and a.type == "multi_select" and block.locator(".cx-select-pill-section").count():
+            return _choose_pills(block, [v.strip() for v in a.value.split(";") if v.strip()])
         wanted = [v.strip() for v in a.value.split(";")] if a.type == "multi_select" else [a.value]
         if a.type == "boolean":
             same = " ".join(a.value.strip(" *").split()).lower() == " ".join(a.label.strip(" *").split()).lower()

@@ -168,6 +168,61 @@ def test_the_company_name_is_never_a_gap(ready: Path) -> None:  # ServiceNow, 20
     assert not any("is a gap" in str(e) and "Cassandra Labs" in str(e) for e in report.errors), report.errors
 
 
+def test_naming_the_role_is_not_claiming_its_words(ready: Path) -> None:  # Cymer, 2026-11-20
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="May 2027"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    tailor = TAILOR.model_copy(deep=True)
+    tailor.keyword_audit.gaps.append("Contract Management")
+    posting = job().model_copy(update={"role_title": "Internship - Contract Management and AI"})
+    named = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [
+        "I'm writing to apply for the Internship, Contract Management and AI role. " + P[0], *P[1:]]})
+    report = validate_letter(named, ctx, items, posting, tailor, profile)
+    assert not any("is a gap" in str(e) for e in report.errors), report.errors
+    assert not any("name the role" in str(w) for w in report.warnings), report.warnings
+    # the same words used as a claim are still a gap
+    claimed = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [
+        P[0], P[1] + " That taught me contract management too.", *P[2:]]})
+    report = validate_letter(claimed, ctx, items, posting, tailor, profile)
+    assert any("'Contract Management' is a gap" in str(e) for e in report.errors), report.errors
+
+
+def test_a_title_s_trailing_place_and_year_can_be_left_out(ready: Path) -> None:  # Citi, 2026-11-20
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="May 2027"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    posting = job().model_copy(update={
+        "role_title": "Markets - Quantitative Analysis, Summer Analyst - New York City - US, 2027",
+        "location": "New York New York United States"})
+
+    def warned(first: str) -> bool:
+        letter = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [first, *P[1:]]})
+        return any("name the role" in str(w) for w in validate_letter(letter, ctx, items, posting, TAILOR,
+                                                                      profile).warnings)
+
+    assert not warned("I'm applying for the Markets Quantitative Analysis Summer Analyst role in New York City. " + P[0])
+    assert warned("I'm applying for the Markets Quantitative Analysis role. " + P[0])  # the role itself is cut short
+    assert warned(P[0])
+
+
+def test_the_posting_s_own_location_can_be_named(ready: Path) -> None:  # Sterling Jewelers, 2026-11-19
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="May 2027"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    letter = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [P[0] + " I would gladly move to Akron for it.",
+                                                                         *P[1:]]})
+    located = job().model_copy(update={"location": "Support Center - Akron, OH"})
+    assert not any("'Akron'" in str(e) for e in validate_letter(letter, ctx, items, located, TAILOR, profile).errors)
+    # a place the posting never names is still an unknown name
+    assert any("'Akron'" in str(e) for e in validate_letter(letter, ctx, items, job(), TAILOR, profile).errors)
+
+
 def test_a_company_whose_name_is_also_a_tool_can_be_named(ready: Path) -> None:  # ServiceNow, 2026-11-17
     paths = Paths(ready)
     ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
@@ -178,3 +233,26 @@ def test_a_company_whose_name_is_also_a_tool_can_be_named(ready: Path) -> None: 
     letter = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [P[0].replace("Northwind Labs", tool), *P[1:]]})
     report = validate_letter(letter, ctx, items, job(tool), TAILOR, profile)
     assert not any("isn't a technology" in str(e) and tool in str(e) for e in report.errors), report.errors
+
+
+def test_quotes_that_end_a_sentence_and_postings_own_hyphens(ready: Path) -> None:  # CAS and Ralliant, 2026-11-20
+    # A quote ending in "products." was blanked with its period, so the next sentence's "Keeping" read as a name; and
+    # Ralliant's Oracle text writes "AI‑assisted" with U+2011, so the letter's "AI-assisted" read as an unknown name
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="May 2027"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    base = job()
+    posting = base.model_copy(update={"description_text": base.description_text + "\nInterns help enable content "
+                                      "currency across our products and practice AI‑assisted development.\n"})
+    first = (P[0] + ' Your team wants people who "enable content currency across our products." Keeping things '
+             "correct is what I enjoy, and I already practice AI-assisted development.")
+    letter = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [first, *P[1:]],
+                                               "hook": "AI‑assisted development"})
+    errors = [str(e) for e in validate_letter(letter, ctx, items, posting, TAILOR, profile).errors]
+    assert not any("'Keeping'" in e or "'AI-assisted'" in e or "hook" in e.lower() for e in errors), errors
+    # a word the posting never uses is still an unknown name
+    errors = [str(e) for e in validate_letter(letter.model_copy(update={"hook": None}), ctx, items, base, TAILOR,
+                                              profile).errors]
+    assert any("'AI-assisted'" in e for e in errors), errors

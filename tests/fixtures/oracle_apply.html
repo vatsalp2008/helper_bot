@@ -1,0 +1,307 @@
+<!doctype html>
+<!-- A stand-in for Oracle Recruiting Cloud's Candidate Experience apply flow (Vertiv's, 2026-11-19), one page app at
+     .../job/123/apply/...: the email step (an email box, a hidden honeypot box that must stay empty, a terms box and
+     Next), an optional emailed-code step (#code in the address), then the job's sections, each with Next: contact
+     information, application questions, supporting documents (an "Upload Resume" button that opens a file picker,
+     with no file box on the page before the click), and Review and Submit with an e-signature. What helper does is
+     kept in window.recorded. -->
+<html>
+<head><meta charset="utf-8"><title>Apply - Mockco Careers</title></head>
+<body>
+<main id="app"></main>
+<script>
+  window.recorded = {submitted: false};
+  const askCode = location.hash === '#code';
+  const app = document.getElementById('app');
+  // Fortinet's (2026-11-19, #hidden-terms): the real terms box is hidden behind a styled box whose click handler
+  // ticks it, the label holds a link that opens the privacy statement, and the site menu is a checkbox too
+  const terms = location.hash === '#hidden-terms'
+    ? `<input class="menu-btn" type="checkbox" id="menu-btn"><label class="menu-icon" for="menu-btn">&#9776;</label>
+       <label class="input-row legal-disclaimer-container" for="terms">
+         <input type="checkbox" class="input-row__hidden-control" id="terms" required
+                style="position:absolute;opacity:0;width:0;height:0;margin:0;padding:0;border:0">
+         <span class="apply-flow-input-checkbox">
+           <span class="apply-flow-input-checkbox__button" id="terms-button"
+                 style="display:inline-block;width:16px;height:16px;border:1px solid #333"></span>
+           <span class="apply-flow-input-checkbox__label">I acknowledge that I have read and agree to the terms to the
+             <a id="legal-disclaimer-link" href="#">Privacy Statement and Acknowledgement</a></span>
+         </span>
+       </label>`
+    : `<label><input type="checkbox" id="terms"> I agree with the terms and conditions</label>`;
+  // Oracle's diversity questions (Honeywell, Ralliant, Vertiv and Fortinet, 2026-11-20): each is a role=group or
+  // role=radiogroup named by its label. The race boxes have no name (their aria-labelledby names nothing), and each
+  // disability radio's aria-labelledby names its own option.
+  const hidden = 'position:absolute;opacity:0;width:0;height:0;margin:0;padding:0;border:0';
+  const option = (type, id, words, name) => `<div class="input-row__control-item">
+      <input type="${type}" class="input-row__hidden-control" id="${id}" aria-labelledby="label-${id}"
+             style="${hidden}"${name ? ` name="${name}"` : ''}>
+      <label class="apply-flow-input-checkbox" for="${id}"><span class="apply-flow-input-checkbox__button"></span>
+        <span class="apply-flow-input-checkbox__label"${name ? ` id="label-${id}"` : ''}>${words}</span></label></div>`;
+  const group = (role, id, words, options) => `<div class="input-row input-row--radiogroup" role="${role}"
+      aria-labelledby="${id}-label"><label class="input-row__label" id="${id}-label"><span>${words}</span></label>
+      <div class="input-row__control-container">${options}</div></div>`;
+  const races = ['American Indian or Alaska Native', 'Asian', 'Black or African American', 'White'];
+  const disability = ['Yes, I have a disability, or have had one in the past',
+                      'No, I do not have a disability and have not had one in the past', 'I do not want to answer'];
+  const diversity = group('group', 'eth', 'Ethnicity', option('checkbox', 'dq-option-4', 'I am Hispanic or Latino.'))
+    + group('group', 'race', 'Select the races you identify with.',
+            races.map((r, i) => option('checkbox', 'dq-race-' + i, r)).join(''))
+    + group('radiogroup', 'dis', 'Do you have a disability?',
+            disability.map((d, i) => option('radio', 'dis-' + i, d, 'disability')).join(''));
+  // "Check all of the following statements that apply to you:" (Honeywell, 2026-11-20): Oracle's multi-select pills,
+  // buttons in a ul role=list that toggle cx-select-pill-section--selected
+  const statements = ['You are a current or former government official including US military service member',
+                      'You have a family member in a government position or politically exposed',
+                      'No statements apply to me'];
+  const pillsQuestion = `<div class="input-row"><label class="input-row__label input-row__label--required">Check all of
+      the following statements that apply to you:</label><div class="cx-multi-select-pills"><ul role="list"
+      aria-label="Check all of the following statements that apply to you:" class="cx-select-pills-container">`
+    + statements.map(t => `<li role="listitem"><button type="button" class="cx-select-pill-section "><span
+      class="cx-select-pill-name"> ${t}</span><span class="cx-select-pill__plus-icon"></span></button></li>`).join('')
+    + `</ul></div></div>`;
+  // Oracle's timeline entry forms (Fortinet, Vertiv, 2026-11-20): an Add button opens an inline form, saved with Done
+  const months = '<option value=""></option>' + ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+    'August', 'September', 'October', 'November', 'December'].map(m => `<option>${m}</option>`).join('');
+  const years = '<option value=""></option>' + [2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028].map(y =>
+    `<option>${y}</option>`).join('');
+  const row = (id, words, control) => `<div class="input-row"><label class="input-row__label" for="${id}">${words}</label>
+      ${control}</div>`;
+  const dates = row('sm', 'Start Date Month', `<select id="sm">${months}</select>`)
+    + row('sy', 'Start Date Year', `<select id="sy">${years}</select>`)
+    + row('em', 'End Date Month', `<select id="em">${months}</select>`)
+    + row('ey', 'End Date Year', `<select id="ey">${years}</select>`);
+  const entryForms = {
+    experience: row('emp', 'Employer Name *', '<input id="emp" aria-required="true">')
+      + row('jt', 'Job Title *', '<input id="jt" aria-required="true">') + dates
+      + row('cur', 'Current Job', '<input type="checkbox" id="cur">'),
+    education: row('sch', 'School *', '<input id="sch" aria-required="true">')
+      + row('deg', 'Degree *', `<select id="deg" aria-required="true"><option value=""></option>
+          <option>Bachelor's Degree</option><option>Master's Degree</option><option>Doctorate</option></select>`)
+      + row('maj', 'Major', '<input id="maj">') + dates,
+  };
+  function openEntry(kind) {
+    const box = document.getElementById('timeline-form');
+    box.innerHTML = `<div class="standard-apply-flow-timeline-form"><div class="timeline-form-content"><form novalidate>
+        ${entryForms[kind]}<p class="input-row__validation" role="alert" id="entry-error"></p></form></div>
+      <div class="timeline-form-footer"><button type="button" class="button cancel-btn">Cancel</button>
+        <button type="button" class="button save-btn" data-qa="addTimelineItemDialogButton">Done</button></div></div>`;
+    box.querySelector('.save-btn').addEventListener('click', () => {
+      const v = id => (document.getElementById(id) || {}).value || '';
+      const need = kind === 'experience' ? ['emp', 'jt', 'sm', 'sy'] : ['sch', 'deg', 'sm', 'sy'];
+      const empty = need.filter(id => !v(id));
+      if (empty.length) { document.getElementById('entry-error').textContent = 'Fill in ' + empty.join(', '); return; }
+      const entry = kind === 'experience'
+        ? {employer: v('emp'), title: v('jt'), start: `${v('sm')} ${v('sy')}`, end: `${v('em')} ${v('ey')}`.trim(),
+           current: document.getElementById('cur').checked}
+        : {school: v('sch'), degree: v('deg'), major: v('maj'), start: `${v('sm')} ${v('sy')}`, end: `${v('em')} ${v('ey')}`};
+      window.recorded[kind + 's'] = [...(window.recorded[kind + 's'] || []), entry];
+      const n = window.recorded[kind + 's'].length;
+      document.getElementById('timeline-items').insertAdjacentHTML('beforeend',
+        `<div class="beautiful-timeline-item beautiful-timeline-item--${kind}s__${n}">`
+        + `${kind === 'experience' ? entry.title + ' ' + entry.employer : entry.school + ' ' + entry.degree}</div>`);
+      box.innerHTML = '';
+    });
+  }
+  const steps = {
+    email: `<h1>You don't need to have an account</h1>
+      <label for="primary-email-0">Email Address</label><input id="primary-email-0" name="primary-email" type="email">
+      <label for="honey-pot-1">honeypot</label><input id="honey-pot-1" name="honey-pot" type="text" style="position:absolute;left:-500px">
+      ${terms}<p id="email-error" role="alert"></p>
+      <button type="button" aria-label="Cancel">CANCEL</button><button type="submit" aria-label="Next" id="go">NEXT</button>`,
+    code: `<h1>Confirm your identity</h1><p>Enter the verification code we sent to your email.</p>
+      <label for="pin">Code</label><input id="pin">`,
+    contact: `<h2>Personal Info</h2><h3>Contact Information</h3>
+      <label for="fn">First Name *</label><input id="fn" required aria-required="true">
+      <label for="ln">Last Name *</label><input id="ln" required aria-required="true">
+      <label for="imp">Import your profile from resume</label><input id="imp" type="file">
+      <label for="cc">Phone Number</label><select id="cc"><option value=""></option><option>India (+91)</option>
+        <option>United States (+1)</option></select>
+      <label for="ph">Phone Number *</label><input id="ph" type="tel" required aria-required="true">
+      <label for="nat">Nationality *</label>
+      <input id="nat" name="nationality" type="text" role="combobox" aria-autocomplete="list" aria-haspopup="grid"
+             aria-controls="nat-listbox" aria-required="true" class="cx-select-input">
+      <label for="zip">ZIP Code *</label>
+      <input id="zip" name="postalCode" type="text" role="combobox" aria-autocomplete="list" aria-haspopup="grid"
+             aria-controls="zip-listbox" aria-required="true" class="cx-select-input">
+      <label for="st">State *</label><select id="st" required aria-required="true"><option value=""></option>
+        <option>AK</option><option>MA</option><option>WA</option></select>
+      <button type="button" class="apply-flow-pagination__button" id="go">Next</button>`,
+    questions: `<h2>Job Application Questions</h2>
+      <label for="auth">Are you legally authorized to work in the United States? *</label>
+      <select id="auth" required aria-required="true"><option value=""></option><option>Yes</option><option>No</option></select>
+      <label for="why">Why do you want to work at Mockco? *</label><textarea id="why" required aria-required="true"></textarea>
+      ${pillsQuestion}
+      <h3>Diversity</h3>${diversity}
+      <button type="button" class="apply-flow-pagination__button" id="go">Next</button>`,
+    documents: `<h2>More About You</h2><h3>Supporting Documents and URLs</h3>
+      <button type="button" id="upload">Upload Resume</button><span id="uploaded"></span>
+      <div id="links"><label for="siteLink-1">Link 1</label><input id="siteLink-1" name="siteLink-1"></div>
+      <button type="button" class="candidate-links__add-link" id="add-link">Add Another Link</button>
+      <h3>Work and Education History</h3>
+      <div class="work-and-education-timeline"><div id="timeline-items"></div>
+        <button type="button" id="timeline-add-experience-button" class="apply-flow-profile-item-button--add"><span
+          class="apply-flow-profile-item-button__label">Add Experience</span></button>
+        <button type="button" id="timeline-add-education-button" class="apply-flow-profile-item-button--add"><span
+          class="apply-flow-profile-item-button__label">Add Education</span></button>
+        <div id="timeline-form"></div></div>
+      <button type="button" class="apply-flow-pagination__button" id="go">Next</button>`,
+    review: `<h2>Review and Submit</h2><h3>E-Signature</h3>
+      <label for="sig">Full Name *</label><input id="sig" required aria-required="true">
+      <button type="button" class="apply-flow-pagination__button apply-flow-pagination__submit-button" id="go">Submit</button>`,
+    done: `<h1>Thank you for applying</h1><p>Your application was submitted.</p>`,
+  };
+  const order = ['email', ...(askCode ? ['code'] : []), 'contact', 'questions', 'documents', 'review', 'done'];
+  let at = 0;
+  // Oracle's idle check (#idle; Ralliant and Vertiv, 2026-11-19): "Are You Still With Us?" over the page, which signs
+  // the candidate out unless someone clicks Continue Working (here one second after it shows, not three minutes)
+  function idleCheck() {
+    const dialog = document.createElement('div');
+    dialog.className = 'app-dialog session-expire-dialog oj-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.innerHTML = `<div class="app-dialog__header"><h1 class="heading">Are You Still With Us?</h1></div>
+      <div class="app-dialog__content">It seems you've been gone for a while. For security reasons we will end your
+        session automatically in <span>00:01</span> unless you would like to continue working.</div>
+      <div class="app-dialog__footer"><button class="button end-session-button">End Session</button>
+        <button class="button theme-color-1" id="keep">Continue Working</button></div>`;
+    document.body.prepend(dialog);
+    const out = setTimeout(() => {
+      dialog.remove();
+      app.innerHTML = '<h1>Your session ended</h1><p>Sign in again to apply.</p>';
+      window.recorded.signedOut = true;
+    }, 1000);
+    dialog.querySelector('#keep').addEventListener('click', () => {
+      clearTimeout(out);
+      dialog.remove();
+      window.recorded.kept = (window.recorded.kept || 0) + 1;
+    });
+  }
+  function cxSelect(box, choices, first) {
+    if (!box) return;
+    const open = () => {
+      document.querySelectorAll('#' + box.id + '-listbox').forEach(l => l.remove());
+      const grid = document.createElement('div');
+      grid.id = box.id + '-listbox'; grid.setAttribute('role', 'grid');
+      const typed = (box.value || '').toLowerCase();
+      (typed ? choices.filter(c => c.toLowerCase().includes(typed)) : choices.slice(0, first || choices.length))
+        .forEach(c => {
+          const row = document.createElement('div'); row.setAttribute('role', 'row');
+          const cell = document.createElement('div'); cell.setAttribute('role', 'gridcell'); cell.textContent = c;
+          cell.addEventListener('click', () => { box.value = c; box.dataset.picked = c; grid.remove(); });
+          row.appendChild(cell); grid.appendChild(row);
+        });
+      box.insertAdjacentElement('afterend', grid);
+    };
+    box.addEventListener('click', open); box.addEventListener('input', open);
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Escape') document.querySelectorAll('#' + box.id + '-listbox').forEach(l => l.remove());
+    });
+  }
+  function show(name) {
+    app.innerHTML = steps[name];
+    if (location.hash === '#idle' && (name === 'questions' || name === 'review')) setTimeout(idleCheck, 1000);
+    // Vatsal clicks SUBMIT a moment after helper stops there (#profile); Oracle redraws a section meanwhile (#redraw)
+    if (location.hash === '#profile' && name === 'review') {
+      const signed = setInterval(() => {
+        if (!value('sig')) return;
+        clearInterval(signed);
+        setTimeout(() => document.getElementById('go').click(), 2500);
+      }, 300);
+    }
+    if (location.hash === '#redraw' && name === 'review') {
+      const signed = setInterval(() => {  // once helper has filled the page and waits at SUBMIT
+        if (!value('sig')) return;
+        clearInterval(signed);
+        setTimeout(() => {
+          const heading = document.createElement('h3'); heading.textContent = 'Disability Information';
+          app.prepend(heading);
+        }, 1200);
+      }, 300);
+    }
+    history.replaceState(null, '', location.pathname.replace(/\/apply\/.*$/, '/apply/' + name) + location.hash);
+    const go = document.getElementById('go');
+    if (go) go.addEventListener('click', next);
+    const upload = document.getElementById('upload');
+    if (upload) upload.addEventListener('click', () => {
+      const box = document.createElement('input');
+      box.type = 'file';
+      box.addEventListener('change', () => {
+        window.recorded.resume = box.files[0].name;
+        document.getElementById('uploaded').textContent = box.files[0].name;
+      });
+      box.click();
+    });
+    // Oracle's cx-select: a grid of choices under the box, filtered as one types
+    cxSelect(document.getElementById('nat'), ['Canada', 'India', 'United States']);
+    // a geography box (Fortinet and Ralliant, 2026-11-20) shows only the first places of its long list until a search
+    cxSelect(document.getElementById('zip'), ['00501, Holtsville, Suffolk, NY', '00544, Holtsville, Suffolk, NY',
+      '01001, Agawam, Hampden, MA', '55555, Shelbyville, Example, WA', '55555, Springfield, Example, WA',
+      '99950, Ketchikan, Ketchikan Gateway, AK'], 3);
+    const state = document.getElementById('st');  // a State change clears the ZIP picked before it (Oracle)
+    if (state) state.addEventListener('change', () => {
+      const zip = document.getElementById('zip'); zip.value = ''; delete zip.dataset.picked;
+    });
+    document.querySelectorAll('.cx-select-pill-section').forEach(b => b.addEventListener('click', () =>
+      b.classList.toggle('cx-select-pill-section--selected')));
+    const addLink = document.getElementById('add-link');
+    if (addLink) addLink.addEventListener('click', () => {
+      const n = document.querySelectorAll('#links input').length + 1;
+      document.getElementById('links').insertAdjacentHTML('beforeend',
+        `<label for="siteLink-${n}">Link ${n}</label><input id="siteLink-${n}" name="siteLink-${n}">`);
+    });
+    for (const kind of ['experience', 'education']) {
+      const add = document.getElementById(`timeline-add-${kind}-button`);
+      if (add) add.addEventListener('click', () => openEntry(kind));
+    }
+    const pin = document.getElementById('pin');
+    if (pin) pin.addEventListener('input', () => { if (pin.value.length >= 6) next(); });
+    const styled = document.getElementById('terms-button');  // like Knockout's click binding: no default action
+    if (styled) styled.addEventListener('click', e => {
+      e.preventDefault();
+      const box = document.getElementById('terms'); box.checked = !box.checked;
+    });
+    const privacy = document.getElementById('legal-disclaimer-link');
+    if (privacy) privacy.addEventListener('click', e => { e.preventDefault(); window.recorded.dialog = true; });
+  }
+  function value(id) { const el = document.getElementById(id); return el ? el.value : undefined; }
+  function next() {
+    const name = order[at];
+    if (name === 'email') {
+      const menu = document.getElementById('menu-btn');
+      Object.assign(window.recorded, {email: value('primary-email-0'), honeypot: value('honey-pot-1'),
+                                      terms: document.getElementById('terms').checked, menu: !!(menu && menu.checked)});
+      if (!window.recorded.terms) {  // Oracle refuses the email step without the terms
+        document.getElementById('email-error').textContent = 'You need to agree to the terms and conditions.';
+        return;
+      }
+    }
+    if (name === 'contact') Object.assign(window.recorded, {first: value('fn'), last: value('ln'), phone: value('ph'),
+                                                         code: value('cc'), imported: document.getElementById('imp').files.length,
+                                                         nationality: document.getElementById('nat').dataset.picked,
+                                                         zip: document.getElementById('zip').dataset.picked,
+                                                         state: value('st')});
+    if (name === 'questions') Object.assign(window.recorded, {auth: value('auth'), why: value('why'),
+      hispanic: document.getElementById('dq-option-4').checked,
+      races: races.filter((r, i) => document.getElementById('dq-race-' + i).checked),
+      disability: disability.filter((d, i) => document.getElementById('dis-' + i).checked),
+      statements: [...document.querySelectorAll('.cx-select-pill-section--selected')].map(b => b.innerText.trim())});
+    if (name === 'documents') window.recorded.links = [...document.querySelectorAll('#links input')].map(i => i.value);
+    if (name === 'review') Object.assign(window.recorded, {signature: value('sig'), submitted: true});
+    if (name === 'review' && location.hash === '#profile') {
+      // Oracle after SUBMIT (Ralliant, 2026-11-20): a saving message, then the candidate's profile page
+      app.innerHTML = `<h2>You're all set, Alex!</h2><p>Creating candidate info</p><p>Saving job application info</p>`;
+      setTimeout(() => {
+        history.replaceState(null, '', location.pathname.replace(/\/job\/.*$/, '/my-profile'));
+        app.innerHTML = '<h1>My Profile</h1><h2>My Applications</h2><p>Data Intern</p><p>Under Consideration</p>';
+      }, 1500);
+      return;
+    }
+    at += 1;
+    show(order[at]);
+  }
+  if (location.hash === '#slow') setTimeout(() => show('email'), 2500);  // the shell comes first
+  else if (location.hash === '#questions') { at = order.indexOf('questions'); show('questions'); }
+  else if (location.hash === '#documents') { at = order.indexOf('documents'); show('documents'); }
+  else show('email');
+</script>
+</body>
+</html>

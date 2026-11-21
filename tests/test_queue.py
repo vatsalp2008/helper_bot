@@ -45,6 +45,12 @@ def test_a_listed_posting_moves_along_and_leaves_once_sent(repo: Path) -> None:
     hunt.on_fill_message(paths, cfg, "r1", "A CAPTCHA is showing: solve it in the browser window.")
     row = _row(paths, cfg)
     assert row["status"] == "needs_you" and "CAPTCHA" in row["reason"]
+    # Wurl (2026-11-20): the question under the heading is what's waiting
+    hunt.on_fill_message(paths, cfg, "r1", "Only you can answer these; fill them in the window:\n"
+                                           "  How many hours per week would you be available?")
+    assert _row(paths, cfg)["reason"] == ("Only you can answer these; fill them in the window: How many hours per "
+                                          "week would you be available?")
+    hunt.on_fill_message(paths, cfg, "r1", "A CAPTCHA is showing: solve it in the browser window.")
     text = (paths.exports / hunt.QUEUE_MD).read_text(encoding="utf-8")
     assert "Needs you" in text and "Acme" in text and "CAPTCHA" in text
     hunt.on_fill_outcome(paths, cfg, "r1", 11, "confirmed")
@@ -61,6 +67,9 @@ def test_ineligible_runs_are_skipped_and_unclear_submits_wait_for_vatsal(repo: P
     assert row["status"] == "skipped" and "citizenship" in row["reason"]
     hunt.on_fill_outcome(paths, cfg, "r2", 12, "unverified")
     assert _row(paths, cfg)["status"] == "needs_you" and "check it was sent" in _row(paths, cfg)["reason"]
+    # HPE (2026-11-19): a posting taken down leaves the open windows for good
+    hunt.on_fill_outcome(paths, cfg, "r2", 12, "posting_closed", "posting closed: the site says 'gone'")
+    assert (_row(paths, cfg)["status"], _row(paths, cfg)["reason"]) == ("skipped", "posting closed: the site says 'gone'")
 
 
 def test_marking_applied_and_resume_only_runs(repo: Path) -> None:
@@ -220,3 +229,71 @@ def test_a_built_lever_run_goes_to_apply_manually(repo: Path) -> None:  # Vatsal
     from helper.find import YOU_APPLY
 
     assert "lever" in YOU_APPLY
+
+
+def test_a_window_closed_while_a_flow_waits_shows_on_the_list(repo: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Constellation, Sheetz and Epsilon (2026-11-20): Vatsal closed iCIMS windows that waited for him. helper stopped
+    # with "The browser window was closed" and the list still said "Paused for you" about windows that were gone
+    import pytest
+
+    pytest.importorskip("playwright.sync_api")
+    from helper import apply
+    from helper.adapters import oracle
+    from helper.answers import AnswerPlan
+    from helper.models import Job, RunState
+    from helper.runs import save_state, set_step, write_json
+
+    paths, cfg = _setup(repo)
+    fixtures = Path(__file__).resolve().parent / "fixtures"
+    (repo / "data" / "profile.yaml").write_text((fixtures / "profile_sample.yaml").read_text(encoding="utf-8"),
+                                                encoding="utf-8")
+    run_id = "20261120-010000-acme-software-engineer-intern"
+    folder = paths.runs / run_id
+    folder.mkdir(parents=True)
+    pdf = paths.resumes / run_id / "AlexExample_Resume.pdf"
+    pdf.parent.mkdir(parents=True)
+    pdf.write_bytes(b"%PDF-1.4 test")
+    job = Job(url=URL, ats="icims", company="Acme", role_title="Software Engineer Intern", description_text="x",
+              source="page", fetched_at="now", apply_url=(fixtures / "oracle_apply.html").resolve().as_uri())
+    write_json(folder / "job.json", job.model_dump(mode="json"))
+    write_json(folder / "answers_plan.json", AnswerPlan(answers=[]).model_dump(mode="json"))
+    conn = open_db(paths, cfg)
+    app_id = insert_application(conn, company="Acme", role_title="Software Engineer Intern", job_url=URL, run_id=run_id,
+                                resume_path=f"resumes/{run_id}/AlexExample_Resume.pdf")
+    conn.commit()
+    conn.close()
+    state = RunState(run_id=run_id, created_at="now", command="apply", url=URL, application_id=app_id,
+                     options={"run": {"projects_per_resume": 5, "bullets_per_item": 2, "grad_date": "May 2027"},
+                              "result": {"pdf": f"resumes/{run_id}/AlexExample_Resume.pdf"}})
+    set_step(state, "answers", "done")
+    save_state(paths, state)
+    hunt.on_run_started(paths, cfg, URL, SimpleNamespace(run_id=run_id, application_id=app_id,
+                                                         options={"eligibility": {"flags": []}}))
+
+    def run_flow(page, ctx):  # type: ignore[no-untyped-def]
+        ctx.say("Paused for you: iCIMS is showing a CAPTCHA check. Solve it in the window; helper never does (rule 6).")
+        page.close()  # Vatsal closes the window while helper waits
+        page.wait_for_timeout(200)
+
+    fake = SimpleNamespace(FlowContext=oracle.FlowContext, run_flow=run_flow, is_submit_request=lambda url, method: False)
+    monkeypatch.setattr("helper.adapters.adapter_for", lambda url: fake)
+    monkeypatch.setattr(apply, "_context", lambda *args: SimpleNamespace(approved=None))  # no master list here
+    monkeypatch.setattr(apply, "_history", lambda *args: ([], []))
+    outcome = apply.fill_run(paths, cfg, run_id, headless=True, wait_minutes=0.1, poll_seconds=0.2)
+    assert outcome.status == "filled" and "the browser was closed" in outcome.message, outcome.message
+    row = _row(paths, cfg)
+    assert row["status"] == "needs_you" and "Paused" not in row["reason"], row["reason"]
+    assert "the window was closed" in row["reason"] and f"helper fill {run_id} --keep-open" in row["reason"]
+
+
+def test_a_placeholder_company_takes_the_name_its_run_read(repo: Path) -> None:  # UKG's CAS posting, 2026-11-20
+    paths = Paths(repo)
+    cfg = load_config(paths)
+    conn = open_db(paths, cfg)
+    queue.add(conn, url=URL, company="Unknown", title="2027 Technology Summer Intern", location="Columbus, OH",
+              ats="ukg", source="list")
+    assert queue.fill_details(conn, URL, company="CAS")
+    assert queue.find(conn, URL)["company"] == "CAS"
+    assert queue.fill_details(conn, URL, company="Someone Else")  # a real name, once there, stays
+    assert queue.find(conn, URL)["company"] == "CAS"
+    conn.close()

@@ -24,7 +24,7 @@ from .autosubmit import (REVIEW_ONLY, SECTION_ENTRIES, Gate, blockers, clean_rev
                          run_problems, site_kind)
 from .browser import browser_session, captcha_visible, make_pause
 from .config import Paths, env_value, load_yaml
-from .errors import HelperError, NeedsUser, WaitingForClaude, problems
+from .errors import HelperError, NeedsUser, WaitingForClaude, problems, window_closed
 from .models import AnswersFile, Config, Job, Profile
 from .runs import load_state, read_json, rel, run_dir, save_state, set_step, write_json
 from .validate import RunOptions, load_context
@@ -44,7 +44,7 @@ ANSWER_RULES = [
 ]
 
 
-MULTI_PAGE = {"workday": "Workday", "icims": "iCIMS"}  # sites whose questions appear page by page
+MULTI_PAGE = {"workday": "Workday", "icims": "iCIMS", "oracle": "Oracle"}  # questions appear page by page
 
 
 def fetch_job(url: str, jd_text: Optional[str] = None, purpose: str = "apply") -> Job:
@@ -70,6 +70,12 @@ def fetch_job(url: str, jd_text: Optional[str] = None, purpose: str = "apply") -
 # --------------------------------------------------------------------------- answers (spec 10.3, 10.4)
 
 
+def _approved(paths: Paths) -> AnswersFile:
+    """data/answers.yaml as it is now, so answers remembered on a fill's earlier pages count on its later ones
+    (Ralliant, 2026-11-19: Oracle drew the page anew and helper asked the 'Covered DoD official' question again)."""
+    return AnswersFile.model_validate((load_yaml(paths.answers) if paths.answers.is_file() else None) or {})
+
+
 def _context(paths: Paths, cfg: Config, run_id: str, job: Job) -> AnswerContext:
     state = load_state(paths, run_id)
     folder = run_dir(paths, run_id)
@@ -83,7 +89,7 @@ def _context(paths: Paths, cfg: Config, run_id: str, job: Job) -> AnswerContext:
     return AnswerContext(
         profile=profile, cfg=cfg, job=job, grad_date=run.grad_date,
         employment=eligibility.get("employment", "unknown"), season=eligibility.get("season"),
-        season_year=eligibility.get("season_year"), approved=AnswersFile.model_validate((load_yaml(paths.answers) if paths.answers.is_file() else None) or {}),
+        season_year=eligibility.get("season_year"), approved=_approved(paths),
         past_employers=[e.organization for e in master.experience if e.organization],
         internships_done=sum(1 for e in master.experience if re.search(r"(?i)\bintern(ship)?\b", e.name or "")),
         projects_done=len(master.projects),
@@ -393,6 +399,12 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
     profile = Profile.model_validate(load_yaml(paths.profile))
     wait = cfg.fill_wait_timeout_minutes if wait_minutes is None else wait_minutes
     mode = state.options.get("submit_mode") or cfg.submit_mode
+    if mode == "auto" and state.options.get("helper_clicked_submit"):
+        # rule 10: helper clicked Submit on this run once already, so a refill never clicks it again (Formlabs,
+        # 2026-11-20: Greenhouse held the first submit for an emailed code, and the refill would have auto-submitted)
+        mode = "review"
+        _say("helper already clicked Submit on this run once, so it never clicks it again (rule 10): fill only, and "
+             "you submit.")
     _HUNT.update(paths=paths, cfg=cfg, run_id=run_id)
     from .hunt import on_fill_started
 
@@ -437,6 +449,7 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
             else:
                 _say("Auto-submit: every condition holds (spec 10.5). Clicking Submit once; helper never retries.")
                 errors_before = visible_errors(form) if form is not None else []
+                _note_submit_click(paths, state)
                 submitted_by_helper = adapter.submit(form)
                 if not submitted_by_helper:
                     _say("helper couldn't click Submit after all, so it's in review mode: submit it yourself.")
@@ -511,6 +524,7 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
     planned: list[PlannedAnswer] = []
 
     def plan_page(questions: list[Any]) -> list[PlannedAnswer]:
+        actx.approved = _approved(paths)  # what this fill remembered on earlier pages counts here too
         answers = plan_answers(questions, actx).answers
         planned.extend(answers)
         write_json(folder / PLAN, AnswerPlan(answers=planned).model_dump(mode="json"))
@@ -551,6 +565,10 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
             from .adapters import workday_page
 
             workday_page.DEBUG_DIR = folder
+        if job.ats == "oracle":
+            from .adapters import oracle
+
+            oracle.DEBUG_DIR = folder
         flow = adapter.FlowContext(
             company=job.company, plan=plan_page, ask_claude=ask_claude, resume_pdf=pdf, work=work, schools=schools,
             skills=_resume_skills(folder), certifications=_certifications(paths) if cfg.fill_certifications else [],
@@ -561,9 +579,19 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
             wait_seconds=wait * 60,
             poll_seconds=poll_seconds,
         )
-        result = adapter.run_flow(page, flow)
+        try:
+            result = adapter.run_flow(page, flow)
+        except Exception as exc:
+            if not window_closed(exc):
+                raise
+            # the window was closed while the flow waited for Vatsal (Constellation, Sheetz and Epsilon, 2026-11-20):
+            # the list says so instead of its last "Paused for you", and a submit request seen first is unverified
+            return _log_outcome(paths, cfg, state, "unverified" if submit_seen["value"] else "closed", None, [],
+                                ats=job.ats, problems=pauses + ["the window was closed"])
         _snapshot(page, None, folder / "filled.png")
         write_json(folder / "fill_log.json", [vars(r) for r in result.results])
+        if getattr(result, "closed", None):  # nothing to fill or send: the window closes now, not after a day
+            return _posting_closed(paths, cfg, state, result.closed, result.results)
         _record_status(paths, cfg, state, "filled")
         set_step(state, "fill", "done", f"{sum(r.ok for r in result.results)} field(s) filled"
                                         + ("; stopped on the Review page" if result.reached_review else ""))
@@ -577,6 +605,7 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
                      + "\n".join(f"  - {r}" for r in reasons))
             else:
                 _say("Auto-submit: every condition holds. Clicking Submit once; helper never retries.")
+                _note_submit_click(paths, state)
                 submitted_by_helper = bool(adapter.submit_review(page))
                 if submitted_by_helper:
                     submit_seen["value"] = True
@@ -592,6 +621,28 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
                         mode="auto" if submitted_by_helper else "review",
                         problems=run_problems(result.results, False, pauses + ([] if result.reached_review else
                                                                                 ["stopped before the Review page"])))
+
+
+def _posting_closed(paths: Paths, cfg: Config, state: Any, words: str, results: list[Any]) -> FillOutcome:
+    """The employer took the posting down (HPE, 2026-11-19): the application is marked skipped and leaves the job
+    hunt's list."""
+    from .hunt import on_fill_outcome
+    from .tracker import repo
+    from .tracker.commands import open_db
+
+    note = f"posting closed: the site says '{words}'; nothing was sent"
+    if state.application_id:
+        conn = open_db(paths, cfg)
+        try:
+            repo.set_status(conn, state.application_id, "skipped", note=note)
+            conn.commit()
+        finally:
+            conn.close()
+    on_fill_outcome(paths, cfg, state.run_id, state.application_id, "posting_closed", note)
+    set_step(state, "submit", "skipped", note)
+    save_state(paths, state)
+    return FillOutcome("skipped", f"Nothing was sent: this posting is closed (the site says '{words}'). The "
+                                  "application is marked skipped and is off the job hunt's list.", results)
 
 
 def _flow_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, planned: list[PlannedAnswer], result: Any,
@@ -629,6 +680,13 @@ def _flow_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, planned: l
 EARLIER_ANSWERS = "claude_answers.json"  # field -> Claude's answer, for this run only
 
 
+def _label_key(label: str) -> Optional[str]:
+    """A question's words, to find Claude's earlier answer when the site numbers its fields anew (Oracle redraws
+    the page after Submit, Ralliant 2026-11-19). Short labels ('Please explain') are too common to match by."""
+    words = " ".join(re.findall(r"[a-z0-9]+", (label or "").lower()))
+    return f"label:{words}" if len(words) >= 25 else None
+
+
 def _copy_merged(plan: AnswerPlan, answers: list[PlannedAnswer]) -> None:
     by_field = {a.field: a for a in plan.answers}
     for a in answers:
@@ -650,7 +708,12 @@ def _ask_claude_midfill(paths: Paths, state: Any, job: Job, answers: list[Planne
     # (Analog Devices, Kensho, 2026-11-16), so reuse them instead of asking twice
     earlier_file = folder / EARLIER_ANSWERS
     earlier: dict[str, str] = read_json(earlier_file) if earlier_file.is_file() else {}
-    reuse = [{"field": a.field, "answer": earlier[a.field]} for a in plan.open_items() if a.field in earlier]
+
+    def earlier_answer(a: PlannedAnswer) -> Optional[str]:  # by field, or by its wording (fields renumbered)
+        key = _label_key(a.label)
+        return earlier.get(a.field) or (earlier.get(key) if key else None)
+
+    reuse = [{"field": a.field, "answer": ans} for a in plan.open_items() if (ans := earlier_answer(a))]
     if reuse and not _merge(plan, {"answers": reuse}):
         _copy_merged(plan, answers)
         plan = AnswerPlan(answers=[a.model_copy() for a in answers])
@@ -683,8 +746,12 @@ def _ask_claude_midfill(paths: Paths, state: Any, job: Job, answers: list[Planne
                 problems = _merge(plan, data)
                 if not problems:
                     _copy_merged(plan, answers)
-                    earlier.update({i["field"]: i["answer"] for i in data.get("answers", [])
-                                    if i.get("field") and (i.get("answer") or "").strip()})
+                    labels = {a.field: a.label for a in answers}
+                    for item in data.get("answers", []):
+                        if item.get("field") and (item.get("answer") or "").strip():
+                            earlier[item["field"]] = item["answer"]
+                            if key := _label_key(labels.get(item["field"], "")):
+                                earlier[key] = item["answer"]
                     write_json(earlier_file, earlier)
                     saved = remember(paths, [a for a in answers if a.status == "needs_review"])
                     _say("Claude's answers are in; filling them." + (f" Remembered {saved} for later postings."
@@ -786,6 +853,11 @@ def _credentials(paths: Paths, ats: str, job: Optional[Job] = None) -> Optional[
 
         email, password = env_value(paths, "ICIMS_EMAIL"), env_value(paths, "ICIMS_PASSWORD")
         return Credentials(email, password, env_value(paths, "ICIMS_USERNAME")) if email and password else None
+    if ats == "oracle":  # Oracle asks only for the application email, then emails Vatsal a code (no password)
+        from .adapters.icims import Credentials
+
+        email = Profile.model_validate(load_yaml(paths.profile)).tier1.email
+        return Credentials(email, "") if email else None
     return _workday_credentials(paths, job)
 
 
@@ -995,6 +1067,14 @@ def _clear_submit_clicked(page: Any) -> None:
             pass
 
 
+def _note_submit_click(paths: Paths, state: Any) -> None:
+    """Kept in the run's state before helper's one click on Submit, so no later fill of the run clicks it (rule 10)."""
+    from .tracker.db import now_iso
+
+    state.options["helper_clicked_submit"] = now_iso()
+    save_state(paths, state)
+
+
 def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait: float, poll: float,
                      form: Optional[Any] = None, seen: Optional[dict[str, bool]] = None,
                      errors_before: Optional[list[str]] = None) -> str:
@@ -1128,7 +1208,7 @@ def preview(paths: Paths, cfg: Config, job: Job) -> str:
     answer_ctx = AnswerContext(
         profile=profile, cfg=cfg, job=job, grad_date=eligibility.grad_date, employment=eligibility.employment,
         season=eligibility.season, season_year=eligibility.season_year,
-        approved=AnswersFile.model_validate((load_yaml(paths.answers) if paths.answers.is_file() else None) or {}),
+        approved=_approved(paths),
         past_employers=[e.organization for e in ctx.master.experience if e.organization],
         documents=documents(paths, profile), grades=grades(paths),
     )

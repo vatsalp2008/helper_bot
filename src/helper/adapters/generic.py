@@ -44,13 +44,16 @@ DISCOVER_JS = r"""
     .includes(t);
   // ARIA widgets with no <input> of their own are questions too: Rippling's dropdowns are role=combobox divs, and its
   // rating questions are role=radio divs in a role=radiogroup (apexanalytix, Raptor Maps, 2026-11-18)
-  const CONTROLS = 'input, select, textarea, [role=combobox], [role=radiogroup]';
+  // Oracle's multi-select pills are buttons in a ul role=list ("Check all of the following statements that apply to
+  // you:", Honeywell, 2026-11-20): never read, so a required question stayed empty
+  const CONTROLS = 'input, select, textarea, [role=combobox], [role=radiogroup], ul.cx-select-pills-container[role=list]';
   const isField = c => ['INPUT', 'SELECT', 'TEXTAREA'].includes(c.tagName);
   const all = [...document.querySelectorAll(CONTROLS)].filter(c => {
     if (c.closest('header, nav, footer, [role=search], [role=navigation]')) return false;
     if (!isField(c)) {  // a radio group with real inputs, or a combobox wrapping its input, is read by those inputs
       if (c.querySelector('input, select, textarea')) return false;
       if (c.getAttribute('role') === 'radiogroup' && !c.querySelector('[role=radio]')) return false;
+      if (c.getAttribute('role') === 'list' && !c.querySelector('.cx-select-pill-section')) return false;
       return visible(c);
     }
     const t = (c.type || '').toLowerCase();
@@ -67,12 +70,27 @@ DISCOVER_JS = r"""
   const starred = el => !!el && el.nodeType === 1 && [el, ...el.querySelectorAll('*')].some(x =>
     ['::after', '::before'].some(p => /^["']\s*\*\s*["']$/.test(getComputedStyle(x, p).content || '')));
   let labelEl = null;  // where the label was read, for its drawn mark
+  // a group that holds only these boxes names their question: each Oracle radio's own aria-labelledby names its
+  // option, so the disability question read as "Yes, I have a disability, or have had one in the past" (Ralliant and
+  // Vertiv, 2026-11-19)
+  const groupName = members => {
+    const g = members[0].closest('[role=radiogroup], [role=group], fieldset');
+    if (!g || !members.every(m => g.contains(m))) return '';
+    if ([...g.querySelectorAll('input, select, textarea')].some(x => !members.includes(x)
+        && !skipType((x.type || '').toLowerCase()))) return '';  // a section's group, not this question's
+    const ids = (g.getAttribute('aria-labelledby') || '').split(/\s+/).filter(Boolean);
+    const named = ids.map(id => text(document.getElementById(id))).join(' ').trim();
+    if (named) { labelEl = document.getElementById(ids[ids.length - 1]); return named; }
+    return (g.getAttribute('aria-label') || '').trim();
+  };
   const own = (c, members) => {
     const kind = (c.type || '').toLowerCase();
     if (c.labels && c.labels.length && (!['radio', 'checkbox'].includes(kind) || (kind === 'checkbox' && !members))) {
       const words = text(c.labels[0]);  // a lone checkbox's own label is the question ("I agree to the privacy policy")
       if (!(kind === 'file' && DROP_ZONE.test(words))) { labelEl = c.labels[0]; return words; }  // Rippling: drop zone
     }
+    const group = members ? groupName(members) : '';
+    if (group) return group;
     const by = c.getAttribute('aria-labelledby');
     if (by) {
       const ids = by.split(/\s+/).filter(id => id !== c.id);
@@ -137,6 +155,13 @@ DISCOVER_JS = r"""
     const t = (c.type || '').toLowerCase();
     let members = [c];
     if ((t === 'radio' || t === 'checkbox') && c.name) members = all.filter(x => x.name === c.name && x.type === c.type);
+    else if (t === 'radio' || t === 'checkbox') {
+      // boxes with no name in one named group are one question: Oracle's race boxes ("Select the races you identify
+      // with.") were read one by one, each named by its race, and all left blank (Honeywell, 2026-11-20)
+      const g = c.closest('[role=group], [role=radiogroup]');
+      if (g && (g.getAttribute('aria-labelledby') || g.getAttribute('aria-label')))
+        members = all.filter(x => !x.name && x.type === c.type && x.closest('[role=group], [role=radiogroup]') === g);
+    }
     members.forEach(m => done.add(m));
     const box = wrapper(members);
     const role = c.getAttribute('role');
@@ -157,6 +182,10 @@ DISCOVER_JS = r"""
       type = 'radio';
       options = [...c.querySelectorAll('[role=radio]')].map(r => (r.getAttribute('aria-label') || text(r)).trim());
     }
+    else if (role === 'list') {
+      type = 'multi_select';
+      options = [...c.querySelectorAll('.cx-select-pill-name')].map(r => text(r)).filter(Boolean);
+    }
     else if (role === 'combobox' && !isField(c)) { type = 'select'; listbox = true; }  // its choices open on a click
     else if (t === 'radio') { type = 'radio'; options = members.map(optionLabel); }
     else if (t === 'checkbox') {
@@ -165,14 +194,17 @@ DISCOVER_JS = r"""
     } else if (t === 'date') type = 'date';
     // a search box that opens a list: a dropdown when its choices show without typing (discover() opens it to see),
     // a place search otherwise
-    else if (role === 'combobox' && c.getAttribute('aria-haspopup') === 'listbox') listbox = true;
+    // Oracle's cx-select opens a grid (aria-haspopup="grid"; Nationality on Vertiv's form, 2026-11-19)
+    else if (role === 'combobox' && /^(listbox|grid)$/.test(c.getAttribute('aria-haspopup') || '')) listbox = true;
     const required = members.some(m => m.required || m.getAttribute('aria-required') === 'true')
       || /\*|\(required\)/i.test(label) || starred(labelEl) || (box !== c && starred(box));
     const key = 'generic:' + (c.name || c.id || 'field-' + n);
     if (out.some(o => o.key === key)) return;
     box.setAttribute('data-helper-key', key);
+    // a box that filters its list as one types: what it shows first may be only the start of the list
+    const search = c.tagName === 'INPUT' && role === 'combobox' && /^(list|both)$/.test(c.getAttribute('aria-autocomplete') || '');
     out.push({key, label: label.replace(/^\s*\*+\s*/, '').replace(/\s*\*+\s*$/, '').replace(/\s*\(required\)\s*$/i, '').trim(),
-              type, required, options, listbox});
+              type, required, options, listbox, search});
   });
   return out;
 }
@@ -269,15 +301,26 @@ def discover(root: Any) -> list[FormQuestion]:
                 f["type"], f["options"] = "select", choices
         section = "eeoc" if re.search(r"(?i)^(gender|race|ethnicity|veteran|disabilit|hispanic|sex)\b", f["label"]) else "questions"
         questions.append(FormQuestion(label=f["label"], field_name=f["key"], type=f["type"], required=f["required"],
-                                      options=f["options"], section=section))
+                                      options=f["options"], section=section,
+                                      searchable=bool(f.get("search")) and f["type"] == "select"))
     return questions
 
 
 _GENERIC_SITE_NAME = re.compile(r"(?i)^\s*(candidate experience( site)?|careers?( site| page| portal)?|jobs?|job search|"
-                                r"job board|career opportunities|recruiting|talent)\s*$")
+                                r"job board|career opportunities|recruiting\d*|talent)\s*$")  # recruiting2.ultipro.com
 _COPYRIGHT_RE = re.compile(r"(?:©|\(c\)|Copyright)\s*(?:©\s*)?(?:\d{4}(?:\s*[-–]\s*\d{4})?\s*)?"
                            r"([A-Z][A-Za-z0-9&'. -]{1,60}?)(?:,?\s+(?:Inc|LLC|Ltd|Corp|Corporation|Co)\b\.?|\.|\s+All rights)",
                            re.IGNORECASE)
+
+
+def ukg_employer(homepage: str, text: str) -> str:
+    """UKG Pro job boards (recruiting.ultipro.com/<tenant>/...) name the employer only by their footer link to its own
+    site (CAS: www.cas.org/careers; Melaleuca: melaleucajobs.com, 2026-11-20): the site's name, as the description
+    spells it. "" when the description never names it."""
+    host = (urlparse(homepage).hostname or "").removeprefix("www.").removeprefix("careers.").removeprefix("jobs.")
+    label = re.sub(r"(?i)(jobs|careers?)$", "", host.split(".")[0]) if host.count(".") >= 1 else ""
+    m = re.search(rf"(?i)(?<![\w-]){re.escape(label)}(?![\w-])", text or "") if len(label) >= 2 else None
+    return m.group(0) if m else ""
 
 
 def rippling_employer(url: str) -> str:
@@ -349,7 +392,7 @@ def _read_posting(page: Any) -> tuple[str, str, str]:
       const foot = t(document.querySelector('footer')) || (t(document.body) || '').slice(-3000);
       return {h1: t(document.querySelector('h1')), title: document.title, site: meta('og:site_name'),
               ogtitle: meta('og:title'), text: t(main) || (blocks[0] ? t(blocks[0][1]) : t(document.body)),
-              footer: foot};
+              footer: foot, homepage: (document.querySelector('.copyright a[href]') || {}).href || ''};
     }""")
     title = data["h1"] or data["ogtitle"] or data["title"]
     host = (urlparse(page.url).hostname or "").removeprefix("www.").removeprefix("careers.").removeprefix("jobs.")
@@ -360,6 +403,8 @@ def _read_posting(page: Any) -> tuple[str, str, str]:
         company = owner or ("" if _GENERIC_SITE_NAME.match(company) else company)
     if host.endswith("rippling.com"):  # "Rippling Recruiting" is the hiring site (Raptor Maps, apexanalytix, 2026-11-18)
         company = rippling_employer(page.url) or company
+    if host.endswith(("ultipro.com", "ukg.net")):  # UKG's own host names no employer (CAS, Melaleuca, 2026-11-20)
+        company = ukg_employer(data.get("homepage") or "", data["text"])
     text = data["text"].strip()
     try:
         ld = job_posting_ld(page.evaluate(_LD_JS))
@@ -652,8 +697,9 @@ def fill_form(root: Any, answers: list[Any], resume_pdf: Path, *, country: Optio
         by_label.setdefault(" ".join(f["label"].lower().split()), []).append((f["key"], f["type"]))
     results: list[FieldResult] = []
     # a country pick can reset the state list after it (All Options' BambooHR, 2026-11-18: State went back to
-    # "-Select-" and the submit failed), so the country goes first
-    answers = sorted(answers, key=lambda a: 0 if getattr(a, "key", None) == "address_country" else 1)
+    # "-Select-" and the submit failed), so the country goes first; and on Oracle a State pick cleared the ZIP, City
+    # and County picked before it (Ralliant, Honeywell, 2026-11-20), so the place goes from the widest to the narrowest
+    answers = sorted(answers, key=lambda a: _GEO_ORDER.get(getattr(a, "key", None) or "", len(_GEO_ORDER)))
     for a in answers:
         if a.kind in ("skip", "unknown") or (a.value is None and a.type != "file"):
             continue
@@ -670,17 +716,57 @@ def fill_form(root: Any, answers: list[Any], resume_pdf: Path, *, country: Optio
             results.append(FieldResult(a.field, a.label, not a.required, None,
                                        "not shown on this form" if not a.required else "field not found on the page"))
             continue
+        if getattr(a, "key", None) in _GEO_ORDER and a.value and _same_place(_shown_value(block), a.value):
+            # already right (a ZIP pick fills its city and county): picking it again can clear the fields tied to it
+            results.append(FieldResult(a.field, a.label, True, _shown_value(block), "already set"))
+            continue
         try:
             ok, shown, detail = dom._fill_one(root, block, a, resume_pdf, city, _iso_date)
         except Exception as exc:
             ok, shown, detail = False, a.value, f"{type(exc).__name__}: {str(exc)[:120]}"
         results.append(FieldResult(a.field, a.label, ok, shown, detail))
         pause()
+    # a place that ended up empty after the others were picked is picked once more, narrowest last
+    for a in answers:
+        if getattr(a, "key", None) not in ("address_zip", "address_city", "address_county") or not a.value \
+                or a.kind in ("skip", "unknown"):
+            continue
+        block = root.locator(f"[data-helper-key={json.dumps(a.field)}]")
+        if not block.count() or _shown_value(block):
+            continue
+        try:
+            ok, shown, detail = dom._fill_one(root, block, a, resume_pdf, city, _iso_date)
+        except Exception as exc:
+            ok, shown, detail = False, a.value, f"{type(exc).__name__}: {str(exc)[:120]}"
+        results = [r for r in results if r.field != a.field] + [FieldResult(a.field, a.label, ok, shown, detail)]
     try:
         root.evaluate(SUBMIT_WATCH_JS)
     except Exception:
         pass
     return results
+
+
+_GEO_ORDER = {"address_country": 0, "address_state": 1, "address_zip": 2, "address_city": 3, "address_county": 4}
+
+
+def _shown_value(block: Any) -> str:
+    """What a place box shows now: its text box's value, or a dropdown's chosen option."""
+    try:
+        box = block.locator("input:not([type=hidden]):not([type=checkbox]):not([type=radio])")
+        if box.count():
+            return (box.first.input_value() or "").strip()
+        pick = block.locator("select")
+        if pick.count():
+            return (pick.first.evaluate("s => s.selectedIndex > 0 ? s.options[s.selectedIndex].text : ''") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _same_place(shown: str, wanted: str) -> bool:
+    """'Seattle, King, WA' shown for 'Seattle, King, WA' or 'Seattle': the same place."""
+    a, b = " ".join(shown.lower().split()), " ".join(wanted.lower().split())
+    return bool(a) and (a == b or a.split(",")[0].strip() == b.split(",")[0].strip())
 
 
 def _iso_date(value: str) -> str:

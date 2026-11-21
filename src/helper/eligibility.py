@@ -125,23 +125,32 @@ def _month_number(name: str) -> int:
             "nov": 11, "dec": 12}[name[:3].lower()]
 _WHEN = rf"(?:(?:{_MONTHS})\.?\s+\d{{4}}|(?:{_SEASONS})\s+\d{{4}}|\d{{4}})"
 
-_VISA = (r"(?:F-?1|STEM OPT|OPT|CPT|student visas?|international students?|Curricular Practical Training"
+# CPT and OPT are acronyms: capitals only, and never "opt-in" or "opt-out" ("Many opt-in culture events across our
+# diverse community", Formlabs, 2026-11-19)
+_CPT_OPT = r"(?-i:CPT|OPT)(?!-(?i:in|out)\b)"
+_VISA = (rf"(?:F-?1|STEM OPT|{_CPT_OPT}|student visas?|international students?|Curricular Practical Training"
          r"|Optional Practical Training)")
 _EXCLUSION_RES = [
     re.compile(rf"(?i)\b{_VISA}\b[^.\n]{{0,80}}?\b(?:(?:are|is)\s+not\s+(?:eligible|considered|accepted|supported)"
                r"|ineligible|not eligible|(?:will|can)\s*not be considered|won't be considered|cannot be considered)"),
     re.compile(rf"(?i)\b(?:not eligible|ineligible|not open to|not available (?:to|for)|(?:unable to|cannot|can't|will not|"
                rf"won't|do not|does not|not able to) (?:consider|accept|hire|support|sponsor|employ))\b[^.\n]{{0,100}}?\b{_VISA}\b"),
-    re.compile(r"(?i)\bno\s+(?:F-?1|OPT|CPT)\b"),
+    re.compile(rf"(?i)\bno\s+(?:F-?1|{_CPT_OPT})\b"),
     # "HP, Inc. will not provide any assistance or sign documentation in support of immigration sponsorship
     # including Curricular Practical Training (CPT) or Optional Practical Training (OPT)" (HP, 2026-11-18): CPT/OPT
     # named as part of what it won't support; "no sponsorship, but OPT students are welcome" stays a note
     re.compile(rf"(?i)\b(?:will not|won't|cannot|can't|do not|does not|not able to|unable to)\s+(?:provide|offer|sign"
                rf"|give)\b[^.\n]{{0,120}}?\b(?:sponsorship|documentation|paperwork|assistance)\b[^.\n]{{0,40}}?"
                rf"\b(?:including|such as|incl\.)\s+{_VISA}\b"),
+    # "open only to individuals who ... do not now, or in the future, require visa sponsorship including, but not
+    # limited to, H-1B, CPT/OPT/STEM" (Cigna, 2026-11-20): CPT/OPT named as sponsorship candidates mustn't need;
+    # "who don't require sponsorship, including students on OPT, are welcome" stays open
+    re.compile(rf"(?i)\b(?:(?:do|does|will|would|shall)\s+not\b[^.\n]{{0,40}}?\b(?:require|need)\w*|without)\b"
+               rf"[^.\n]{{0,40}}?\bsponsorship\b[^.\n]{{0,20}}?\b(?:including|such as|incl\.|e\.g\.)"
+               rf"[^.\n]{{0,60}}?\b{_VISA}\b(?![^.\n]{{0,40}}?\b(?:welcome|are eligible|is eligible|encouraged)\b)"),
 ]
 _VISA_POSITIVE_RE = re.compile(rf"(?i)\b{_VISA}\b[^.\n]{{0,60}}?\b(?:welcome|are eligible|is eligible|encouraged|supported)\b")
-_CPT_OPT_RE = re.compile(r"(?i)\b(?:CPT|OPT)\b")
+_CPT_OPT_RE = re.compile(rf"\b{_CPT_OPT}\b|(?i:\b(?:curricular|optional) practical training\b)")
 _NO_SPONSOR_RE = re.compile(
     r"(?i)\bwithout (?:the need for |requiring |needing |requiring the need for )?(?:current or future |future |"
     r"employer )?(?:visa |immigration )?sponsorship|\bnot require (?:visa |immigration )?sponsorship|\bnow (?:and|or) in "
@@ -201,6 +210,10 @@ _PHD_ONLY_RE = re.compile(
 _MASTERS_RE = re.compile(r"(?i)\b(?:master['’]?s|M\.?S\.?(?!\w)|MSc|graduate students?)")
 _DEGREE_ASK_RE = re.compile(r"(?i)\b(?:pursuing|enrolled|degree|students?)\b")
 _GRAD_LEVEL_RE = re.compile(r"(?i)\b(?:master['’]?s|M\.?S\.?|graduate (?:students?|degree|program)|Ph\.?D\.?|MBA)\b")
+# "pursuing a bachelor's degree (or higher)" takes graduate students too (Honeywell Aerospace, 2026-11-20); the "or
+# higher" belongs to the degree, not to a GPA later in the sentence
+_OR_HIGHER_RE = re.compile(r"(?i)\b(?:bachelor['’]?s|B\.?S\.?|B\.?A\.?|undergraduate)(?: degree)?\s*\(?\s*or "
+                           r"(?:higher|above|(?:an? )?(?:advanced|graduate) degree)\b")
 _IMMEDIATE_RE = re.compile(
     r"(?i)\bimmediate(?:ly)? start|\bstart immediately\b|\bstart(?:ing)? (?:ASAP|as soon as possible)\b"
     r"|\bimmediate (?:opening|availability|start date)\b"
@@ -235,9 +248,20 @@ _US_PLACE_RE = re.compile(
 )
 _LOCATION_LINE_RE = re.compile(r"(?im)^\s*(?:location|locations|office|based in)\s*:\s*(?P<loc>.+?)\s*$")
 _RETURNING_RE = re.compile(
-    r"(?i)\breturn(?:ing)? to (?:school|university|college|your studies|campus|your degree program)"
+    # "ability to return to a degree program full-time after completion of the internship" (The Aerospace
+    # Corporation, 2026-11-20)
+    r"(?i)\breturn(?:ing)? to (?:(?:a|an|the|your|their) )?(?:school|university|college|studies|campus"
+    r"|(?:degree|academic|university) program)"
     r"|\bcontinu(?:e|ing) (?:your |their )?(?:studies|education|enrollment|degree)"
-    r"|\b(?:remain|still be) enrolled\b|\bat least one (?:semester|quarter|term) (?:of school )?(?:remaining|left)"
+    r"|\b(?:remain|still be) enrolled\b"
+    # "Must have one or more course(s) remaining in a Bachelors or Graduate degree program post internship" (T-Mobile),
+    # "a minimum of one quarter/semester remaining" (MongoDB)
+    r"|\b(?:at least|a minimum of|one or more)\s+(?:one\s+)?(?:semesters?|quarters?|terms?|courses?|course\(s\)|classes)"
+    r"(?:\s*/\s*(?:semesters?|quarters?|terms?))?\s+(?:of (?:school|study|studies)\s+)?(?:remaining|left)\b"
+    # "You will have to take off an academic term for this role" (Rockwell Automation's January to August co-op,
+    # 2026-11-20): a term away from school, then back
+    r"|\btake (?:off|a leave from|time off from)\s+(?:an? |one )?(?:academic )?(?:term|semester|quarter)\b"
+    r"|\btake (?:an? |one )(?:academic )?(?:term|semester|quarter) off\b"
 )
 _SEASON_RE = re.compile(rf"(?i)\b({_SEASONS})\s*(?:of\s+)?('?\d{{2}}|\d{{4}})\b")
 _YEAR_SEASON_RE = re.compile(rf"(?i)\b(\d{{4}})\s*[(\[-]?\s*({_SEASONS})\b")  # "2027 (Summer)" (Formlabs)
@@ -362,6 +386,17 @@ def _grad_window(sentences: list[str]) -> tuple[Optional[tuple[int, int]], Optio
                     upper = min(upper, hi) if upper else hi
                     found = True
         if not found:
+            # "2028 or 2029 graduation year" (Great American, 2026-11-20): the years come before the word, so the
+            # phrases below never saw them
+            m = re.search(r"(?i)\b(20\d\d)((?:\s*(?:,|or|and|/|&)\s*20\d\d)*)\s+(?:graduation\s+(?:years?|dates?|class)"
+                          r"|graduates|grads|graduating class)\b", s)
+            if m:
+                years = [int(y) for y in re.findall(r"20\d\d", m.group(0))]
+                lo, hi = (min(years), 1), (max(years), 12)
+                lower = max(lower, lo) if lower else lo
+                upper = min(upper, hi) if upper else hi
+                found = True
+        if not found:
             # Longest phrases first: "before or in June 2027" is an upper bound, not "in June 2027".
             for m in re.finditer(rf"(?i)\b(before or (?:in|by|on)|on or before|by or before|no later than|prior to"
                                  rf"|on or after|no (?:earlier|sooner) than|not (?:earlier than|before)|by|before|in|during"
@@ -424,15 +459,31 @@ def _employment(title: str, text: str) -> Employment:
     return "unknown"
 
 
+_GRADUATION_WORDS_RE = re.compile(r"(?i)\bgraduat\w*|\bclass of\b|\bdegree (?:completion|conferral)")
+
+
+def _term_mention(source: str, pattern: re.Pattern[str], is_text: bool) -> Optional[re.Match[str]]:
+    """The first season the posting names for the role itself: in its text, a season in a sentence about graduation
+    is the graduation date ("Graduation date in Fall 2027 or Spring 2028", MongoDB, 2026-11-20), not the term."""
+    for m in pattern.finditer(source):
+        if not is_text:
+            return m
+        start = max(source.rfind("\n", 0, m.start()), source.rfind(". ", 0, m.start()))
+        ends = [i for i in (source.find("\n", m.end()), source.find(". ", m.end())) if i != -1]
+        if not _GRADUATION_WORDS_RE.search(source[start + 1: min(ends) if ends else len(source)]):
+            return m
+    return None
+
+
 def _season(title: str, text: str, today: Optional[date] = None) -> tuple[Optional[str], Optional[int]]:
-    for source in (title, text[:1500]):
-        m = _SEASON_RE.search(source)
+    for is_text, source in ((False, title), (True, text[:1500])):
+        m = _term_mention(source, _SEASON_RE, is_text)
         if m:
             raw = m.group(2).lstrip("'")
             year = int(raw) + 2000 if len(raw) == 2 else int(raw)
             season = m.group(1).lower().replace("autumn", "fall")
             return season, year
-        m = _YEAR_SEASON_RE.search(source)
+        m = _term_mention(source, _YEAR_SEASON_RE, is_text)
         if m:
             return m.group(2).lower().replace("autumn", "fall"), int(m.group(1))
     m = _TITLE_SEASON_GAP_RE.search(title)
@@ -443,8 +494,11 @@ def _season(title: str, text: str, today: Optional[date] = None) -> tuple[Option
         start, end = _month_number(m.group(1)), _month_number(m.group(3))
         if start in (5, 6) and end in (7, 8, 9):
             return "summer", int(m.group(4))
-    if today is not None and re.search(r"(?i)\bintern", title) and re.search(r"(?i)\bsummer\b", text):
-        # "an end of summer presentation" (ASML): the coming summer; from August on, next year's
+    # "an end of summer presentation" (ASML): the coming summer; from August on, next year's. A co-op whose posting
+    # calls it a summer internship is one too: "Join our team ... as a Summer Intern" (Draper's "Process Automation
+    # Co-Op", 2026-11-20)
+    if today is not None and ((re.search(r"(?i)\bintern", title) and re.search(r"(?i)\bsummer\b", text))
+                              or re.search(r"(?i)\bsummer intern(ship)?s?\b", text[:1500])):
         return "summer", today.year + 1 if today.month >= 8 else today.year
     return None, None
 
@@ -592,7 +646,8 @@ def check_eligibility(
              "U.S. citizenship.", clearance)
 
     # 2. Degree level.
-    undergrad = [s for s in _matching(sentences, _UNDERGRAD_RE) if not _GRAD_LEVEL_RE.search(s)]
+    undergrad = [s for s in _matching(sentences, _UNDERGRAD_RE)
+                 if not _GRAD_LEVEL_RE.search(s) and not _OR_HIGHER_RE.search(s)]
     if undergrad:
         flag("undergrad_only", "warning", "It asks for undergraduates; as an MS student you may be screened out.",
              undergrad)
@@ -761,10 +816,10 @@ def _choose_grad_date(cfg: Config, sentences: list[str], employment: Employment,
         reasons.append("full-time start")
     chosen = default if default in allowed else allowed[0]
     alt_year = options[alt].year if options.get(alt) else None
-    if employment == "internship" and season == "summer" and alt in allowed and season_year in (None, alt_year) \
-            and chosen != alt:
+    if employment in ("internship", "co_op") and season == "summer" and alt in allowed \
+            and season_year in (None, alt_year) and chosen != alt:
         # Vatsal, 2026-11-15: always December 2027 for Summer 2027 internships (back at school after the summer),
-        # unless the posting's window rules it out
+        # unless the posting's window rules it out; a summer co-op is the same summer term
         chosen = alt
         reasons.append("a Summer 2027 internship: back at school after the summer")
     reason = "default" if not reasons else "; ".join(reasons)

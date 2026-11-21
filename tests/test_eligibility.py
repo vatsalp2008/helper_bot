@@ -53,6 +53,10 @@ def levels(e: Eligibility) -> dict[str, str]:
     # HP, 2026-11-18
     "HP, Inc. will not provide any assistance or sign documentation in support of immigration sponsorship including "
     "Curricular Practical Training (CPT) or Optional Practical Training (OPT).",
+    # Cigna, 2026-11-20
+    "Therefore, this position is open only to individuals who are eligible for employment in the United States and who "
+    "do not now, or in the future, require visa sponsorship including, but not limited to, H-1B, CPT/OPT/STEM.",
+    "Candidates must be able to work without sponsorship, including CPT or OPT.",
 ])
 def test_named_visa_exclusions_block(text: str) -> None:
     e = check(text)
@@ -71,6 +75,9 @@ def test_no_sponsorship_with_cpt_opt_welcome_is_not_an_exclusion() -> None:  # t
     e = check("We do not provide visa sponsorship for this role, but OPT and CPT students are welcome.")
     assert "visa_excluded" not in levels(e)
     assert levels(e)["visa_welcome"] == "note"
+    # the Cigna rule's near miss: OPT counted among those who don't need sponsorship
+    cigna = check("Candidates who do not require sponsorship, including students on OPT, are welcome to apply.")
+    assert "visa_excluded" not in levels(cigna)
 
 
 def test_cpt_opt_welcome_and_unclear_mentions() -> None:
@@ -78,6 +85,17 @@ def test_cpt_opt_welcome_and_unclear_mentions() -> None:
     assert levels(welcome) == {"visa_welcome": "note", "grad_date": "note"}
     unclear = check("Please tell us whether you will need CPT or OPT paperwork.")
     assert levels(unclear)["cpt_opt_mentioned"] == "warning"
+    spelled = check("Tell us whether you will need Optional Practical Training.")
+    assert levels(spelled)["cpt_opt_mentioned"] == "warning"
+
+
+@pytest.mark.parametrize("text", [
+    "Many opt-in culture events across our diverse community.",  # Formlabs, 2026-11-19
+    "There is no opt-out for the safety training.",
+    "Employees can opt in to the commuter benefit, which is welcome news.",
+])
+def test_opting_in_or_out_is_not_cpt_or_opt(text: str) -> None:
+    assert not {"cpt_opt_mentioned", "visa_excluded", "visa_welcome"} & set(levels(check(text)))
 
 
 def test_export_control_is_flagged_and_built() -> None:
@@ -133,6 +151,10 @@ def test_degree_level() -> None:
     assert "undergrad_only" not in levels(both)
     curly = check("Currently pursuing a Bachelor’s or Master’s degree in Computer Science.")
     assert "undergrad_only" not in levels(curly)  # postings often use the curly apostrophe
+    higher = check("Currently pursuing a bachelor’s degree (or higher) from an accredited college or university.")
+    assert "undergrad_only" not in levels(higher)  # Honeywell Aerospace, 2026-11-20
+    gpa = check("Currently pursuing a bachelor's degree in Computer Science with a GPA of 3.0 or higher.")
+    assert levels(gpa)["undergrad_only"] == "warning" and "grad_students_considered" not in levels(gpa)
     pay = check("Hourly rate: Bachelor's students $40/hr, Master's students $45/hr, PhD students $50/hr.")
     assert levels(pay)["grad_students_considered"] == "note"
 
@@ -382,6 +404,42 @@ def test_an_internship_that_mentions_summer_without_a_year_is_next_summer() -> N
     asml = check("Interns present their findings at the end of summer.", title="Internship - EUV Data Science")
     assert (asml.season, asml.season_year, asml.grad_date) == ("summer", 2027, "December 2027")
     assert check("Join our team.", title="Intern - AI Engineer Platform").grad_date == "May 2027"  # no season named
+
+
+def test_a_co_op_the_posting_calls_a_summer_internship_is_a_summer_term() -> None:  # Draper, 2026-11-20
+    draper = check("Join our team at the Microfabrication Facility in Cambridge, MA as a Summer Intern focusing on "
+                   "process automation! There is flexibility regarding hours and program duration.",
+                   title="Process Automation Co-Op")
+    assert (draper.season, draper.season_year, draper.grad_date) == ("summer", 2027, "December 2027")
+    spring = check("A six-month co-op from January to June.", title="Software Engineer Co-op")
+    assert spring.grad_date == "May 2027"  # a co-op with no summer named keeps the default
+
+
+@pytest.mark.parametrize("text,title", [
+    # The Aerospace Corporation, 2026-11-20: no season named, but back to school after the internship
+    ("Availability to work full-time for a minimum of 10 weeks outside of university term and ability to return to "
+     "a degree program full-time after completion of the internship.",
+     "2027 Software Systems Engineer and Acquisition Grad Intern"),
+    # Rockwell Automation, 2026-11-20: a January to August co-op taken as a term away from school
+    ("This is a full-time role from January to August 2027. You will have to take off an academic term for this role.",
+     "Co-op, Process Standardization & Delivery Automation (LCS)"),
+    # T-Mobile, 2026-11-20
+    ("Must have one or more course(s) remaining in a Bachelors or Graduate degree program post internship.",
+     "Software Engineering Internship"),
+])
+def test_other_ways_of_saying_back_to_school_after_it(text: str, title: str) -> None:
+    e = check(text, title=title)
+    assert e.grad_date == "December 2027" and not e.blocked, e.grad_date_reason
+    assert "returning to school" in e.grad_date_reason
+
+
+def test_years_listed_before_graduation_year_are_a_window() -> None:  # Great American, 2026-11-20
+    gaig = check("Education:\n- Pursuing a degree in Computer Science, Business Administration (with technical focus), "
+                 "or related\n- 2028 or 2029 graduation year", title="Desktop AI Intern - Summer 2027")
+    assert levels(gaig)["grad_window"] == "blocker"
+    assert "Jan 2028 to Dec 2029" in next(f.message for f in gaig.flags if f.id == "grad_window")
+    fits = check("Open to 2027 graduates.", title="Software Engineer Intern")
+    assert not fits.blocked and fits.grad_date == "May 2027"
 
 
 def test_a_title_with_words_between_season_and_year_is_read() -> None:  # Kensho, 2026-11-16

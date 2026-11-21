@@ -177,6 +177,53 @@ def test_reading_the_saved_pages(browser: Any) -> None:
         page.close()
 
 
+ATTACHMENT_QUESTIONS = """
+<div data-automation-id="applyFlowPage"><div role="group" aria-labelledby="primaryQuestionnaire-section">
+ <div data-automation-id="formField-c3922fcc203c1001a836c6384e3a0009">
+  <label id="label301"></label>
+  <div id="rich-label301"><div data-automation-id="richText"><p><b>Please upload a current unofficial transcript.</b>
+   Colorado applicants may redact information that would identify age, date of birth and/or dates of attendance at or
+   graduation from an educational institution.<abbr title="required" class="requiredAsterisk">*</abbr></p></div></div>
+  <div data-automation-id="attachments-FileUpload" aria-labelledby="rich-label301">
+   <div data-automation-id="file-upload-drop-zone"><input type="file" data-automation-id="file-upload-input-ref">
+   <button data-automation-id="select-files">Select files</button></div></div>
+ </div>
+ <div id="rich-label302"><div data-automation-id="richText"><p><b>Upload your undergraduate transcript.</b>
+  <abbr title="required" class="requiredAsterisk">*</abbr></p></div></div>
+ <div data-automation-id="formField-c3922fcc203c1001a836c6384e3a0010">
+  <label id="label302"></label>
+  <div data-automation-id="attachments-FileUpload" aria-labelledby="rich-label302"><input type="file"></div>
+ </div>
+ <div data-automation-id="formField-" data-fkit-id="resumeAttachments--attachments"><label id="label176"></label>
+  <div data-automation-id="attachments-FileUpload" aria-labelledby="label176"><input type="file"></div></div>
+</div></div>
+"""
+
+
+def test_an_attachment_question_is_read_by_its_rich_text_label(browser: Any) -> None:
+    # The Aerospace Corporation, 2026-11-20: the transcript upload had an empty <label>, so it was never read and
+    # Workday refused the page with the transcript missing
+    page = browser.new_page(java_script_enabled=False)
+    page.set_content(ATTACHMENT_QUESTIONS)
+    found = {f["key"]: f for f in page.evaluate(wp.DISCOVER_JS)}
+    page.close()
+    first = found["workday:c3922fcc203c1001a836c6384e3a0009"]
+    assert first["type"] == "file" and first["required"]
+    assert first["label"].startswith("Please upload a current unofficial transcript.")
+    second = found["workday:c3922fcc203c1001a836c6384e3a0010"]  # named only through aria-labelledby
+    assert (second["type"], second["required"], second["label"]) == ("file", True, "Upload your undergraduate transcript.")
+    assert len(found) == 2  # an upload with no words at all (the resume's) is still left alone
+    docs = {"transcript": "/docs/Transcript NEU.pdf", "undergrad_transcript": "/docs/Transcript.pdf"}
+    questions = [FormQuestion(label=f["label"], field_name=f["key"], type=f["type"], required=f["required"])
+                 for f in found.values()]
+    job = Job(company="The Aerospace Corporation", role_title="Grad Intern", description_text="x", source="test",
+              fetched_at="now")
+    plan = plan_answers(questions, AnswerContext(profile=profile(), cfg=Config(), job=job, grad_date="December 2027",
+                                                 documents=docs))
+    assert [(a.kind, a.key, a.value) for a in plan.answers] == [
+        ("file", "transcript", "/docs/Transcript NEU.pdf"), ("file", "transcript", "/docs/Transcript.pdf")]
+
+
 def q(key: str, label: str, type_: str = "text", options: list[str] | None = None, required: bool = True,
       section: str = "questions") -> FormQuestion:
     return FormQuestion(label=label, field_name=f"workday:{key}", type=type_, options=options or [], required=required,
@@ -311,7 +358,8 @@ def test_a_page_without_work_or_education_sections_is_not_a_miss(browser: Any) -
 
 def test_field_of_study_tries_a_shorter_search_and_says_what_the_list_showed(browser: Any) -> None:
     # Cadence (2026-11-19): 'Computer Science' found nothing in its list, and the note said only that
-    assert wp.study_search_terms("Computer Science") == ["Computer Science", "Computer"]
+    assert wp.study_search_terms("Computer Science") == ["Computer Science", "Computer", "Science"]
+    assert wp.study_search_terms("Computer Engineering") == ["Computer Engineering", "Computer", "Engineering"]
     assert wp.study_search_terms("Mathematics") == ["Mathematics"]
     assert wp.study_score("Computer Science", "Computer & Information Sciences") >= 0.85
     assert wp.study_score("Computer Science", "Computer Engineering") < 0.85
@@ -341,6 +389,24 @@ def test_field_of_study_tries_a_shorter_search_and_says_what_the_list_showed(bro
     ok, _, why = wp.choose_prompt(page, box, wp.study_search_terms("Computer Science"), accept, threshold=0.85,
                                   keep_existing=False)
     assert not ok and why.endswith("(the search listed nothing)")
+    page.close()
+
+
+def test_field_of_study_searches_the_distinctive_word_before_a_long_generic_list(browser: Any) -> None:
+    # Signet (2026-11-19): the list matched any typed word and showed only its first entries, so 'Computer
+    # Engineering' and then 'Engineering' listed Aerospace to Ceramic Engineering and never reached his field
+    fixture = (FIXTURES / "workday_mock_education.html").read_text(encoding="utf-8")
+    listed = 'data-choices="Computer Science|Computer Engineering|Computer and Information Science"'
+    engineering = ("Aerospace Engineering|Agricultural Engineering|Architectural Engineering|Automotive Engineering|"
+                   "Biomedical Engineering|Ceramic Engineering|Chemical Engineering|Civil Engineering|"
+                   "Computer Engineering|Computer Science|Electrical Engineering")
+    page = browser.new_page()
+    page.set_content(fixture.replace(listed, f'data-choices="{engineering}" data-match="any-word" data-max="6"'))
+    box = page.locator("[data-automation-id=formField-fieldOfStudy]")
+    ok, chosen, why = wp.choose_prompt(page, box, wp.study_search_terms("Computer Engineering"),
+                                       lambda t: wp.study_score("Computer Engineering", t), threshold=0.85,
+                                       keep_existing=False)
+    assert ok and wp.selected_items(box) == ["Computer Engineering"], why
     page.close()
 
 
@@ -400,6 +466,22 @@ def test_account_step(browser: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPa
     page.close()
 
 
+def test_a_sign_in_form_that_shows_late_is_still_filled(browser: Any, tmp_path: Path,
+                                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    # Symbotic (2026-11-20, 15 windows open): the form came after helper's wait, and helper then waited for Vatsal alone
+    monkeypatch.setattr(wd, "is_workday_host", lambda url: True)
+    monkeypatch.setattr(wd, "ACCOUNT_FORM_WAIT", 1)
+    said: list[str] = []
+    page = browser.new_page()
+    page.goto(f"file://{(FIXTURES / 'workday_mock_account.html').resolve()}#late")
+    ctx = flow_context(tmp_path, credentials=wd.Credentials("alex@example.com", "right-pass"), has_account=False,
+                       say=said.append, wait_seconds=8)
+    out = wd.run_flow(page, ctx)
+    assert any("hasn't shown its sign-in form" in s for s in said), said
+    assert page.evaluate("() => window.created") and out.account == "created"
+    page.close()
+
+
 def test_a_wrong_password_is_never_retried(browser: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(wd, "is_workday_host", lambda url: True)
     said: list[str] = []
@@ -410,6 +492,27 @@ def test_a_wrong_password_is_never_retried(browser: Any, tmp_path: Path, monkeyp
     assert not wd.handle_account(page, ctx, wd.FlowResult())
     assert page.evaluate("() => window.signInAttempts") == 1
     assert any("never retries a sign-in" in s for s in said)
+    page.close()
+
+
+@pytest.mark.parametrize("mode,reason", [
+    ("locked", 'Workday says the account is locked (Workday: "Your account has been locked.")'),
+    ("blocked", "Workday said: Your sign in request was blocked for <email>. Try again later."),
+])
+def test_a_blocked_sign_in_is_no_locked_account(browser: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                mode: str, reason: str) -> None:
+    # Rockwell and Symbotic (2026-11-20) both said "the account is locked": "blocked" matched the pattern's letters,
+    # and the pause never showed Workday's own words
+    monkeypatch.setattr(wd, "is_workday_host", lambda url: True)
+    said: list[str] = []
+    page = browser.new_page()
+    page.goto(f"file://{(FIXTURES / 'workday_mock_account.html').resolve()}#{mode}")
+    ctx = flow_context(tmp_path, credentials=wd.Credentials("alex@example.com", "right-pass"), has_account=True,
+                       say=said.append, wait_seconds=2)
+    assert not wd.handle_account(page, ctx, wd.FlowResult())
+    assert page.evaluate("() => window.signInAttempts") == 1  # never retried
+    assert any(reason in s for s in said), said
+    assert not any("alex@example.com" in s for s in said)  # the login is never printed
     page.close()
 
 
@@ -458,6 +561,32 @@ def test_claude_answers_while_the_form_waits(repo: Path) -> None:
     again = [PlannedAnswer(field="workday:q3", label="Why Mockco?", type="textarea", required=True, kind="free_text")]
     _ask_claude_midfill(paths, state, job, again, lambda: False, wait_seconds=1, poll=0.1)
     assert again[0].value == "Because I like data tools." and not (folder / "questions_needed.json").exists()
+
+    # Oracle draws the page anew after Submit and numbers its fields again (Ralliant, 2026-11-19): a long question is
+    # found by its words; a short, common one isn't
+    dod = "Are you, or have you been in the last 2 years, a “Covered DoD official”?"
+    first = [PlannedAnswer(field="generic:field-11", label=dod, type="radio", required=True, kind="unknown",
+                           options=["Yes", "No"])]
+    provided.unlink()
+
+    def claude_dod() -> None:
+        time.sleep(0.3)
+        provided.write_text(json.dumps({"answers": [{"field": "generic:field-11", "answer": "No"}]}))
+
+    writer = threading.Thread(target=claude_dod)
+    writer.start()
+    _ask_claude_midfill(paths, state, job, first, lambda: False, wait_seconds=10, poll=0.1)
+    writer.join()
+    assert first[0].value == "No"
+    (folder / "questions_needed.json").unlink()
+    provided.unlink()
+    redrawn = [PlannedAnswer(field="generic:field-17", label=dod, type="radio", required=True, kind="unknown",
+                             options=["Yes", "No"]),
+               PlannedAnswer(field="workday:q9", label="Why Mockco?", type="textarea", required=True, kind="free_text")]
+    _ask_claude_midfill(paths, state, job, redrawn, lambda: False, wait_seconds=0.5, poll=0.1)
+    assert redrawn[0].value == "No"  # found by its words under its new number
+    assert redrawn[1].value is None  # "Why Mockco?" under another field is asked again, never guessed
+    assert [x["field"] for x in json.loads((folder / "questions_needed.json").read_text())["questions"]] == ["workday:q9"]
 
 
 # --------------------------------------------------------------------------- `helper apply` on a Workday link
@@ -759,6 +888,23 @@ def test_workdays_something_went_wrong_page_is_recognized(browser: Any) -> None:
     page.set_content("<div data-automation-id='progressBarActiveStep'>current step 1 of 5 My Information</div>"
                      "<label>First Name</label><input>")
     assert not wp.went_wrong(page)
+    page.close()
+
+
+def test_a_closed_posting_ends_the_flow_at_once(browser: Any, tmp_path: Path) -> None:
+    # HPE (2026-11-19): the reopened window found "The page you are looking for doesn't exist.", said "fill the
+    # application in the window yourself", and would have waited a day
+    said: list[str] = []
+    page = browser.new_page()
+    page.set_content("<header>HPE <a>Sign In</a></header><main><h2>The page you are looking for doesn't exist.</h2>"
+                     "<button>Search for Jobs</button></main>")
+    start = time.monotonic()
+    result = wd.run_flow(page, flow_context(tmp_path, say=said.append))
+    assert result.closed == "The page you are looking for doesn't exist." and not result.reached_review
+    assert time.monotonic() - start < 10 and said == [
+        "This posting is closed: Workday says 'The page you are looking for doesn't exist.'. Nothing was sent."]
+    page.set_content("<h2>Software Engineer Intern</h2><p>This job posting is no longer available.</p>")
+    assert wp.posting_gone(page) == "This job posting is no longer available."
     page.close()
 
 

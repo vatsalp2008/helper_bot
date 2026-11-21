@@ -178,7 +178,11 @@ def on_fill_message(paths: Paths, cfg: Any, run_id: str, text: str) -> None:
     conn = _open(paths, cfg)
     try:
         if queue.find(conn, run_id) is not None:
-            queue.set_status(conn, run_id, "needs_you", text.strip().splitlines()[0][:220])
+            lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+            # a heading with its list under it names what's waiting: "Only you can answer these; fill them in the
+            # window:" alone left out the question (Wurl, 2026-11-20)
+            reason = f"{lines[0]} {'; '.join(lines[1:])}" if lines[0].endswith(":") and len(lines) > 1 else lines[0]
+            queue.set_status(conn, run_id, "needs_you", reason[:220])
             conn.commit()
             refresh(paths, conn)
     finally:
@@ -186,11 +190,14 @@ def on_fill_message(paths: Paths, cfg: Any, run_id: str, text: str) -> None:
 
 
 @_quiet
-def on_fill_outcome(paths: Paths, cfg: Any, run_id: str, application_id: Optional[int], outcome: str) -> None:
+def on_fill_outcome(paths: Paths, cfg: Any, run_id: str, application_id: Optional[int], outcome: str,
+                    detail: str = "") -> None:
     conn = _open(paths, cfg)
     try:
         if outcome == "confirmed":
             queue.remove_sent(conn, run_id=run_id, application_id=application_id)
+        elif outcome == "posting_closed" and queue.find(conn, run_id) is not None:  # HPE, 2026-11-19
+            queue.set_status(conn, run_id, "skipped", detail or "posting closed; nothing was sent")
         elif outcome == "rejected" and queue.find(conn, run_id) is not None:  # Vatsal, 2026-11-17: apply manually
             queue.set_status(conn, run_id, "apply_manually", "not sent: the site rejected the submit from helper's "
                              f"window. Apply in your normal browser (`helper assist {run_id}`), then "
@@ -198,7 +205,8 @@ def on_fill_outcome(paths: Paths, cfg: Any, run_id: str, application_id: Optiona
         elif queue.find(conn, run_id) is not None:
             reason = {"unverified": "Submit was clicked but no confirmation showed: check it was sent, then "
                                     f"`helper mark {application_id} applied`",
-                      "closed": "not submitted: the window was closed",
+                      "closed": f"not submitted: the window was closed. `helper fill {run_id} --keep-open` opens it "
+                                "again",
                       "timeout": "not submitted: the wait ran out"}.get(outcome, f"not submitted ({outcome})")
             queue.set_status(conn, run_id, "needs_you", reason)
         conn.commit()

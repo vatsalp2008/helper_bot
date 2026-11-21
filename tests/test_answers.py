@@ -329,6 +329,13 @@ def test_gpa_goes_on_forms_only_from_the_grades_file() -> None:
     ranged = one(q("What is your GPA?", "select", ["Below 3.0", "3.0 - 3.49", "3.5 - 3.79", "3.8 - 4.0"]), grades=grades)
     assert ranged.value == "3.5 - 3.79"
     assert one(q("What scale is your GPA on?"), grades=grades).kind == "unknown"  # Vatsal answers the scale
+    # a label that only names the 4.0 scale is still his GPA (Honeywell Aerospace, 2026-11-20)
+    honeywell = q("My cumulative GPA (4.0 Scale) for my overall course work is:", "radio",
+                  ["3.5-4", "3.0-3.49", "2.75-2.99", "Lower than 2.74", "NA"])
+    assert (one(honeywell, grades=grades).kind, one(honeywell, grades=grades).value) == ("auto", "3.5-4")
+    assert one(q("GPA (10-point scale)"), grades=grades).kind == "unknown"  # another scale stays his
+    low = q("Cumulative GPA", "select", ["3.5-4", "3.0-3.49", "Lower than 2.74"])
+    assert one(low, grades={"Example University": "2.5"}).value == "Lower than 2.74"
     assert one(q("Undergraduate GPA"), grades=grades).kind == "unknown"  # no bachelor's entry in the sample profile
 
 
@@ -464,6 +471,28 @@ def test_t_mobile_in_a_question_is_not_a_phone_number() -> None:  # T-Mobile, 20
     assert one(q("Mobile phone number")).key == "phone"
 
 
+def test_vertiv_s_oracle_wordings() -> None:  # Vertiv on Oracle, 2026-11-19
+    hear = one(q("How did you come to know about this opportunity?", "radio",
+                 ["Employee Referral", "Career Site", "LinkedIn/Job Portal", "Recruitment Agency", "Other"]))
+    assert hear.key == "how_did_you_hear"
+    visa = one(q("Will you now or in the future require Vertiv to help you obtain an employment visa?", "radio",
+                 ["No", "Yes"]))
+    assert (visa.key, visa.value) == ("sponsorship", "No")
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier1.citizenship = "Canada"  # the fictional sample profile has none
+    nationality = one(q("Nationality"), profile=profile)
+    assert (nationality.key, nationality.value) == ("citizenship_country", "Canada")
+    dual = one(q("Please specify dual citizenship if applicable"), profile=profile)
+    assert (dual.key, dual.value) == ("dual_citizenship", "N/A")
+    profile.tier1.citizenship = "Canada and France"
+    assert one(q("Please specify dual citizenship if applicable"), profile=profile).value is None  # his to answer
+    # Draper (2026-11-20): a citizenship besides the U.S. one
+    other = q("Do you hold citizenship(s) with country(ies) other than the US?", "select", ["Yes", "No"])
+    assert (one(other, profile=profile).key, one(other, profile=profile).value) == ("other_citizenship", "Yes")
+    profile.tier1.citizenship = "United States"
+    assert one(other, profile=profile).value == "No"
+
+
 def test_lucid_contractor_sms_and_hours_questions() -> None:  # Lucid and Snowflake, 2026-11-19
     current = one(q("Are you a current contractor for Lucid, or any of its entities?", "select", ["Yes", "No"]))
     assert (current.key, current.value) == ("previous_employee", "No")
@@ -491,6 +520,10 @@ def test_questions_about_past_employers_follow_the_master_list() -> None:  # T-M
         assert (answer.key, answer.kind, answer.value) == ("previous_employee", "auto", "No"), label
     kalini = one(q("Have you ever worked for Kalini Industries?", "select", ["Yes", "No"]))
     assert kalini.value is None  # an employer in the master list: Vatsal answers
+    # Wurl (2026-11-20): its parent company named, with "before" after the verb
+    parent = one(q("Have you worked at AppLovin or any of its affiliates before?", "select", ["Yes", "No"]))
+    assert (parent.key, parent.kind, parent.value) == ("previous_employee", "auto", "No")
+    assert one(q("Have you worked with Python before?", "select", ["Yes", "No"])).key != "previous_employee"
     age = one(q("In order to be employed at T-Mobile, you must be at least 18 years of age. Can you meet this "
                 "requirement?", "select", ["Yes", "No"]))
     assert age.key == "age_18"
@@ -748,3 +781,60 @@ def test_a_yes_no_question_naming_the_resume_is_not_the_upload() -> None:  # Sco
                     "and accurate to the best of my knowledge.", "select", ["Yes", "No"]))
     assert confirm.kind != "file" and confirm.key != "resume"
     assert one(q("Resume/CV", "file")).key == "resume"
+
+
+def test_a_place_past_a_search_box_s_first_entries_is_searched_for() -> None:
+    # Fortinet and Ralliant (2026-11-20): Oracle's ZIP Code, City and County boxes show the first 500 places of every
+    # U.S. place until something is typed, so the profile's own was "not an option" and went to Claude, who couldn't
+    # give it either. It's now put in the list's shape and searched for when the box is filled.
+    profile = PROFILE.model_copy(deep=True)
+    address = profile.tier1.address
+    address.postal_code, address.city, address.county, address.state = "55555", "Springfield", "Example County", "Washington"
+    zips = ["00501, Holtsville, Suffolk, NY", "00544, Holtsville, Suffolk, NY", "01001, Agawam, Hampden, MA"]
+    cities = ["Aaronsburg, Centre, PA", "Abbeville, Abbeville, SC"]
+    counties = ["Abbeville, SC", "Acadia, LA"]
+
+    def box(label: str, options: list[str], searchable: bool = True) -> FormQuestion:
+        return FormQuestion(label=label, field_name="generic:" + label, type="select", options=options, required=True,
+                            searchable=searchable)
+
+    for label, options, wanted in (("ZIP Code", zips, "55555, Springfield, Example, WA"),
+                                   ("City", cities, "Springfield, Example, WA"),
+                                   ("County", counties, "Example, WA")):
+        a = one(box(label, options), profile=profile)
+        assert (a.kind, a.value, a.searchable) == ("auto", wanted, True), (label, a)
+    # the entry itself when the box already shows it, never a town that only shares the ZIP code
+    shown = ["55555, Shelbyville, Example, WA", "55555, Springfield, Example, WA"]
+    assert one(box("ZIP Code", shown), profile=profile).value == "55555, Springfield, Example, WA"
+    # a plain dropdown's list is whole: no option, no answer
+    assert one(box("ZIP Code", zips, searchable=False), profile=profile).kind == "unknown"
+    # a list in another shape ("Boston, MA" for cities) isn't guessed at
+    assert one(box("City", ["Aberdeen, WA", "Abilene, TX"]), profile=profile).kind == "unknown"
+
+
+def test_a_box_saying_he_has_read_the_privacy_information_is_ticked() -> None:  # Honeywell Aerospace on Oracle, 2026-11-20
+    a = one(q("I have read the Important Privacy Information", "boolean", ["I have read the Important Privacy Information"]))
+    assert (a.key, a.kind, a.value) == ("terms_consent", "auto", "Yes")
+    assert one(q("I have read the job description and meet its requirements", "boolean", ["Yes"])).key != "terms_consent"
+
+
+def test_statements_that_his_rules_answer_no_to_get_the_none_choice() -> None:  # Honeywell, 2026-11-20
+    statements = ["You are a current or former government official including US military service member or civilian "
+                  "employee of the US government",
+                  "You have a family member, close friend, or person related to you or who referred you in a government "
+                  "position or politically exposed that could represent a conflict of interest or appear as one",
+                  "You are now serving or have served as an \u201cAdvisor,\u201d \u201cConsultant,\u201d or "
+                  "\u201cspecial Government employee\u201d to any U.S. Government agency (such as DoD or NASA)?",
+                  "No statements apply to me"]
+    a = one(q("Check all of the following statements that apply to you:", "multi_select", statements))
+    assert (a.kind, a.value) == ("auto", "No statements apply to me")
+    # a statement his rules don't settle (a skill, a preference) leaves the question to him
+    mixed = one(q("Check all of the following statements that apply to you:", "multi_select",
+                  ["I have a valid driver's license", "No statements apply to me"]))
+    assert mixed.kind != "auto"
+
+
+def test_a_third_address_line_stays_empty() -> None:  # Honeywell and Fortinet on Oracle, 2026-11-20
+    third = one(q("Address Line 3", "text", required=False))
+    assert third.kind == "skip" and third.value is None
+    assert one(q("Address Line 1")).value == PROFILE.tier1.address.street

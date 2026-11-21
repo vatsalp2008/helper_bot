@@ -50,8 +50,18 @@ DISCOVER_JS = r"""
     seen[id] = (seen[id] || 0) + 1;
     if (seen[id] > 1) id += '-' + seen[id];
     const labelEl = f.querySelector('legend') || f.querySelector('label');
-    let label = text(labelEl);
-    const required = !!f.querySelector('abbr[title=required], .requiredAsterisk') || /\*\s*$/.test(label);
+    let label = text(labelEl), labelFrom = null;
+    if (!label) {
+      // an attachment question keeps an empty <label>; its words are a rich-text block the upload names with
+      // aria-labelledby ("Please upload a current unofficial transcript.", The Aerospace Corporation, 2026-11-20)
+      const named = [f, ...f.querySelectorAll('[aria-labelledby]')]
+        .flatMap(e => (e.getAttribute('aria-labelledby') || '').split(/\s+/)).filter(Boolean)
+        .map(id => document.getElementById(id)).find(e => e && text(e));
+      labelFrom = f.querySelector('[data-automation-id=richText]') || named || null;
+      label = text(labelFrom);
+    }
+    const required = !!f.querySelector('abbr[title=required], .requiredAsterisk') || /\*\s*$/.test(label)
+      || !!(labelFrom && labelFrom.querySelector('abbr[title=required], .requiredAsterisk'));
     label = label.replace(/\s*\*+\s*$/, '').trim();
     let type = null, options = [];
     const boxes = [...f.querySelectorAll('input[type=checkbox]')];
@@ -111,6 +121,23 @@ def went_wrong(page: Any) -> bool:
         return shown.count() > 0 and shown.first.is_visible()
     except Exception:
         return False
+
+
+# The posting is gone (HPE, 2026-11-19: "The page you are looking for doesn't exist." where the posting had been).
+_GONE = re.compile(r"the page you are looking for (?:doesn.t|does not) exist|(?:job|posting|position)(?: posting)?"
+                   r" (?:is )?no longer available|(?:job|position) (?:you are (?:trying to apply|applying) for )?has "
+                   r"(?:been filled|been closed|expired)", re.IGNORECASE)
+
+
+def posting_gone(page: Any) -> Optional[str]:
+    """The site's words when the posting has been taken down, else None. Only asked off the application's pages."""
+    try:
+        shown = page.get_by_text(_GONE)
+        if shown.count() and shown.first.is_visible():
+            return " ".join(shown.first.inner_text().split())[:160]
+    except Exception:
+        pass
+    return None
 
 
 def current_step(page: Any) -> Optional[str]:
@@ -345,7 +372,7 @@ def choose_prompt(page: Any, where: Any, terms: list[str], accept: Callable[[str
             continue
         options = page.locator(PROMPT_OPTIONS)
         texts = [" ".join(t.split()) for t in options.all_inner_texts()]
-        seen = [t for t in texts if t]
+        seen = [t for t in texts if t] or seen  # the note names the last list that showed anything
         scored = sorted(((accept(t), i) for i, t in enumerate(texts) if t), key=lambda x: (-x[0], x[1]))
         if scored and scored[0][0] >= threshold:
             options.nth(scored[0][1]).click()
@@ -657,12 +684,21 @@ def school_search_terms(school: str) -> list[str]:
     return [t for t in dict.fromkeys([short, school]) if t]
 
 
+_STUDY_FILLER = {"and", "of", "the", "in", "for", "with"}
+_GENERIC_STUDY = {"engineering", "science", "sciences", "studies", "technology", "technologies", "general", "applied",
+                  "arts"}
+
+
 def study_search_terms(field: str) -> list[str]:
-    """The field of study as written, then its longest word: Cadence's list (2026-11-19) found nothing for
-    'Computer Science', and 'Computer' lists every computing field to choose from."""
-    words = re.findall(r"[A-Za-z]+", field)
-    short = max(words, key=len) if len(words) > 1 else ""
-    return [t for t in dict.fromkeys([field, short]) if t]
+    """The field of study as written, then each of its words, distinctive ones first (longest first among them).
+    'Computer' lists every computing field to choose from (Cadence, 2026-11-19, found nothing for 'Computer
+    Science'), while 'Engineering' lists engineering from Aerospace on, and Workday shows only the start of a long
+    list (Signet, 2026-11-19, never reached 'Computer Engineering')."""
+    words = [w for w in dict.fromkeys(re.findall(r"[A-Za-z]+", field)) if w.lower() not in _STUDY_FILLER]
+    if len(words) < 2:
+        return [field] if field else []
+    ranked = sorted(words, key=lambda w: (w.lower() in _GENERIC_STUDY, -len(w)))
+    return [t for t in dict.fromkeys([field, *ranked]) if t]
 
 
 def study_score(field: str, option: str) -> float:

@@ -80,3 +80,29 @@ def test_a_spaced_spelling_of_xgboost_is_found(setup) -> None:  # type: ignore[n
                           sets, TechFamiliesFile())
     xgboost = kw.term("XGBoost")
     assert xgboost is not None and xgboost.status == "in_items" and xgboost.spellings == ["XG Boost"]
+
+
+def test_everyday_rest_and_the_rocky_mountains_are_no_technologies(setup) -> None:  # type: ignore[no-untyped-def]
+    # Melaleuca (2026-11-20): "the rest of Melaleuca" read as REST APIs and "the Rocky Mountains" as Rocky Linux, so
+    # projects scored on words the posting never meant as technologies
+    master, vocab, sets = setup
+    prose = "About us\n- Join the rest of Melaleuca in Idaho Falls, at the foot of the Rocky Mountains.\n"
+    kw = extract_keywords(prose, master, vocab, sets, TechFamiliesFile())
+    assert kw.term("REST APIs") is None and kw.term("Rocky Linux") is None
+    kw = extract_keywords(prose + "Requirements\n- Build REST APIs and RESTful services on RHEL or Rocky servers",
+                          master, vocab, sets, TechFamiliesFile())
+    rest, rocky = kw.term("REST APIs"), kw.term("Rocky Linux")
+    assert rest is not None and "rest" not in rest.spellings and rest.count == 2
+    assert rocky is not None and rocky.spellings == ["Rocky"] and rocky.count == 1
+
+
+def test_t_mobile_fiber_is_no_go_framework(setup) -> None:  # type: ignore[no-untyped-def]
+    # T-Mobile (2026-11-20): "The Fiber Growth team" read as Go's Fiber framework, listed as a gap no resume could fill
+    master, vocab, sets = setup
+    kw = extract_keywords("What It's Like\n- The Fiber Growth team acquires new fiber customers.\n", master, vocab,
+                          sets, TechFamiliesFile())
+    assert kw.term("Fiber") is None
+    kw = extract_keywords("Requirements\n- Build Go services with Go Fiber or Gin.\n", master, vocab, sets,
+                          TechFamiliesFile())
+    fiber = kw.term("Fiber")
+    assert fiber is not None and fiber.spellings == ["Go Fiber"]

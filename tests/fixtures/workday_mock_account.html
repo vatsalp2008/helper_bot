@@ -1,6 +1,7 @@
 <!doctype html>
 <!-- A small imitation of Workday's account step for tests, with the real pages' data-automation-id markup.
-     The hash picks the behavior: #new (no account yet), #exists (an account exists), #wrong (wrong password). -->
+     The hash picks the behavior: #new (no account yet), #exists (an account exists), #wrong (wrong password),
+     #late (no account yet, and the form shows 2.5 seconds after the step title, like Symbotic's slow page). -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -51,15 +52,21 @@
   $('createButton').onclick = () => {
     window.honeypot = document.querySelector('[data-automation-id=beecatcher]').value;
     if (!$('consent').checked) return error('You must agree to continue.');
-    if (mode === 'new') { window.created = true; return done(); }
+    if (mode === 'new' || mode === 'late') { window.created = true; return done(); }
     error('An account using this email address already exists.');
   };
   $('signInButton').onclick = () => {
     window.signInAttempts += 1;
     const password = document.querySelector('#signin [data-automation-id=password]').value;
     if (mode === 'exists' && password === 'right-pass') return done();
+    if (mode === 'blocked') return error('Your sign in request was blocked for alex@example.com. Try again later.');
+    if (mode === 'locked') return error('Your account has been locked.');
     error('Wrong email address or password.');
   };
+  if (mode === 'late') {
+    $('create').classList.add('hidden');
+    setTimeout(() => $('create').classList.remove('hidden'), 2500);
+  }
 </script>
 </body>
 </html>

@@ -258,6 +258,9 @@ class FormQuestion(StrictModel):
     description: Optional[str] = None
     max_length: Optional[int] = None
     section: str = "questions"  # questions | location | eeoc | demographic
+    # a search box: the options read are what it shows before anything is typed, which can be only the start of a long
+    # list (Oracle's ZIP Code, City and County show their first 500 places; Fortinet and Ralliant, 2026-11-20)
+    searchable: bool = False
 
 
 class Job(StrictModel):

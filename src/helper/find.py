@@ -445,7 +445,9 @@ def check_all(paths: Paths, cfg: Any, found: list[Found], limit: int = 100) -> N
             return
         keywords = extract_keywords(job.description_text, ctx.master, ctx.vocab, ctx.project_sets, ctx.families)
         e = check_eligibility(job, cfg, caps=caps, applications=applications, profile=profile, keywords=keywords)
-        f.company, f.title = job.company or f.company, job.role_title or f.title
+        # a list's company stays when the page gave only a placeholder (UKG's "Unknown", 2026-11-20)
+        f.company = job.company if job.company and job.company.strip().lower() not in ("unknown", "?") else f.company
+        f.title = job.role_title or f.title
         f.location = job.location or f.location
         f.eligibility = {"recommendation": e.recommendation, "grad_date": e.grad_date,
                          "blockers": [x.message for x in e.flags if x.level == "blocker"],

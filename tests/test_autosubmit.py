@@ -14,7 +14,7 @@ from helper.apply import fill_run
 from helper.autosubmit import Gate, blockers, clean_review_runs, readiness, record_fill_run, run_problems
 from helper.config import Paths, load_config
 from helper.models import Job, RunState
-from helper.runs import save_state, set_step, write_json
+from helper.runs import load_state, save_state, set_step, write_json
 from helper.tracker import repo as tracker_repo
 from helper.tracker.commands import open_db
 
@@ -146,6 +146,21 @@ def test_auto_mode_submits_once_when_every_condition_holds(repo: Path, capsys: p
         assert [tuple(r) for r in rows] == [("auto", "applied", 1)]
     finally:
         conn.close()
+    saved = json.loads((paths.runs / run_id / "state.json").read_text(encoding="utf-8"))
+    assert saved["options"]["helper_clicked_submit"]  # kept, so no refill of this run clicks Submit (rule 10)
+
+
+def test_a_refill_never_clicks_submit_again(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    # Formlabs (2026-11-20): helper clicked Submit and Greenhouse held it for an emailed code; a refill with every
+    # condition still holding would have clicked Submit a second time (rule 10)
+    paths, run_id, app_id = start(repo, clean_runs=5)
+    state = load_state(paths, run_id)
+    state.options["helper_clicked_submit"] = "2026-11-19T22:41:00"
+    save_state(paths, state)
+    outcome = fill_run(paths, load_config(paths), run_id, headless=True, wait_minutes=0.05, poll_seconds=0.2)
+    printed = capsys.readouterr().out
+    assert "never clicks it again (rule 10)" in printed and "Clicking Submit once" not in printed
+    assert outcome.status == "filled"  # filled, and nobody clicked Submit
 
 
 def test_auto_mode_falls_back_to_review_and_says_why(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -179,8 +194,9 @@ def test_workday_can_submit_with_best_guesses_but_not_with_gaps() -> None:  # Va
 
 def test_company_sites_named_by_their_system_follow_the_company_site_rule() -> None:  # Laborie, Fortinet, 2026-11-16
     from helper.autosubmit import site_kind
-    assert site_kind("jobvite") == "generic" and site_kind("oracle") == "generic" and site_kind("generic") == "generic"
+    assert site_kind("jobvite") == "generic" and site_kind("rippling") == "generic" and site_kind("generic") == "generic"
     assert site_kind("workday") == "workday" and site_kind("icims") == "icims" and site_kind("taleo") == "taleo"
+    assert site_kind("oracle") == "oracle"  # its own adapter since 2026-11-19
 
 
 def test_a_page_without_its_form_is_reloaded_once(monkeypatch) -> None:  # type: ignore[no-untyped-def]

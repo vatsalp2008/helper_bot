@@ -62,6 +62,14 @@ STOPPED = ("Stopped. Everything finished so far is saved: run the same command a
            "for a run, to go on.")
 
 
+_WINDOW_CLOSED = re.compile(r"(Target page, context or browser|Browser) has been closed|browser has disconnected", re.I)
+
+
+def window_closed(exc: BaseException) -> bool:
+    """helper's browser window went away under it: Vatsal closed it, or Chromium quit."""
+    return (type(exc).__module__ or "").startswith("playwright") and bool(_WINDOW_CLOSED.search(str(exc)))
+
+
 def explain(exc: BaseException) -> Optional[str]:
     """What went wrong, in plain words, for failures that aren't helper's own messages: a missing install, a busy
     browser profile or database, no internet, a slow site. None when helper doesn't recognize it (a bug)."""
@@ -75,7 +83,7 @@ def explain(exc: BaseException) -> Optional[str]:
         if re.search(r"ProcessSingleton|SingletonLock|user data directory is already in use", text, re.I):
             return ("helper's browser profile is in use: another `helper fill` still has its window open, or one that "
                     "crashed left the profile locked. Close that Chromium window (or let its run finish) and try again.")
-        if re.search(r"(Target page, context or browser|Browser) has been closed|browser has disconnected", text, re.I):
+        if window_closed(exc):
             return ("The browser window was closed before helper finished. Run the same command again to pick up where "
                     "it stopped.")
         if "Timeout" in kind or "Timeout" in text.split("\n")[0]:

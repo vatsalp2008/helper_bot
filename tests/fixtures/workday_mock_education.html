@@ -94,7 +94,12 @@
     input.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
       closeLists();
-      const found = choices.filter(c => c.toLowerCase().includes(input.value.toLowerCase().trim()));
+      // data-match="any-word" and data-max: a list that matches any typed word and renders only its first entries
+      // (Signet, 2026-11-19: 'Engineering' showed Aerospace to Ceramic and never reached Computer Engineering)
+      const typed = input.value.toLowerCase().trim();
+      const found = choices.filter(c => input.dataset.match === 'any-word'
+        ? typed.split(/\s+/).some(w => c.toLowerCase().includes(w)) : c.toLowerCase().includes(typed))
+        .slice(0, +(input.dataset.max || choices.length));
       if (found.length === 1) { pick(found[0]); return; }
       const box = document.createElement('div');
       box.className = 'popup';

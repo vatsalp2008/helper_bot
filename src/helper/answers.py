@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import Field
 
@@ -40,6 +40,7 @@ class PlannedAnswer(StrictModel):
     max_length: Optional[int] = None
     description: Optional[str] = None
     status: Literal["ready", "needs_review", "approved"] = "ready"
+    searchable: bool = False  # FormQuestion.searchable: the options are what the box showed before typing
 
 
 class AnswerPlan(StrictModel):
@@ -140,7 +141,9 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("terms_consent", r"\b(read and accept|accept the|acknowledge (the|that)|agree to the)\b.{0,100}\b(privacy|terms|notice|"
                       r"policy|conditions)\b|\b(privacy|data protection) (notice|policy)\b.{0,60}\b(accept|acknowledge|"
                       r"agree|consent)\b|\bconfirm\b.{0,40}\b(read|agree)\b.{0,60}\b(privacy|notice|nda|"
-                      r"non-?disclosure|terms|policy)\b", 0.9),  # Shopify: "confirm you've read our applicant privacy notice"
+                      r"non-?disclosure|terms|policy)\b"  # Shopify: "confirm you've read our applicant privacy notice"
+                      # Honeywell Aerospace's Oracle box, 2026-11-20: "I have read the Important Privacy Information"
+                      r"|\bI have read\b.{0,60}\b(privacy|terms|notice|policy|disclaimer)\b", 0.9),
     ("relatives_at_company", r"\b(relatives?|family members?|immediate family|related to|close personal relationship)\b"
                              r".{0,120}\b(employ\w*|work\w*|board|trustee)\b", 0.95),
     ("employment_restrictions", r"\bnon-?compete\b|\bemployment restrictions?\b|\brestrictive covenants?\b|"
@@ -183,6 +186,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("permanent_work", r"\bwork permanently\b|\bpermanent(ly)? (authori[sz]ation|right) to work\b|\bpermanent work "
                        r"authori[sz]ation\b", 0.95),
     ("sponsorship", r"\bsponsor", 0.95),
+    # "Will you now or in the future require Vertiv to help you obtain an employment visa?" (Vertiv on Oracle, 2026-11-19)
+    ("sponsorship", r"\brequire\b.{0,40}\bhelp you (obtain|get|secure)\b.{0,30}\b(employment|work) visa\b", 0.95),
     # "Are you an F1 student who has or will be applying for CPT, OPT, or STEM OPT?" (Boston Scientific, 2026-11-17):
     # the profile's f1_student answer. After the sponsorship rule, so a sponsorship question naming F-1 stays there.
     ("f1_student", r"\bF-?1\b.{0,12}\b(student|visa|status)\b|\bon an? F-?1\b", 0.95),
@@ -191,7 +196,16 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("citizen_of_listed", r"\bcitizen (of|in) (any|one) (one )?of (these|the following|the listed)\b.{0,20}\bcountr", 0.95),
     # "Please select all countries in which you currently hold citizenship or have an active permanent resident
     # status" (Marvell, 2026-11-18): a country list, not the U.S.-status question below
-    ("citizenship_country", r"\bcountry of citizenship\b|\bcitizenship country\b|\bcountry (of|where you hold) "
+    # "Please specify dual citizenship if applicable" (Vertiv on Oracle, 2026-11-19): N/A with one citizenship
+    # "Do you hold citizenship(s) with country(ies) other than the US?" (Draper, 2026-11-20): from the profile
+    ("other_citizenship", r"\bcitizenships?\b.{0,60}\b(other than|besides|apart from|outside( of)?)\s+(the\s+)?"
+                          r"(U\.?\s?S\.?A?\b\.?|United States)", 0.95),
+    # "Check all of the following statements that apply to you:" with government, military, relatives-in-office and
+    # advisor statements and "No statements apply to me" (Honeywell, 2026-11-20): none of them is his
+    # a list of statements, never "How did you hear about us? (select all that apply)"
+    ("none_apply", r"\b(check|select|mark) all (of )?the following\b[^?]{0,40}\bapply\b|\bstatements? (that|which) appl(y|ies)\b", 0.9),
+    ("dual_citizenship", r"\b(dual|second|other|additional) (citizenship|nationality)\b", 0.9),
+    ("citizenship_country", r"^\W*nationality\W*$|\bcountry of citizenship\b|\bcitizenship country\b|\bcountry (of|where you hold) "
                             r"citizenship\b|\bwhat is your citizenship\b|^\W*citizenship\W*$|"
                             r"\bcountr(y|ies)\b[^.?]{0,40}\b(hold|have|held)\b[^.?]{0,15}\bcitizenships?\b", 0.9),
     # a list of statuses ("US Citizen / Lawful Permanent Resident / Protected Person / None"; Muon Space, 2026-11-15)
@@ -228,7 +242,10 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                           r"|\b(have you been|are you currently|are you now)\b.{0,40}\b(employed|working|a contractor)\b"
                           r".{0,20}\b(with|for|by|at)\b"
                           # "Are you a current contractor for Lucid, or any of its entities?" (Lucid, 2026-11-19)
-                          r"|\bare you a current (employee|contractor|consultant)\b", 0.9),
+                          r"|\bare you a current (employee|contractor|consultant)\b"
+                          # "Have you worked at AppLovin or any of its affiliates before?" (Wurl, 2026-11-20); never
+                          # "worked with" (a skill: "Have you worked with Python before?")
+                          r"|\bhave you (ever )?(worked|been employed)\s+(at|for|by)\b.{0,80}\bbefore\b", 0.9),
     ("major", r"\bmajor\b(?! life)|\bdiscipline\b|\bfield of study\b|\barea of study\b", 0.9),  # not "major life activities"
     # "What is the highest level of education you have completed?" (Scout Motors, 2026-11-18): the finished degree
     # (Bachelor's), not the Master's still in progress. Before the general degree rule.
@@ -249,7 +266,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                    r"|\bearliest\b.*\b(start|begin)\b", 0.9),
     ("salary", r"\bsalary\b|\bcompensation\b|\bpay (expectation|range)s?\b|\bwages?\b|"
                r"\b(desired|expected|hourly|annual)\b.{0,20}\b(pay|rate|wage)\b", 0.9),
-    ("how_did_you_hear", r"\bhow did you (hear|learn|find|connect|come across)\b|\bwhere did you (hear|find|learn)\b", 0.95),
+    ("how_did_you_hear", r"\bhow did you (hear|learn|find|connect|come across|come to know)\b|\bwhere did you (hear|find|"
+                         r"learn)\b", 0.95),  # "How did you come to know about this opportunity?" (Vertiv, 2026-11-19)
     ("how_did_you_hear", r"\bsource\b", 0.85),
     ("referral", r"\b(referred|referral)\b", 0.9),
     ("age_18", r"\b18\b|\beighteen\b|\blegal age\b", 0.9),
@@ -262,7 +280,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                          r"\bmembers? of the (u\.?s\.? )?(military|armed forces|national guard|reserves?)\b",
      0.95),
     ("eeo_hispanic", r"\bhispanic\b|\blatin[oax]\b", 0.9),
-    ("eeo_race", r"\brace\b|\bracial\b|\bethnicit|\bethnic (background|identity|origin)\b", 0.85),  # "racial/ethnic"
+    # "racial/ethnic"; Oracle's "Select the races you identify with." (2026-11-20)
+    ("eeo_race", r"\braces?\b|\bracial\b|\bethnicit|\bethnic (background|identity|origin)\b", 0.85),
     ("eeo_gender", r"\bgender\b|^\s*sex\s*\??\s*$", 0.9),
     ("eeo_veteran", r"\bveteran\b", 0.9),
     ("eeo_disability", r"\bdisabilit", 0.9),
@@ -271,6 +290,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                       r"|city)\b|\bwork (location|arrangement)\b", 0.95),
     ("address_zip", r"\bzip\b|\bpostal\b", 0.9),
     ("address_full", r"\b(mailing|home|current|full|permanent|residential) address\b", 0.9),
+    # "Address Line 3" took the street again, a copy of line 1 (Honeywell and Fortinet on Oracle, 2026-11-20)
+    ("address_line_extra", r"\baddress (line )?[3-9]\b", 0.9),
     ("address_line2", r"\baddress (line )?2\b|^\s*(apartment|apt|suite|unit)\b", 0.85),
     ("address_street", r"\bstreet\b|\baddress line\b|\bmailing address\b|\bhome address\b|^\s*address\s*$", 0.85),
     ("address_country", r"^\s*country\b", 0.85),
@@ -313,6 +334,43 @@ _US_STATES = {
 def us_state_name(value: str) -> Optional[str]:
     """'WA' -> 'Washington': for state lists that spell the names out (BambooHR, 2026-11-18)."""
     return _US_STATES.get(value.strip().upper()) if value else None
+
+
+def us_state_code(value: str) -> Optional[str]:
+    """'Washington' or 'wa' -> 'WA'."""
+    v = (value or "").strip()
+    if v.upper() in _US_STATES:
+        return v.upper()
+    return next((code for code, name in _US_STATES.items() if name.lower() == v.lower()), None)
+
+
+# Oracle's geography search boxes (ZIP Code, City, County; Fortinet and Ralliant, 2026-11-20) show the first 500 places
+# of a list of every U.S. place until something is typed, each with the larger places it lies in: "02115, Boston,
+# Suffolk, MA", "Boston, Suffolk, MA", "Suffolk, MA". The profile's place is put in that shape and searched for.
+_PLACE_CHAIN = {"address_zip": ("postal_code", "city", "county", "state"),
+                "address_city": ("city", "county", "state"),
+                "address_county": ("county", "state")}
+
+
+def searched_place(key: Optional[str], q: FormQuestion, address: Any) -> Optional[str]:
+    """The profile's place as a search box's list writes it, when its options show that shape (every entry ends with a
+    state code, and has as many parts as the place's chain). None for any other list."""
+    chain = _PLACE_CHAIN.get(key or "")
+    if not (chain and q.searchable and q.options):
+        return None
+    if any(len(o.split(",")) != len(chain) or not re.fullmatch(r"\s*[A-Z]{2}\s*", o.split(",")[-1]) for o in q.options):
+        return None
+    parts = []
+    for name in chain:
+        value = (getattr(address, name, None) or "").strip()
+        if name == "county":
+            value = re.sub(r"(?i)\s+(county|parish|borough)$", "", value)
+        if name == "state":
+            value = us_state_code(value) or ""
+        if not value:
+            return None
+        parts.append(value)
+    return ", ".join(parts)
 
 
 _FILE_KEYS = ("resume", "cover_letter", "transcript")
@@ -383,6 +441,7 @@ class Value:
     note: Optional[str] = None
     confidence: float = 1.0
     fallback_other: bool = False  # no good option: suggest "Other" for Vatsal to confirm
+    searched: Optional[str] = None  # for a search box whose shown options lack it: the option to search for
 
 
 @dataclass(frozen=True)
@@ -527,6 +586,15 @@ _ASKS_DETAIL = re.compile(r"(?i)\bwhen (does|do|will|did)\b[^?]{0,60}\bexpir|\be
                           r"context)\b|\blist any\b")
 
 
+_NONE_OPTION_RE = re.compile(r"(?i)^\W*(no(ne)?( of (the|these)( above| statements)?)?|no statements? appl(y|ies)( to me)?"
+                             r"|not applicable|n/?a)\W*$|\bno statements? appl(y|ies)\b|\bnone of (the|these)\b")
+# statements his rules answer No to: military service (2026-11-16), relatives (none, 2026-11-15), government work
+# (none in the master list), conflicts of interest and politically exposed people
+_NOT_HIS_RE = re.compile(r"(?i)\b(government|military|armed forces|veteran|politically exposed|public official|official"
+                         r"|relative|family member|spouse|advisor|adviser|consultant|conflict of interest|debarred"
+                         r"|suspended|elected)\b")
+
+
 def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     t1, t2 = ctx.profile.tier1, ctx.profile.tier2
     text = f"{q.label} {q.description or ''}"
@@ -536,6 +604,14 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         value = getattr(item, "value", None)
         return Value(value, f"profile tier2.{name}", confidence=1.0 if auto else 0.7, **kw)  # type: ignore[arg-type]
 
+    if key == "address_line_extra":
+        return Value(None, "nothing for a third address line")
+    if key == "none_apply":  # "No statements apply to me" when every statement is one his rules answer No to
+        none = [o for o in q.options if _NONE_OPTION_RE.search(o)]
+        rest = [o for o in q.options if o not in none]
+        if len(none) == 1 and rest and all(_NOT_HIS_RE.search(o) for o in rest):
+            return Value(none[0], "his rules: no government service, military, relatives in office or advisory roles")
+        return Value(None, "a list of statements that need his answer")
     if key == "first_name":
         return Value(t1.first_name, "profile first_name")
     if key == "last_name":
@@ -634,6 +710,19 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
             return Value(None, "profile citizenship")
         listed = re.search(rf"(?i)\b{re.escape(t1.citizenship)}\b", q.label)
         return Value("Yes" if listed else "No", "profile citizenship (checked against the countries listed)")
+    if key == "other_citizenship":  # a citizenship besides the U.S. one (Draper, 2026-11-20)
+        if not t1.citizenship:
+            return Value(None, "profile citizenship")
+        parts = [p.strip() for p in re.split(r",|/|;|&|\band\b", t1.citizenship) if p.strip()]
+        us = r"(?i)(the )?(u\.?\s?s\.?a?\.?|united states( of america)?|american)"
+        other = any(not re.fullmatch(us, p) for p in parts)
+        return Value("Yes" if other else "No", "profile citizenship (a country other than the U.S.)")
+    if key == "dual_citizenship":  # one citizenship in the profile: none to name (Vertiv, 2026-11-19)
+        single = bool(t1.citizenship) and not re.search(r",|/|;|&|\band\b", t1.citizenship)
+        if not single:
+            return Value(None, "profile citizenship", note="more than one citizenship: Vatsal answers")
+        return Value("N/A" if not q.options else "No", "profile citizenship (one)",
+                     aliases=("no", "none", "n/a", "not applicable"))
     if key == "citizenship_country":  # from the profile (Vatsal, 2026-11-16)
         if not t1.citizenship:
             return Value(None, "profile citizenship")
@@ -808,18 +897,18 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     if key == "language":
         return Value("English", "you apply in English", confidence=0.9)
     if key == "address_city":
-        return Value(t1.address.city, "profile address")
+        return Value(t1.address.city, "profile address", searched=searched_place(key, q, t1.address))
     if key == "address_state":
         return Value(t1.address.state, "profile address",
                      aliases=(_US_STATES.get((t1.address.state or "").upper(), ""),))
     if key == "address_zip":
-        return Value(t1.address.postal_code, "profile address")
+        return Value(t1.address.postal_code, "profile address", searched=searched_place(key, q, t1.address))
     if key == "address_country":
         us = _norm(t1.address.country or "") in ("united states", "united states of america", "usa", "us")
         return Value(t1.address.country, "profile address", aliases=("united states", "usa", "us"),
                      candidates=("United States of America", "United States", "USA") if us else ())
     if key == "address_county":
-        return Value(t1.address.county, "profile address")
+        return Value(t1.address.county, "profile address", searched=searched_place(key, q, t1.address))
     return Value(None, "", note="no profile value for this")
 
 
@@ -843,7 +932,8 @@ def plan_answers(questions: list[FormQuestion], ctx: AnswerContext) -> AnswerPla
             continue
         key, label_conf = key_for(q)
         base = dict(field=q.field_name, label=q.label, type=q.type, required=q.required, options=q.options,
-                    section=q.section, key=key, max_length=q.max_length, description=q.description)
+                    section=q.section, key=key, max_length=q.max_length, description=q.description,
+                    searchable=q.searchable)
         if key == "resume" or (q.type == "file" and key is None and q.required):
             answers.append(PlannedAnswer(**base, kind="file", confidence=1.0, source="the tailored resume PDF"))
             continue
@@ -948,7 +1038,10 @@ def gpa_for(q: FormQuestion, ctx: AnswerContext) -> Optional[str]:
     """The GPA a form asks for: the current program's, or the bachelor's when the question says undergraduate.
     Forms only; never on a resume or cover letter (rule 3). A question about the scale is left to Vatsal."""
     text = f"{q.label} {q.description or ''}"
-    if re.search(r"(?i)\bscale\b", text) or not ctx.grades:
+    # a question about the scale, or a GPA on another one, is Vatsal's; "(4.0 Scale)" only says how the GPA reads
+    # (Honeywell Aerospace's Oracle form, 2026-11-20)
+    four = re.search(r"(?i)\b4(?:\.0+)?[- ]?(?:point )?scale\b|\bscale of 4(?:\.0+)?\b|\bout of 4(?:\.0+)?\b", text)
+    if (re.search(r"(?i)\bscale\b", text) and not four) or not ctx.grades:
         return None
     undergrad = re.search(r"(?i)under ?grad|bachelor", text)
     school = next((e.school for e in ctx.profile.education
@@ -959,12 +1052,15 @@ def gpa_for(q: FormQuestion, ctx: AnswerContext) -> Optional[str]:
             number = float(value)
         except ValueError:
             return value
-        for option in q.options:  # "3.5 - 3.79", "3.5-4.0", "3.5 and above", "Above 3.5"
-            m = re.search(r"(\d\.\d+)\s*(?:-|to|\u2013)\s*(\d\.\d+)", option)
+        for option in q.options:  # "3.5 - 3.79", "3.5-4.0", "3.5-4", "3.5 and above", "Above 3.5", "Lower than 2.74"
+            m = re.search(r"(?<![\d.])(\d(?:\.\d+)?)\s*(?:-|to|\u2013)\s*(\d(?:\.\d+)?)(?![\d.])", option)
             if m and float(m[1]) <= number <= float(m[2]):
                 return option
             m = re.search(r"(?i)(?:above|over|at least)\s*(\d\.\d+)|(\d\.\d+)\s*(?:\+|and above|or higher)", option)
             if m and number >= float(m[1] or m[2]):
+                return option
+            m = re.search(r"(?i)(?:below|under|lower than|less than)\s*(\d(?:\.\d+)?)", option)
+            if m and number < float(m[1]):
                 return option
     return value
 
@@ -1033,6 +1129,9 @@ def _decide(q: FormQuestion, value: Value, label_conf: float, cfg: Config) -> di
                 "note": f"the field takes a number only; your profile says '{value.text}'"}
     if q.type == "boolean":  # one checkbox: the value says whether to tick it, its label is not a choice
         return _finish(q, value, label_conf, text, 1.0, cfg)
+    if q.options and value.searched:  # a place in a search box: its own entry, or found by searching at fill time
+        opt, s = match_option(value.searched, q.options)  # never a looser match (two towns can share a ZIP code)
+        return _finish(q, value, label_conf, opt if opt is not None and s >= 1.0 else value.searched, 1.0, cfg)
     if q.options and q.type == "multi_select":
         picked, scores = [], []
         for part in [p.strip() for p in value.text.split(";") if p.strip()]:

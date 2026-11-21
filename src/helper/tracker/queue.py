@@ -75,9 +75,10 @@ def set_status(conn: sqlite3.Connection, key: str, status: str, reason: Optional
 
 def fill_details(conn: sqlite3.Connection, url: str, *, company: Optional[str] = None, title: Optional[str] = None,
                  location: Optional[str] = None, ats: Optional[str] = None, job_id: Optional[str] = None) -> bool:
-    """A posting put on the list by its link alone ("?" for company and title) takes the details its run read."""
+    """A posting put on the list by its link alone ("?" for company and title), or with a placeholder for the company
+    ("Unknown", UKG's CAS posting, 2026-11-20), takes the details its run read."""
     cur = conn.execute(
-        "UPDATE postings SET company = CASE WHEN COALESCE(company, '') IN ('', '?') THEN COALESCE(?, company) "
+        "UPDATE postings SET company = CASE WHEN COALESCE(company, '') IN ('', '?', 'Unknown') THEN COALESCE(?, company) "
         "ELSE company END, title = CASE WHEN COALESCE(title, '') IN ('', '?') THEN COALESCE(?, title) ELSE title END, "
         "location = COALESCE(NULLIF(location, ''), ?), ats = COALESCE(NULLIF(ats, ''), ?), "
         "job_id = COALESCE(NULLIF(job_id, ''), ?) WHERE url = ?",
