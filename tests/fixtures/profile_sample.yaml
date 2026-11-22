@@ -38,6 +38,7 @@ tier1:
   citizenship_since: null
   willing_to_relocate: null
   work_location_preferences: null
+  spoken_languages: []
 
 education:
   - school: Example University

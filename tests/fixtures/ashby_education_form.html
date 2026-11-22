@@ -1,0 +1,99 @@
+<!doctype html>
+<!-- Ashby's "Education History" system field, as Secureframe's form showed it (2026-11-21): one entry per school with a
+     school search (a combobox whose list opens at page level), Degree, Field of Study, start and end month and year,
+     and "Still Student?"; "+ Add Education" adds an entry with the same ids. The schools are fictional. -->
+<html>
+<head><meta charset="utf-8"><title>Software Engineer @ Mockco</title></head>
+<body>
+<div class="ashby-application-form-container">
+  <div data-field-path="_systemfield_email">
+    <label class="ashby-application-form-question-title _required_f7cvd_91" for="_systemfield_email">Email</label>
+    <div><input placeholder="hello@example.com..." name="_systemfield_email" required id="_systemfield_email" type="email" value=""></div>
+  </div>
+  <div data-field-path="_systemfield_education_history">
+    <label class="ashby-application-form-question-title _required_f7cvd_91" for="_systemfield_education_history">Education History</label>
+    <div id="entries">
+      <div class="ashby-application-form-input-education-entry">
+        <div class="ashby-application-form-input-education-entry-header"><span>Education</span>
+          <button class="ashby-application-form-input-education-entry-delete" disabled><span>Delete</span></button></div>
+        <div>
+          <div><label for="_systemfield_education_history-school">School</label>
+            <div><input class="ashby-application-form-input-autocomplete" placeholder="Search schools..." aria-autocomplete="list"
+                        aria-expanded="false" aria-haspopup="listbox" role="combobox" value=""><button></button></div></div>
+          <div>
+            <div><label for="_systemfield_education_history-degree">Degree</label>
+              <input class="ashby-application-form-input-text" id="_systemfield_education_history-degree" placeholder="e.g. Bachelor of Science" type="text" value=""></div>
+            <div><label for="_systemfield_education_history-major">Field of Study</label>
+              <input class="ashby-application-form-input-text" id="_systemfield_education_history-major" placeholder="e.g. Computer Science" type="text" value=""></div>
+          </div>
+          <div><div><label for="_systemfield_education_history-startDate">Start Date</label>
+            <div id="_systemfield_education_history-startDate"><div><select class="month"></select></div><div><select class="year"></select></div></div></div></div>
+          <div><div><label for="_systemfield_education_history-endDate">End Date</label>
+            <div id="_systemfield_education_history-endDate"><div><select class="month"></select></div><div><select class="year"></select></div></div></div></div>
+          <label for="_systemfield_education_history-isCurrent"><div><span data-disabled="false">
+            <input type="checkbox" id="_systemfield_education_history-isCurrent"></span>Still Student?</div></label>
+        </div>
+      </div>
+    </div>
+    <button class="ashby-application-form-input-education-add">+ Add Education</button>
+  </div>
+</div>
+<script>
+  const SCHOOLS = [
+    ['Springfield College', 'United States', 'springfield.edu'],
+    ['Springfield Technical Community College', 'United States', 'stcc.edu'],
+    ['Springfield University', 'United States', 'springfield-u.edu'],
+    ['Shelbyville Institute of Technology', 'United States', 'sit.edu'],
+    ['University of Shelbyville', 'United States', 'shelbyville.edu'],
+  ];
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October',
+                  'November', 'December'];
+  function dates(entry) {
+    for (const s of entry.querySelectorAll('select.month')) {
+      s.innerHTML = '<option disabled hidden value="" selected>Month...</option>' +
+        MONTHS.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+    }
+    for (const s of entry.querySelectorAll('select.year')) {
+      // next year down, as on the real form (2027 first in 2026): a later graduation year isn't offered
+      let years = ''; for (let y = new Date().getFullYear() + 1; y >= 1990; y--) years += `<option value="${y}">${y}</option>`;
+      s.innerHTML = '<option disabled hidden value="" selected>Year...</option>' + years;
+    }
+  }
+  function closeList() { document.querySelectorAll('[role=listbox]').forEach(l => l.remove()); }
+  function search(box) {
+    closeList();
+    const q = box.value.trim().toLowerCase();
+    if (!q) return;
+    setTimeout(() => {  // the real list comes from a search request a moment later
+      if (box.value.trim().toLowerCase() !== q) return;
+      closeList();
+      const list = document.createElement('div');
+      list.setAttribute('role', 'listbox');
+      for (const [name, country, domain] of SCHOOLS.filter(s => s[0].toLowerCase().includes(q))) {
+        const o = document.createElement('div');
+        o.setAttribute('role', 'option');
+        o.innerHTML = `<div><div><span>${name}</span><span>${country}</span></div><span>${domain}</span></div>`;
+        // the box shows the pick a moment after the click (Secureframe, 2026-11-21: helper read it too early)
+        o.onclick = () => { closeList(); setTimeout(() => { box.value = name; box.setAttribute('aria-expanded', 'false'); }, 400); };
+        list.appendChild(o);
+      }
+      box.setAttribute('aria-expanded', 'true');
+      document.body.appendChild(list);  // a portal, outside the entry
+    }, 300);
+  }
+  function wire(entry) {
+    const box = entry.querySelector('input[role=combobox]');
+    box.addEventListener('input', () => search(box));
+  }
+  const first = document.querySelector('.ashby-application-form-input-education-entry');
+  const blank = first.cloneNode(true);
+  dates(first); wire(first);
+  document.querySelector('.ashby-application-form-input-education-add').onclick = () => {
+    const entry = blank.cloneNode(true);
+    entry.querySelector('.ashby-application-form-input-education-entry-delete').disabled = false;
+    document.getElementById('entries').appendChild(entry);
+    dates(entry); wire(entry);
+  };
+</script>
+</body>
+</html>

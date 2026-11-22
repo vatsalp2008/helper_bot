@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import parse_qs, urlparse
@@ -85,6 +86,117 @@ def date_text(value: str) -> str:
 def fill_form(page: Any, answers: list[Any], resume_pdf: Path, *, country: Optional[str], city: Optional[str],
               pause: Callable[[], None]) -> list[common.FieldResult]:
     return dom.fill_dom_form(page, answers, resume_pdf, city=city, pause=pause, date_text=date_text)
+
+
+EDUCATION = "[data-field-path='_systemfield_education_history']"
+_EDUCATION_ENTRY = ".ashby-application-form-input-education-entry"
+_EDUCATION_ADD = "button.ashby-application-form-input-education-add, button:has-text('Add Education')"
+
+
+def fill_education(root: Any, schools: Any, pause: Callable[[], None]) -> list[common.FieldResult]:
+    """Ashby's Education History (a system field): one entry per school in the profile, with the school picked from
+    Ashby's school search, degree, field of study, start and end month and year, and "Still Student?" for the school he
+    is at now. Secureframe's was required (2026-11-21); helper had read the whole field as one checkbox and left it to
+    Vatsal. Forms without it are left alone."""
+    widget = root.locator(EDUCATION)
+    if not widget.count():
+        return []
+    try:
+        schools = schools() if callable(schools) else schools
+    except HelperError as exc:
+        return [common.FieldResult("education-0", "Education", False, None, f"couldn't list your schools: {exc}")]
+    entries = widget.locator(_EDUCATION_ENTRY)
+    today = date.today()
+    results: list[common.FieldResult] = []
+    for i, s in enumerate(schools):
+        field, label = f"education-{i}", f"Education {i + 1}: {s.degree}, {s.school}"
+        if entries.count() <= i:
+            add = widget.locator(_EDUCATION_ADD)
+            if not add.count():
+                break  # the form takes one school: the first (current) one is in
+            add.first.click()
+            try:
+                entries.nth(i).wait_for(timeout=5000)
+            except Exception:
+                results.append(common.FieldResult(field, label, False, None, "the next education entry didn't appear"))
+                break
+        entry = entries.nth(i)
+        current = s.end is not None and (s.end.year, s.end.month) >= (today.year, today.month)
+        problems: list[str] = []
+        try:
+            ok, chosen = _choose_school(root, entry, s.school)
+            if not ok:
+                problems.append(f"school: {chosen}")
+            for suffix, text in (("degree", s.degree), ("major", s.field_of_study)):
+                box = entry.locator(f"input[id$='-{suffix}']")
+                if text and box.count():
+                    box.first.fill(text)
+                    if box.first.input_value() != text:
+                        problems.append(f"{suffix} didn't keep its text")
+            for which, when in (("startDate", s.start), ("endDate", s.end)):
+                selects = entry.locator(f"[id$='-{which}'] select")
+                if when is None or selects.count() < 2:
+                    continue
+                offered = selects.nth(1).evaluate("s => [...s.options].map(o => o.value)")
+                if str(when.year) not in offered:
+                    if which == "endDate" and current:
+                        continue  # a graduation year the list doesn't offer yet: "Still Student?" says it
+                    problems.append(f"{which}: {when.year} isn't one of the years")
+                    continue
+                selects.nth(0).select_option(value=str(when.month))
+                selects.nth(1).select_option(value=str(when.year))
+            if current:
+                still = entry.locator("input[type=checkbox][id$='-isCurrent'], input[type=checkbox]")
+                if still.count() and not common.tick(still.first):
+                    problems.append("'Still Student?' didn't tick")
+        except Exception as exc:  # one entry's trouble is reported; the rest of the form still gets filled
+            problems.append(f"{type(exc).__name__}: {str(exc)[:120]}")
+        span = " to ".join(w.display() for w in (s.start, None if current else s.end) if w) + (
+            " to present" if current else "")
+        results.append(common.FieldResult(field, label, not problems, span, "; ".join(problems)))
+        pause()
+    return results
+
+
+def _choose_school(root: Any, entry: Any, school: str) -> tuple[bool, str]:
+    """Search Ashby's school list and pick the entry that names the school (not the first one it lists: a search for
+    'Northeastern' also lists Northeastern Illinois University). Nothing chosen leaves the box empty."""
+    from ..answers import match_option
+    from .workday_page import school_search_terms
+
+    box = entry.locator("input[role=combobox]").first
+    listed: list[str] = []
+    for term in school_search_terms(school):
+        box.click()
+        box.fill("")
+        box.type(term, delay=40)
+        options = root.locator("[role=listbox] [role=option]")
+        try:
+            options.first.wait_for(timeout=8000)
+            box.page.wait_for_timeout(400)  # the list settles
+        except Exception:
+            continue
+        names = [" ".join((o.locator("span").first.inner_text() if o.locator("span").count() else o.inner_text()).split())
+                 for o in options.all()]
+        listed = names
+        scores = [match_option(school, [n])[1] for n in names]
+        best = max(range(len(names)), key=lambda k: scores[k]) if names else -1
+        if best >= 0 and scores[best] >= 0.85:
+            options.nth(best).click()
+            shown = ""
+            for _ in range(15):  # the box shows the pick a moment after the click (Secureframe, 2026-11-21)
+                shown = box.input_value()
+                if school.lower() in shown.lower() or names[best].lower() in shown.lower():
+                    return True, names[best]
+                box.page.wait_for_timeout(200)
+            return False, f"picked '{names[best]}' but the box shows '{shown}'"
+    box.fill("")
+    try:
+        box.press("Escape")
+    except Exception:
+        pass
+    seen = f" (it listed: {', '.join(listed[:4])})" if listed else " (the search listed nothing)"
+    return False, f"'{school}' isn't in Ashby's school list{seen}"
 
 
 def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:

@@ -126,6 +126,11 @@ class EducationEntry(StrictModel):
     end: str  # "per_run" = graduation date chosen for each application
 
 
+class SpokenLanguage(StrictModel):
+    language: str
+    level: str  # Fluent, Native, Advanced...
+
+
 class Tier1(StrictModel):
     """Auto-filled without asking. None means the field pauses the run."""
 
@@ -149,6 +154,8 @@ class Tier1(StrictModel):
     citizenship_since: Optional[str] = None  # the year it was granted (by birth: the birth year)
     willing_to_relocate: Optional[str] = None
     work_location_preferences: Optional[str] = None
+    # spoken languages and his level in each, for forms' Languages sections (Vatsal, 2026-11-21: English, Fluent)
+    spoken_languages: list[SpokenLanguage] = Field(default_factory=list)
 
 
 class Tier2Item(StrictModel):

@@ -33,7 +33,9 @@ PROMPT_OPTIONS = "[data-automation-id=activeListContainer] [role=option]"
 SELECTED_ITEMS = "[data-automation-id=selectedItemList] [data-automation-id=promptOption]"
 # Jabil (2026-11-20) titles its jobs "Work or Other Experience": its fields came to Claude as loose questions, typed
 # over helper's own entry (the home address as the job's location), and Workday refused the page with "Page Error"s.
-SPECIAL_SECTIONS = re.compile(r"^(Work(?:-or-Other)?-Experience|Education|Certifications|Skills|Languages|Resume/CV"
+# Languages isn't one: its entry (Language, Overall and the like) is answered from the profile's spoken_languages.
+# Skipped, Advance Auto's required entry stayed empty and Workday refused My Experience (2026-11-21).
+SPECIAL_SECTIONS = re.compile(r"^(Work(?:-or-Other)?-Experience|Education|Certifications|Skills|Resume/CV"
                               r"|Websites)-")
 WORK_TITLE = re.compile(r"^\s*Work(?: or Other)? Experience\s*$", re.I)
 DATE_SECTIONS = ("Month", "Day", "Year")

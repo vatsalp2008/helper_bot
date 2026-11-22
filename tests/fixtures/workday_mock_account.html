@@ -53,6 +53,11 @@
     window.honeypot = document.querySelector('[data-automation-id=beecatcher]').value;
     if (!$('consent').checked) return error('You must agree to continue.');
     if (mode === 'new' || mode === 'late') { window.created = true; return done(); }
+    if (mode === 'verify') {  // Workday asks to verify the new account by email first
+      window.created = true;
+      $('create').insertAdjacentHTML('beforebegin', '<p>Please verify your account. We sent an email to alex@example.com.</p>');
+      return;
+    }
     error('An account using this email address already exists.');
   };
   $('signInButton').onclick = () => {

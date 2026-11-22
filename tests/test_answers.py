@@ -838,3 +838,29 @@ def test_a_third_address_line_stays_empty() -> None:  # Honeywell and Fortinet o
     third = one(q("Address Line 3", "text", required=False))
     assert third.kind == "skip" and third.value is None
     assert one(q("Address Line 1")).value == PROFILE.tier1.address.street
+
+
+def test_a_languages_section_is_answered_from_the_spoken_languages() -> None:
+    # Advance Auto's Workday (2026-11-21) required a Language and its "Overall" level on My Experience; Vatsal: English,
+    # Fluent. The sample profile has none, so it's set here.
+    profile = PROFILE.model_copy(deep=True)
+    from helper.models import SpokenLanguage
+
+    profile.tier1.spoken_languages = [SpokenLanguage(language="English", level="Fluent")]
+    section = "Languages section"
+    scale = ["Beginner", "Intermediate", "Advanced", "Fluent", "Native"]
+    language = one(q("Language", "prompt", description=section), profile=profile)
+    assert (language.kind, language.value) == ("auto", "English")
+    overall = one(q("Overall", "select", scale, description=section), profile=profile)
+    assert (overall.kind, overall.value) == ("auto", "Fluent")
+    # a scale without "Fluent": its top level short of native
+    reading = one(q("Reading", "select", ["Beginner", "Intermediate", "Advanced", "Native"], description=section),
+                  profile=profile)
+    assert (reading.kind, reading.value) == ("auto", "Advanced")
+    fluent = one(q("I am fluent in this language.", "boolean", ["I am fluent in this language."], required=False,
+                   description=section), profile=profile)
+    assert (fluent.kind, fluent.value) == ("auto", "Yes")
+    # without the profile value it's his to answer, and a "language" question elsewhere isn't this rule's
+    assert one(q("Overall", "select", scale, description=section)).kind == "unknown"
+    other = one(q("Language", "text", description="primaryQuestionnaire section"), profile=profile)
+    assert other.value != "English" or other.source != "profile spoken_languages"

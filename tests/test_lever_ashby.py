@@ -203,3 +203,71 @@ def test_a_numbers_only_box_gets_the_number(browser: Any) -> None:
     assert fill("40 hours per week") == (True, "40", "")
     assert fill("Yes") == (False, "Yes", "a numbers-only box can't take 'Yes'")
     page.close()
+
+
+# --------------------------------------------------------------------------- Ashby's Education History
+
+EDUCATION_FORM = (FIXTURES / "ashby_education_form.html").resolve()
+
+
+def schools() -> list[Any]:
+    from helper.adapters.workday_page import SchoolEntry
+    from helper.dates import MonthYear
+
+    return [SchoolEntry("Springfield University", "Master of Science", "Computer Science", MonthYear(2025, 9),
+                        MonthYear(2099, 5)),  # still studying there
+            SchoolEntry("University of Shelbyville", "Bachelor of Engineering", "Computer Engineering",
+                        MonthYear(2021, 10), MonthYear(2025, 5))]
+
+
+def test_ashby_education_history_is_not_read_as_a_checkbox(browser: Any) -> None:
+    # Secureframe (2026-11-21): the whole widget came to Claude as a yes/no box "Education History" that nobody could
+    # answer, and Vatsal had to fill it in the window; ashby.fill_education fills it instead
+    page = browser.new_page()
+    page.goto(f"file://{EDUCATION_FORM}")
+    labels = [q.label for q in dom.discover(page.main_frame)]
+    assert labels == ["Email"], labels
+    page.close()
+
+
+def test_ashby_education_history_gets_one_entry_per_school(browser: Any) -> None:
+    page = browser.new_page()
+    page.goto(f"file://{EDUCATION_FORM}")
+    results = ashby.fill_education(page.main_frame, schools, lambda: None)
+    assert [(r.field, r.ok) for r in results] == [("education-0", True), ("education-1", True)], results
+    entries = page.locator(".ashby-application-form-input-education-entry")
+    assert entries.count() == 2
+
+    def entry(i: int) -> dict[str, Any]:
+        e = entries.nth(i)
+        return {"school": e.locator("input[role=combobox]").input_value(),
+                "degree": e.locator("input[id$='-degree']").input_value(),
+                "major": e.locator("input[id$='-major']").input_value(),
+                "start": [s.input_value() for s in e.locator("[id$='-startDate'] select").all()],
+                "end": [s.input_value() for s in e.locator("[id$='-endDate'] select").all()],
+                "current": e.locator("input[type=checkbox]").is_checked()}
+
+    # the school the list names exactly, not the first "Springfield" it shows; a graduation year the list doesn't offer
+    # yet stays blank, with "Still Student?" ticked
+    assert entry(0) == {"school": "Springfield University", "degree": "Master of Science", "major": "Computer Science",
+                        "start": ["9", "2025"], "end": ["", ""], "current": True}
+    assert entry(1) == {"school": "University of Shelbyville", "degree": "Bachelor of Engineering",
+                        "major": "Computer Engineering", "start": ["10", "2021"], "end": ["5", "2025"],
+                        "current": False}
+    page.close()
+
+
+def test_a_school_the_list_lacks_is_reported_not_guessed(browser: Any) -> None:
+    from helper.adapters.workday_page import SchoolEntry
+    from helper.dates import MonthYear
+
+    page = browser.new_page()
+    page.goto(f"file://{EDUCATION_FORM}")
+    results = ashby.fill_education(page.main_frame, [SchoolEntry("Capital City Polytechnic", "Master of Science",
+                                                                 "Computer Science", MonthYear(2025, 9),
+                                                                 MonthYear(2027, 5))], lambda: None)
+    assert len(results) == 1 and not results[0].ok and "school" in results[0].detail, results
+    entry = page.locator(".ashby-application-form-input-education-entry").first
+    assert entry.locator("input[role=combobox]").input_value() == ""  # nothing typed is left behind as an answer
+    assert entry.locator("input[id$='-degree']").input_value() == "Master of Science"
+    page.close()

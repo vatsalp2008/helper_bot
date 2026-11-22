@@ -100,6 +100,8 @@ def test_intake() -> None:
     ("GAIC Great American Insurance Company", "Great American Insurance Company"), ("C01 Carrier", "Carrier"),
     ("LAB Labcorp Early Development Laboratories", "Labcorp Early Development Laboratories"),
     ("LS3002 GE Vernova Operations", "GE Vernova Operations"), ("GE Vernova Operations", "GE Vernova Operations"),
+    ("01 & 04 Woodward, Inc.", "Woodward"),  # two company codes (2026-11-21: the list showed "& 04 Woodward")
+    ("3M Company", "3M Company"), ("7-Eleven, Inc.", "7-Eleven"),
 ])
 def test_company_names(name: str, expected: str) -> None:
     ref = wd.parse_ref(URL)
@@ -522,6 +524,57 @@ def test_account_step(browser: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert page.evaluate("() => window.honeypot") == ""  # the hidden bot trap stays empty
     # the login is never printed (2026-11-20: "Workday account: signed in (<his email>)" went to the fill's output)
     assert f"Workday account: {expected}." in said and not any("alex@example.com" in s for s in said), said
+    page.close()
+
+
+LANGUAGES_PAGE = """
+<div data-automation-id="applyFlowPage">
+  <div role="group" aria-labelledby="Work-Experience-section"><h3 id="Work-Experience-section">Work Experience</h3>
+    <div data-automation-id="formField-jobTitle"><label for="workExperience-1--jobTitle">Job Title</label>
+      <input type="text" id="workExperience-1--jobTitle"></div></div>
+  <div role="group" aria-labelledby="Languages-section"><h3 id="Languages-section">Languages</h3>
+    <div data-automation-id="formField-language"><label>Language<abbr title="required">*</abbr></label>
+      <div data-automation-id="multiselectInputContainer"><input type="text"></div></div>
+    <div data-automation-id="formField-native"><label for="fluent">I am fluent in this language.</label>
+      <input id="fluent" type="checkbox"></div>
+    <div data-automation-id="formField-overall"><label>Overall<abbr title="required">*</abbr></label>
+      <button aria-haspopup="listbox" onclick="document.getElementById('levels').hidden = false">Select One</button>
+      <ul role="listbox" id="levels" hidden><li role="option">Beginner</li><li role="option">Fluent</li></ul></div>
+  </div>
+</div>
+"""
+
+
+def test_a_languages_entry_is_read_as_questions(browser: Any) -> None:
+    # Advance Auto (2026-11-21): the Languages section was skipped like the job and school entries, so its required
+    # Language and Overall stayed empty and Workday refused My Experience; now the profile's spoken_languages answer it
+    page = browser.new_page()
+    page.set_content(LANGUAGES_PAGE)
+    questions, _ = wp.discover(page, skip_special=True)
+    got = {q.label: (q.type, q.required, q.description, q.options) for q in questions}
+    assert got == {
+        "Language": ("prompt", True, "Languages section", []),
+        "I am fluent in this language.": ("boolean", False, "Languages section", ["I am fluent in this language."]),
+        "Overall": ("select", True, "Languages section", ["Beginner", "Fluent"]),
+    }, got  # the job entry is still fill_work's
+    page.close()
+
+
+def test_a_verification_email_never_prints_the_login(browser: Any, tmp_path: Path,
+                                                     monkeypatch: pytest.MonkeyPatch) -> None:
+    # Advance Auto (2026-11-21): "Workday sent a verification email to <his email>" went to the fill's output
+    monkeypatch.setattr(wd, "is_workday_host", lambda url: True)
+    outcome = wd._account_outcome
+    monkeypatch.setattr(wd, "_account_outcome", lambda page, ctx, seconds=2: outcome(page, ctx, seconds))
+    said: list[str] = []
+    page = browser.new_page()
+    page.goto(f"file://{(FIXTURES / 'workday_mock_account.html').resolve()}#verify")
+    ctx = flow_context(tmp_path, credentials=wd.Credentials("alex@example.com", "right-pass"), has_account=False,
+                       say=said.append, wait_seconds=2)
+    assert not wd.handle_account(page, ctx, wd.FlowResult())
+    assert page.evaluate("() => window.created") and page.evaluate("() => window.signInAttempts") == 0
+    assert any("Workday sent a verification email" in s for s in said), said
+    assert not any("alex@example.com" in s for s in said), said
     page.close()
 
 

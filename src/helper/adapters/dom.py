@@ -40,6 +40,9 @@ DISCOVER_JS = r"""
   for (const c of document.querySelectorAll('[data-field-path]')) {
     const title = c.querySelector('.ashby-application-form-question-title');
     if (!title || c.parentElement.closest('[data-field-path]')) continue;
+    // Education History is a set of entries, one per school (ashby.fill_education); read as one checkbox, it came
+    // to Claude as a question nobody could answer (Secureframe, 2026-11-21)
+    if (c.getAttribute('data-field-path') === '_systemfield_education_history') continue;
     const key = 'ashby:' + (c.getAttribute('data-field-path') || clean(text(title)));
     const required = /_required/.test(title.className) || !!c.querySelector('[required],[aria-required=true]');
     const description = text(c.querySelector('.ashby-application-form-question-description'));

@@ -45,6 +45,8 @@ tier1:                        # auto-filled without asking
   citizenship_since: null
   willing_to_relocate: null
   work_location_preferences: null
+  # [{language, level}] for forms' Languages sections, e.g. English, Fluent
+  spoken_languages: []
 
 # For form fields only; the resume's Education section is fixed in the template. Entry format:
 #   - school: ...

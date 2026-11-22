@@ -109,7 +109,8 @@ def _strip_code_word(name: str) -> str:
     if len(parts) < 2:
         return name
     code, rest = parts[0], parts[1:]
-    if re.fullmatch(r"[A-Z0-9]{2,8}", code) and re.search(r"\d", code) and re.search(r"[A-Za-z]", rest[0]):
+    # a code starts with a letter (C01, LS3002); "3M Company" and "3D Systems" are names
+    if re.fullmatch(r"[A-Z][A-Z0-9]{1,7}", code) and re.search(r"\d", code) and re.search(r"[A-Za-z]", rest[0]):
         return " ".join(rest)
     if re.fullmatch(r"[A-Z]{3,6}", code):
         initials = "".join(w[0] for w in rest if w[:1].isalpha()).upper()
@@ -123,7 +124,8 @@ def company_name(data: dict[str, Any], ref: WorkdayRef) -> str:
     name = ((data.get("hiringOrganization") or {}).get("name") or "").strip()
     name = re.sub(r"\s*\([^)]*\)\s*$", "", name)  # "(US01)"
     name = re.sub(r"^(?:[A-Z]{2,6}\d*|\d{2,6})\s*[-_:]\s*", "", name)  # an internal company code: "ADUS-"
-    name = re.sub(r"^\d{1,6}\s+", "", name)  # "100 Salesforce", "1 DexCom"
+    name = re.sub(r"^\d{1,6}(?:\s*[&/,]\s*\d{1,6})*\s+", "", name)  # "100 Salesforce", "1 DexCom", and two codes:
+    # "01 & 04 Woodward, Inc." (2026-11-21; the list showed "& 04 Woodward")
     name = re.sub(r"(?i)^company\s+\d+\s*[-_:]\s*", "", name)  # "Company 19 - John Hancock..." (2026-11-17)
     name = _strip_code_word(name)  # "GAIC Great American...", "LAB Labcorp...", "C01 Carrier", "LS3002 GE Vernova"
     for _ in range(3):
@@ -763,9 +765,10 @@ def handle_account(page: Any, ctx: FlowContext, out: FlowResult) -> bool:
             continue
         break
     if outcome == "verify":
-        ctx.say(f"Workday sent a verification email to {creds.email}. Open it and click the link. If Workday then asks "
-                "you to sign in, either sign in yourself in the window, or tell Claude you verified and helper signs "
-                "in for you.")
+        # never the address itself (CLAUDE.md: the login isn't printed or logged; Advance Auto, 2026-11-21)
+        ctx.say("Workday sent a verification email to your application email (WORKDAY_EMAIL). Open it and click the "
+                "link. If Workday then asks you to sign in, either sign in yourself in the window, or tell Claude you "
+                "verified and helper signs in for you.")
         while _wait_until(page, ctx, lambda: not account_screen(page) or ctx.go_on()):
             if not account_screen(page):
                 out.account = "by Vatsal"

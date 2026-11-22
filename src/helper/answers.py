@@ -392,6 +392,13 @@ def key_for(q: FormQuestion) -> tuple[Optional[str], float]:
         # "Enter today's date below to confirm..." under a long AI-consent text (Kensho/HiredScore, 2026-11-16): the
         # consent rule's "Yes" typed into a date box came out as "/01/2001"
         return "signature_date", 0.95
+    if re.match(r"(?i)^\W*languages?\b", q.description or ""):  # a Languages section's entry (Workday: "Languages section")
+        if re.fullmatch(r"(?i)\W*(spoken\s+)?languages?\W*", text):
+            return "spoken_language", 0.95
+        if q.type == "boolean" and re.search(r"(?i)\b(fluent|native)\b", text):
+            return "language_fluent", 0.95  # "I am fluent in this language."
+        if re.search(r"(?i)\b(overall|reading|speaking|writing|comprehension|listening|translation|proficiency|level|fluency)\b", text):
+            return "language_level", 0.95
     for key, pattern, confidence in LABEL_RULES:
         if q.type == "file" and key not in _FILE_KEYS:  # an upload takes a document, never a zip code (Riot: ".zip")
             continue
@@ -595,6 +602,14 @@ _NOT_HIS_RE = re.compile(r"(?i)\b(government|military|armed forces|veteran|polit
                          r"|suspended|elected)\b")
 
 
+# A spoken-language level as proficiency scales name it, closest first: a scale without "Fluent" tops out at
+# "Advanced" or "Full Professional Proficiency" short of native.
+_LEVEL_FORMS = {
+    "fluent": ("Fluent", "Full Professional Proficiency", "Advanced", "Expert", "Proficient"),
+    "native": ("Native", "Native or Bilingual Proficiency", "Bilingual", "Fluent"),
+}
+
+
 def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     t1, t2 = ctx.profile.tier1, ctx.profile.tier2
     text = f"{q.label} {q.description or ''}"
@@ -604,6 +619,16 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         value = getattr(item, "value", None)
         return Value(value, f"profile tier2.{name}", confidence=1.0 if auto else 0.7, **kw)  # type: ignore[arg-type]
 
+    if key in ("spoken_language", "language_level", "language_fluent"):  # (Vatsal, 2026-11-21: English, Fluent)
+        if not t1.spoken_languages:
+            return Value(None, "profile spoken_languages", note="your spoken languages aren't in the profile")
+        language, level = t1.spoken_languages[0].language, t1.spoken_languages[0].level
+        if key == "spoken_language":
+            return Value(language, "profile spoken_languages")
+        if key == "language_fluent":
+            return Value("Yes" if re.search(r"(?i)fluent|native|bilingual", level) else "No",
+                         "profile spoken_languages")
+        return Value(level, "profile spoken_languages", candidates=_LEVEL_FORMS.get(level.strip().lower(), (level,)))
     if key == "address_line_extra":
         return Value(None, "nothing for a third address line")
     if key == "none_apply":  # "No statements apply to me" when every statement is one his rules answer No to
