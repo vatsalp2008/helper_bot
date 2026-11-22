@@ -470,13 +470,14 @@ def _role_names(title: str, location: Optional[str]) -> list[str]:
 def _without_role_title(text: str, title: str) -> str:
     """The text with the role's own name taken out: naming the role isn't claiming its words. "Internship - Contract
     Management and AI" made 'contract management' (a keyword gap) unwritable, so the letter couldn't say which role it
-    was for (Cymer, 2026-11-20). Only the title's multi-word parts go; the same words anywhere else still count."""
+    was for (Cymer, 2026-11-20). Only the title's multi-word parts go; the same words anywhere else still count. A
+    slash joins words too: "Firmware/Embedded Software Engineer Intern" kept 'firmware' (a gap) in (Neros, 2026-11-21)."""
     title = re.sub(r"\s*[\(\[].*?[\)\]]", " ", title)
     parts = {title.strip(), *(p.strip() for p in re.split(r"\s+[-‐-―|:]\s+|\s*,\s*", title))}
     for part in sorted(parts, key=len, reverse=True):
         tokens = re.findall(r"[\w'.&+#]+", part)
         if len(tokens) >= 2:
-            text = re.sub(r"(?i)(?<!\w)" + r"[\s,\-]+".join(map(re.escape, tokens)) + r"(?!\w)", " ", text)
+            text = re.sub(r"(?i)(?<!\w)" + r"[\s,/\-]+".join(map(re.escape, tokens)) + r"(?!\w)", " ", text)
     return text
 
 

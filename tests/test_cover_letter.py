@@ -214,6 +214,29 @@ def test_naming_the_role_is_not_claiming_its_words(ready: Path) -> None:  # Cyme
     assert any("'Contract Management' is a gap" in str(e) for e in report.errors), report.errors
 
 
+def test_a_title_joined_by_a_slash_can_be_named(ready: Path) -> None:  # Neros, 2026-11-21
+    # "Firmware/Embedded Software Engineer Intern": the slash kept 'firmware' (a gap) in the text, so the letter had to
+    # call it the "Embedded Software Engineer Intern" role and helper warned that it didn't name the role
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="December 2027"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    tailor = TAILOR.model_copy(deep=True)
+    tailor.keyword_audit.gaps.append("Firmware")
+    posting = job().model_copy(update={"role_title": "Firmware/Embedded Software Engineer Intern - Summer 2027"})
+    named = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [
+        "I'm writing to apply for the Firmware/Embedded Software Engineer Intern role. " + P[0], *P[1:]]})
+    report = validate_letter(named, ctx, items, posting, tailor, profile)
+    assert not any("is a gap" in str(e) for e in report.errors), report.errors
+    assert not any("name the role" in str(w) for w in report.warnings), report.warnings
+    # the word used as a claim is still a gap
+    claimed = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [
+        named.paragraphs[0], P[1] + " I have written firmware too.", *P[2:]]})
+    report = validate_letter(claimed, ctx, items, posting, tailor, profile)
+    assert any("'Firmware' is a gap" in str(e) for e in report.errors), report.errors
+
+
 def test_a_title_s_trailing_place_and_year_can_be_left_out(ready: Path) -> None:  # Citi, 2026-11-20
     paths = Paths(ready)
     ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
