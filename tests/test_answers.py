@@ -437,6 +437,19 @@ def test_commuting_and_on_site_questions_are_always_yes() -> None:  # Vatsal, 20
         answer = one(q(label, "select", ["Yes", "No"]))
         assert (answer.key, answer.kind, answer.value) == ("onsite_ok", "auto", "Yes"), label
     assert one(q("Do you require remote work?", "select", ["Yes", "No"])).key != "onsite_ok"
+    oscar = one(q("Do you acknowledge the work location expectations listed on this job posting?", "select",
+                  ["Yes, I acknowledge the work location expectations for this role.",
+                   "No, I do not acknowledge the work location expectation for this role."]))
+    assert (oscar.key, oscar.value) == ("onsite_ok", "Yes, I acknowledge the work location expectations for this role.")
+
+
+def test_a_question_about_school_work_is_not_the_school_name() -> None:  # Shield AI, 2026-11-23
+    shield = one(q("Technical Accomplishments - School/Internships", "textarea", required=False,
+                   description="Tell us about your two strongest technical accomplishments from school or past "
+                               "internships."))
+    assert shield.key != "school" and shield.value != "Northeastern University"
+    assert one(q("School")).key == "school"
+    assert one(q("University attended")).key == "school"
 
 
 def test_a_list_of_immigration_statuses_gets_none() -> None:  # Muon Space, 2026-11-15
@@ -524,6 +537,10 @@ def test_questions_about_past_employers_follow_the_master_list() -> None:  # T-M
     parent = one(q("Have you worked at AppLovin or any of its affiliates before?", "select", ["Yes", "No"]))
     assert (parent.key, parent.kind, parent.value) == ("previous_employee", "auto", "No")
     assert one(q("Have you worked with Python before?", "select", ["Yes", "No"])).key != "previous_employee"
+    toro = one(q("Are you currently an employee of this company? If NO, continue with your application. If you are "
+                 "currently working as an agency employee, contract worker, intern, or are working in any other "
+                 "temporary capacity, select NO and continue with your application.", "select", ["Yes", "No"]))
+    assert (toro.key, toro.kind, toro.value) == ("previous_employee", "auto", "No")  # Toro, 2026-11-23
     age = one(q("In order to be employed at T-Mobile, you must be at least 18 years of age. Can you meet this "
                 "requirement?", "select", ["Yes", "No"]))
     assert age.key == "age_18"

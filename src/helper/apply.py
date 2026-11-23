@@ -932,6 +932,7 @@ def _has_workday_account(paths: Paths, cfg: Config, state: Any, job: Job) -> boo
 
 
 ACCOUNT_LABELS = {"oracle": "Oracle sign-in", "icims": "iCIMS account"}  # Ralliant's Oracle run said "Workday account"
+SITE_NAMES = {"oracle": "Oracle", "icims": "iCIMS"}
 
 
 def _flow_summary(result: Any, planned: list[PlannedAnswer], wait: float, ats: str = "workday") -> str:
@@ -950,7 +951,9 @@ def _flow_summary(result: Any, planned: list[PlannedAnswer], wait: float, ats: s
         lines.append("Best guesses (check them on the Review page):")
         lines += [f"  {a.label}: {a.value}" for a in guesses]
     if result.reached_review:
-        lines.append("Reached Workday's Review page. Unless auto-submit goes ahead (below), check everything there and "
+        # Oracle's last page is its Submit page, not Workday's Review page (Stantec, 2026-11-23)
+        where = "Workday's Review page" if ats == "workday" else f"the last page ({SITE_NAMES.get(ats, ats)})"
+        lines.append(f"Reached {where}. Unless auto-submit goes ahead (below), check everything there and "
                      f"click Submit yourself. helper watches for the confirmation for up to {wait:g} minutes.")
     else:
         lines.append("helper stopped before the Review page (see above). Finish the application in the window and "

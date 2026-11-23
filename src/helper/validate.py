@@ -566,6 +566,14 @@ def resume_text(out: TailorOutput, ctx: Context) -> str:
     return "\n".join(parts)
 
 
+def _named_in(term: str, text: str) -> bool:
+    """A name spelled with inner capitals ("PuLP") is a product's own spelling, so only that spelling counts: "pulp
+    and paper" in the PNWER entry made PuLP look like something in the master list (Samsung, 2026-11-23)."""
+    if re.search(r"[a-z][A-Z]", term):
+        return bool(re.compile(phrase_regex(term).pattern).search(text))  # the same match, case-sensitive
+    return in_text(term, text)
+
+
 def _check_audit(out: TailorOutput, ctx: Context, r: Report) -> None:
     audit = out.keyword_audit
     text = resume_text(out, ctx)
@@ -580,7 +588,7 @@ def _check_audit(out: TailorOutput, ctx: Context, r: Report) -> None:
         if in_text(term, text):
             r.error("audit", "keyword_audit.gaps", f"'{term}' is listed as a gap but is on the resume")
         canonical = ctx.canonical_of(term)
-        if (canonical and (canonical in ctx.all_tech or canonical in ctx.skill_canonicals)) or in_text(term, ctx.master_text):
+        if (canonical and (canonical in ctx.all_tech or canonical in ctx.skill_canonicals)) or _named_in(term, ctx.master_text):
             r.error("audit", "keyword_audit.gaps", f"'{term}' is in the master list, so it is not a gap: show it, or "
                     "list it under skills_only")
     total = len(audit.matched) + len(audit.skills_only) + len(audit.gaps)

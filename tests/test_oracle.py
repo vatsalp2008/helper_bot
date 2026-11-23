@@ -229,6 +229,9 @@ def test_the_fill_summary_names_the_site_signed_in_to() -> None:
     result.account = "email entered"
     assert "Oracle sign-in: email entered." in _flow_summary(result, [], 1, "oracle")  # Ralliant's said "Workday account"
     assert "Workday account: email entered." in _flow_summary(result, [], 1, "workday")
+    result.reached_review = True  # Stantec, 2026-11-23: an Oracle run said "Reached Workday's Review page"
+    assert "Workday" not in _flow_summary(result, [], 1, "oracle")
+    assert "Reached Workday's Review page." in _flow_summary(result, [], 1, "workday")
 
 
 def test_an_entry_oracle_marks_invalid_is_finished(page: Any, tmp_path: Path) -> None:

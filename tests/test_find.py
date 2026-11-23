@@ -50,6 +50,15 @@ def test_autonomy_roles_count_as_software() -> None:  # Neros, 2026-11-22: its "
     assert not wanted("Electrical Engineer Intern - Summer 2027", "Torrance, California, United States")
 
 
+def test_product_management_roles_are_searched() -> None:  # First Resonance, 2026-11-23
+    assert wanted("Product Management Intern (Summer 2027)", "El Segundo, CA")
+    assert wanted("Associate Product Manager, New Grad 2027", "New York, NY")
+    assert not wanted("Senior Product Manager", "New York, NY")
+    assert not wanted("Product Manager, Manufacturing Intern", "Austin, TX")
+    assert wanted("Product Manager Intern", "Seattle, WA")
+    assert not wanted("Engineering Manager, New Grad Programs", "Seattle, WA")
+
+
 def test_german_style_gender_tags_mean_not_us() -> None:  # GE Aerospace, 2026-11-17: "Remote" hid Germany
     assert not wanted("Applied AI Engineer Intern (m/f/d) – Spring 2027", "Remote")
     assert not wanted("Data Science Intern (m/w/d)", "Remote")

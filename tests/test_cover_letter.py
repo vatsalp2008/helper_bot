@@ -237,6 +237,21 @@ def test_a_title_joined_by_a_slash_can_be_named(ready: Path) -> None:  # Neros, 
     assert any("'Firmware' is a gap" in str(e) for e in report.errors), report.errors
 
 
+def test_the_run_s_graduation_date_can_be_named(ready: Path) -> None:  # Rockwell, 2026-11-23
+    # "graduating in December 2027" had 'December' refused as a name not in the resume's items
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="December 2027"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    tailor = TAILOR.model_copy(deep=True)
+    tailor.grad_date = "December 2027"
+    letter = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [
+        *P[:3], P[3] + " I graduate in December 2027."]})
+    report = validate_letter(letter, ctx, items, job(), tailor, profile)
+    assert not any("'December'" in str(e) for e in report.errors), report.errors
+
+
 def test_a_title_s_trailing_place_and_year_can_be_left_out(ready: Path) -> None:  # Citi, 2026-11-20
     paths = Paths(ready)
     ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,

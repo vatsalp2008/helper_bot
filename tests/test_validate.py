@@ -330,3 +330,12 @@ def _meta() -> ResumeMetaFile:
 def _header() -> Header:
     profile = yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8"))
     return Header.model_validate(profile["header"])
+
+
+def test_a_product_name_spelled_with_inner_capitals_is_matched_by_its_spelling() -> None:  # Samsung, 2026-11-23
+    from helper.validate import _named_in
+
+    text = "Covered 22 sectors including pulp and paper, and Kubernetes for deploys."
+    assert not _named_in("PuLP", text)  # the optimization library, not the paper industry
+    assert _named_in("pulp", text) and _named_in("Kubernetes", text)
+    assert _named_in("NumPy", "Used NumPy and Pandas") and not _named_in("NumPy", "a numpy-free build")

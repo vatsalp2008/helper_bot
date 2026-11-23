@@ -40,7 +40,10 @@ FIELD = re.compile(r"(?i)software|developer|programmer|\bdata\b|analytics|machin
                    r"\bautonom(y|ous)\b|"
                    r"forward deployed|solutions? engineer|"
                    # Vatsal, 2026-11-17: "i have a wide range of roles, i can do supply chain as well"
-                   r"supply chain|operations analyst|business analyst|product analyst")
+                   r"supply chain|operations analyst|business analyst|product analyst|"
+                   # product management: 17 of his sent applications are PM roles; First Resonance's "Product
+                   # Management Intern" was dropped by the title (2026-11-23)
+                   r"product manag")
 NOT_FIELD = re.compile(r"(?i)mechanical|electrical|civil|chemical|environmental|manufactur|technician|propulsion|"
                        r"structural|optical|"
                        # packaging engineers, not Calyx's "Junior Software Developer - Print & Packaging" (2026-11-23)
@@ -52,7 +55,8 @@ NOT_FIELD = re.compile(r"(?i)mechanical|electrical|civil|chemical|environmental|
                        r"displays engineer|watchlist|technical support|help ?desk|customer success|"
                        # research roles: Vatsal doesn't apply to them (2026-11-17, TRI's "Machine Learning Research")
                        r"\bresearch(er|ers)?\b")
-SENIOR = re.compile(r"(?i)\b(senior|sr\.?|staff|principal|lead|manager|director|head of|vp|architect|ii|iii|iv|"
+# "(?<!product )manager": an associate product manager or product manager intern is early career (2026-11-23)
+SENIOR = re.compile(r"(?i)\b(senior|sr\.?|staff|principal|lead|(?<!product )manager|director|head of|vp|architect|ii|iii|iv|"
                     r"phd|ph\.d|postdoc|post[- ]doc|high school|mba|bachelors?|undergrad(uate)?|secret|clearance|"
                     r"ts/sci|polygraph)\b")
 _STATES = ("AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|"

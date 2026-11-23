@@ -300,7 +300,10 @@ def validate_letter(out: CoverLetterOutput, ctx: Context, items: list[MasterItem
         r.warn("length", "letter", f"{words} words; the target is {TARGET_WORDS[0]} to {TARGET_WORDS[1]}")
     # Names the posting itself uses (its team, products, places) aren't claims; tools are still checked as tools.
     # The posting's location counts too: "Support Center - Akron, OH" often appears only there (Sterling, 2026-11-19).
+    # The run's graduation date may be named too: "graduating in December 2027" had 'December' refused as a name
+    # (Rockwell, 2026-11-23), while "May 2027" got through only because an entry's dates say May.
     extra = " ".join([job.company, job.role_title, job.description_text, job.location or "", profile.header.location,
+                      tailor.grad_date or "",
                       *(f"{e.school} {e.degree} {e.major} {e.location}" for e in profile.education)])
     others = _other_item_names(ctx, ids)
     on_resume = _resume_tech(tailor, ctx)

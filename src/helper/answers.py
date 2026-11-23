@@ -222,7 +222,9 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("onsite_ok",r"\b(willing|able|can you|comfortable|confirm|meet this requirement)\b.{0,120}\b(commut\w*|on-?site|"
                   r"in[- ]office|in the office|in person|in-person|hybrid)\b|\b(commut\w*|on-?site|in[- ]office|"
                   r"in person|in-person|hybrid)\b.{0,160}\b(willing|able to|can you|meet this requirement|comfortable)\b|"
-                  r"\backnowledge\b.{0,80}\b(days? (a week |per week )?in the office|in the office \d|on-?site)\b",
+                  r"\backnowledge\b.{0,80}\b(days? (a week |per week )?in the office|in the office \d|on-?site)\b|"
+                  # "Do you acknowledge the work location expectations listed on this job posting?" (Oscar, 2026-11-23)
+                  r"\backnowledge\b.{0,40}\bwork location (expectations?|requirements?)\b",
      0.9),
     ("graduation_date", r"\bgraduat\w*\b.*\b(date|when|year|term|semester)\b|\bexpected graduation\b|\bgraduation\b"
                         r"|\bclass of\b|\bwhen (do|will) you graduate\b|\b(term|semester|season)\b.*\bgraduat"
@@ -243,6 +245,8 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                           r".{0,20}\b(with|for|by|at)\b"
                           # "Are you a current contractor for Lucid, or any of its entities?" (Lucid, 2026-11-19)
                           r"|\bare you a current (employee|contractor|consultant)\b"
+                          # "Are you currently an employee of this company?" (Toro, 2026-11-23)
+                          r"|\bare you (currently|now) an? (employee|contractor|consultant)\b"
                           # "Have you worked at AppLovin or any of its affiliates before?" (Wurl, 2026-11-20); never
                           # "worked with" (a skill: "Have you worked with Python before?")
                           r"|\bhave you (ever )?(worked|been employed)\s+(at|for|by)\b.{0,80}\bbefore\b", 0.9),
@@ -256,7 +260,10 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("degree", r"^\s*degree( type| level)?\s*\??\s*$|\bhighest degree\b|\b(type|level) of degree\b|"
                r"\bhighest (level of )?education\b|\beducation level\b", 0.95),
     ("degree", r"\bdegree\b", 0.85),
-    ("school", r"\bschool\b|\buniversity\b|\bcollege\b|\binstitution\b", 0.85),
+    # never a question about what he did there: "Technical Accomplishments - School/Internships" took his school's
+    # name (Shield AI, 2026-11-23)
+    ("school", r"^(?!.*\b(accomplishments?|achievements?|projects?|experiences?|coursework)\b).*?"
+               r"(\bschool\b|\buniversity\b|\bcollege\b|\binstitution\b)", 0.85),
     ("relocate_from", r"\b(moving|relocat\w*|move) from\b|\bcity,? state,? (and )?zip\b", 0.9),
     ("relocate", r"\breloca", 0.9),
     # Vatsal, 2026-11-16: counted from the master list; and full-time from May 2027 on (graduating then)

@@ -786,3 +786,17 @@ synonyms:
       - "already approved: Performance Optimization, Query Optimization"
     approved: true
     note: Added 2026-11-22 for TransCore's Software Engineer I, SQL Development ("SQL Server experience including performance tuning, query optimization, and writing stored procedures"). Database query tuning in PostgreSQL; no SQL Server, T-SQL, profilers or Red Gate.
+
+  - term: Dimensionality Reduction
+    evidence:
+      - "recommendation_engine: collaborative filtering via matrix factorization, which factors the sparse user-item matrix into low-rank latent factors (Precision@10 0.64, Recall@10 0.76, MAP 0.59)"
+    approved: true
+    note: Added 2026-11-23 for The Toro Company's Data Science Intern ("Hands on experience with information retrieval from high dimensional data, dimensionality reduction and feature extraction"). Matrix factorization only; no PCA, t-SNE or UMAP.
+
+  - term: Statistical Testing
+    evidence:
+      - "experimentiq: statistical engine with power analysis, Welch's t-test, Mann-Whitney U, CUPED and sequential testing (O'Brien-Fleming)"
+      - "echocoach: statistical significance testing (t-tests with p-values) on the LLM-as-judge harness"
+      - "already approved: Hypothesis Testing, Statistical Analysis"
+    approved: true
+    note: Added 2026-11-23 for Stantec's Data Scientist Intern - Water, Summer 2027 ("work may include exploratory data analysis (EDA), statistical testing, machine learning, generative AI, data visualization").
