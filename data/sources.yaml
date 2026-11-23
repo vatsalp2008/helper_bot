@@ -42,87 +42,48 @@ greenhouse:  # board names (job-boards.greenhouse.io/<board>)
   - twilio
   - okta
   - gitlab
-  - confluent
   - verkada
   - mercury
-  - benchling
-  - retool
   - vercel
   - webflow
-  - grammarly
-  - wayfair
   - tripadvisor
   - rubrik
   - purestorage
-  - hudsonrivertrading
   - point72
   - imc
   - optiver
   - jumptrading
   - akunacapital
   - towerresearchcapital
-  - oldmissioncapital
-  - arcesium
-  - appliedintuition
-  - skydio
   - astranis
   - planetlabs
   - toast
   - klaviyo
   - carta
   - gemini
-  - chainalysis
   - ripple
   - sofi
   - betterment
-  - marqeta
-  - nerdwallet
   - faire
   - nextdoor
-  - quora
-  - thumbtack
-  - yelp
   - zocdoc
   - oscar
-  - headway
   - lattice
   - calendly
   - intercom
-  - amplitude
   - mixpanel
   - fivetran
   - cockroachlabs
   - singlestore
-  - clickhouse
-  - pinecone
-  - cohere
-  - huggingface
-  - runwayml
-  - glean
-  - hebbia
-  - abridge
-  - tempus
-  - flatiron
-  - insitro
-  - recursion
-  - cerebrassystems
   - lightmatter
   - tenstorrent
-  - sifive
   - lucidmotors
-  - zipline
   - agilityrobotics
   - figureai
   - neuralink
-  - palantir
-  - niantic
   - epicgames
   - riotgames
   - scopely
-  - twosigma
-  - drw
-  - citadel
-  - citadelsecurities
   - janestreet
   - schonfeld
   - pdtpartners
@@ -130,8 +91,34 @@ greenhouse:  # board names (job-boards.greenhouse.io/<board>)
   - sharkninjaoperatingllc
   - octaura
   - nationallifeinsurancecompany
+  # boards renamed (2026-11-23: glean, flatiron, zipline, recursion, arcesium, drw were 404)
+  - gleanwork
+  - flatironhealth
+  - flyzipline
+  - recursionpharmaceuticals
+  - arcesiumllc
+  - drweng
+  # 404 on 2026-11-23 with no public Greenhouse, Lever or Ashby board found: confluent, retool, grammarly,
+  # wayfair, hudsonrivertrading, oldmissioncapital, appliedintuition, chainalysis, marqeta, yelp, huggingface,
+  # runwayml, hebbia, tempus, sifive, twosigma, citadel, citadelsecurities (the lists still cover them)
 
-lever: []       # company names (jobs.lever.co/<company>); the tracker and the lists add more
-ashby: []       # organization names (jobs.ashbyhq.com/<org>)
+lever:          # company names (jobs.lever.co/<company>); the tracker and the lists add more
+  - palantir     # moved from Greenhouse (2026-11-23)
+ashby:          # organization names (jobs.ashbyhq.com/<org>)
+  # moved from Greenhouse (2026-11-23)
+  - benchling
+  - skydio
+  - nerdwallet
+  - quora
+  - thumbtack
+  - headway
+  - amplitude
+  - clickhouse
+  - pinecone
+  - cohere
+  - abridge
+  - insitro
+  - cerebras
+  - niantic-spatial
 smartrecruiters: []  # company names (jobs.smartrecruiters.com/<company>)
 workday: []     # {host, tenant, site}; the tracker's Workday sites are added at run time

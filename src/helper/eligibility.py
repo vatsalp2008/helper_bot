@@ -144,9 +144,10 @@ _EXCLUSION_RES = [
                rf"\b(?:including|such as|incl\.)\s+{_VISA}\b"),
     # "open only to individuals who ... do not now, or in the future, require visa sponsorship including, but not
     # limited to, H-1B, CPT/OPT/STEM" (Cigna, 2026-11-20): CPT/OPT named as sponsorship candidates mustn't need;
-    # "who don't require sponsorship, including students on OPT, are welcome" stays open
+    # "who don't require sponsorship, including students on OPT, are welcome" stays open. Cigna's Business Analytics
+    # Intern says "would not require visa support including H-1B, CPT/OPT/STEM" (2026-11-23)
     re.compile(rf"(?i)\b(?:(?:do|does|will|would|shall)\s+not\b[^.\n]{{0,40}}?\b(?:require|need)\w*|without)\b"
-               rf"[^.\n]{{0,40}}?\bsponsorship\b[^.\n]{{0,20}}?\b(?:including|such as|incl\.|e\.g\.)"
+               rf"[^.\n]{{0,40}}?\b(?:sponsorship|support|assistance)\b[^.\n]{{0,20}}?\b(?:including|such as|incl\.|e\.g\.)"
                rf"[^.\n]{{0,60}}?\b{_VISA}\b(?![^.\n]{{0,40}}?\b(?:welcome|are eligible|is eligible|encouraged)\b)"),
 ]
 _VISA_POSITIVE_RE = re.compile(rf"(?i)\b{_VISA}\b[^.\n]{{0,60}}?\b(?:welcome|are eligible|is eligible|encouraged|supported)\b")
@@ -192,6 +193,9 @@ _CLEARANCE_RE = re.compile(
     # "Ability to obtain and maintain a U.S. Department of Defense Secret security clearance" (TSC, 2026-11-17)
     r"|\b(?:must|required to|ability to|able to|eligible to) (?:hold|have|obtain|maintain)"
     r"(?:U\.S\.(?:A\.)?|[^.\n]){0,60}?\bclearance\b"
+    # "Eligibility to obtain a DoD security clearance, which includes U.S. citizenship", "must meet eligibility
+    # requirements for obtaining a DoD Security Clearance" (Applied Research Associates, 2026-11-22)
+    r"|\beligibility\b[^.\n]{0,40}?\b(?:obtain(?:ing)?|hold(?:ing)?)\b[^.\n]{0,40}?\bclearance\b"
 )
 _UNDERGRAD_RE = re.compile(
     r"(?i)\b(?:pursuing|enrolled in|working towards?|candidates? for|currently in)\s+(?:a |an |your )?"

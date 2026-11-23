@@ -267,6 +267,20 @@ def test_a_submit_the_site_rejects_is_not_sent(monkeypatch) -> None:  # type: ig
     rejected = Page("Automated Driving Intern\n✱ There was an error verifying your application. Please try again.")
     assert ap._wait_for_submit(rejected, Adapter(), {"value": True}, 5, 0.01) == "rejected"
     assert ap._submit_rejected(Page("Thanks for applying! We received your application.")) is None
+    # Benchling's Ashby, 2026-11-23: the spam check refuses the submit outright
+    ashby = Page("We couldn't submit your application\nYour application submission was flagged as possible spam.")
+    assert ap._submit_rejected(ashby)
+    assert ap._submit_rejected(Page("Submission flagged as potential spam")) is not None
+
+
+def test_page_messages_are_shortened_at_a_word() -> None:
+    from helper.apply import _clip
+
+    text = "We couldn't submit your application Your application submission was flagged as possible spam. " * 3
+    short = _clip(text)
+    assert len(short) <= 163 and short.endswith("...") and not short.endswith(" p...")
+    assert short.rsplit(" ", 1)[-1].rstrip(".") in text.split()
+    assert _clip("Please make a selection.") == "Please make a selection."
 
 
 _REFUSING_FORM = """<form>

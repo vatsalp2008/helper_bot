@@ -89,9 +89,14 @@ def find_command(paths: Paths, cfg: Any, hours: float, limit: int, check: bool =
     found.sort(key=lambda f: str(f.posted_at or ""), reverse=True)  # newest first...
     found.sort(key=lambda f: f.how != "helper fills")  # ...with the postings helper can fill ahead (a stable sort)
     if check:
+        listed = {id(f): f.title for f in found}
         find.check_all(paths, cfg, found, limit=limit)
         for f in found:  # the posting's own title can show what the feed's didn't ("(Bachelors Summer 2027)")
             if f.eligibility and not f.eligibility.get("blockers") and not find.wanted(f.title, f.location, f.url):
+                # ...but a page title that only leaves out the field the list named keeps the list's reading: Aon's
+                # iCIMS page says "Early Careers: Health Specialist" for its Health Analytics Specialist (2026-11-23)
+                if not find.title_blocked(f.title) and find.wanted(listed[id(f)], f.location, f.url):
+                    continue
                 f.eligibility["blockers"] = [f"not a fit for the search: {f.title}"]
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     path = find.save(paths.runs / f"find-{stamp}", found)

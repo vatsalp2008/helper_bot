@@ -57,6 +57,9 @@ def levels(e: Eligibility) -> dict[str, str]:
     "Therefore, this position is open only to individuals who are eligible for employment in the United States and who "
     "do not now, or in the future, require visa sponsorship including, but not limited to, H-1B, CPT/OPT/STEM.",
     "Candidates must be able to work without sponsorship, including CPT or OPT.",
+    # Cigna's Business Analytics Intern, 2026-11-23: "visa support" rather than "visa sponsorship"
+    "Therefore, this temporary internship is open only to individuals who are eligible for employment in the United "
+    "States and who would not require visa support including H-1B, CPT/OPT/STEM, etc., now or in the future.",
 ])
 def test_named_visa_exclusions_block(text: str) -> None:
     e = check(text)
@@ -499,6 +502,16 @@ def test_bare_citizenship_and_long_clearance_requirements_block() -> None:  # Te
     assert tsc.blocked and {"citizenship_required", "clearance_required"} <= set(levels(tsc))
     assert "citizenship_required" not in levels(check("We value U.S. citizenship education programs."))
     assert "clearance_required" not in levels(check("Ability to obtain results quickly is key."))
+
+
+def test_eligibility_for_a_clearance_blocks() -> None:  # Applied Research Associates, 2026-11-22
+    for text in ("Applicants selected will be subject to a government security investigation and must meet eligibility "
+                 "requirements for obtaining a DoD Security Clearance.",
+                 "Required Qualifications:\n- Eligibility to obtain a DoD security clearance, which includes U.S. "
+                 "citizenship"):
+        ara = check(text, title="Junior Software Developer")
+        assert ara.blocked and levels(ara)["clearance_required"] == "blocker", text
+    assert "clearance_required" not in levels(check("Check your eligibility to obtain a visa for travel."))
 
 
 def test_a_posting_in_another_country_is_blocked() -> None:  # GE Aerospace, 2026-11-17: "Remote, Germany"

@@ -36,11 +36,16 @@ FIELD = re.compile(r"(?i)software|developer|programmer|\bdata\b|analytics|machin
                    r"cloud|cyber|security engineer|back[- ]?end|front[- ]?end|full[- ]?stack|platform engineer|"
                    r"infrastructure|devops|\bsre\b|site reliability|\bweb\b|mobile|\bios\b|android|"
                    r"information technology|\bIT\b|digital engineer|automation|robotics software|embedded software|"
+                   # autonomy teams write the software that drives or flies (Neros's "Autonomy Intern", 2026-11-22)
+                   r"\bautonom(y|ous)\b|"
                    r"forward deployed|solutions? engineer|"
                    # Vatsal, 2026-11-17: "i have a wide range of roles, i can do supply chain as well"
                    r"supply chain|operations analyst|business analyst|product analyst")
 NOT_FIELD = re.compile(r"(?i)mechanical|electrical|civil|chemical|environmental|manufactur|technician|propulsion|"
-                       r"structural|optical|packaging|industrial|nurs|sales|recruit|account (executive|"
+                       r"structural|optical|"
+                       # packaging engineers, not Calyx's "Junior Software Developer - Print & Packaging" (2026-11-23)
+                       r"packaging (engineer|technician|specialist|design|development)|industrial|nurs|sales|recruit|"
+                       r"account (executive|"
                        r"manager)|legal|hardware|fpga|asic|\brf\b|power systems|battery|process engineer|quality "
                        r"engineer|field (service )?engineer|warehouse|construction|mechatronic|geotech|hvac|plumbing|"
                        r"water resources|plant engineer|business development|clinical|photonics|laser|electro-optic|"
@@ -52,19 +57,38 @@ SENIOR = re.compile(r"(?i)\b(senior|sr\.?|staff|principal|lead|manager|director|
                     r"ts/sci|polygraph)\b")
 _STATES = ("AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|"
            "OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY|DC")
-US = re.compile(rf"(?i)\b(united states|usa|u\.s\.|us\b|remote|new york|nyc|san francisco|seattle|bellevue|redmond|"
+# states written out: Garmin's "Salem, Oregon" read as outside the U.S. (its Software Engineer 1, 2026-11-22)
+_STATE_NAMES = ("alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|"
+                "idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|"
+                "minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|"
+                "north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|"
+                "south dakota|tennessee|texas|utah|vermont|virginia|west virginia|wisconsin|wyoming|"
+                "district of columbia")
+# "SF" and "Bay Area": the lists write Benchling's San Francisco internship as "SF" (2026-11-23)
+US = re.compile(rf"(?i)\b(united states|usa|u\.s\.|us\b|remote|new york|nyc|san francisco|sf|bay area|seattle|"
+                rf"bellevue|redmond|"
                 rf"boston|austin|chicago|los angeles|mountain view|palo alto|menlo park|sunnyvale|san jose|san mateo|"
                 rf"redwood city|denver|atlanta|washington|miami|philadelphia|pittsburgh|portland|salt lake|"
-                rf"\d+ locations)\b|\b({_STATES})\b|US-")
+                rf"\d+ locations|{_STATE_NAMES})\b|\b({_STATES})\b|US-")
 NOT_US = re.compile(r"(?i)\b(canada|toronto|vancouver|montreal|ottawa|united kingdom|\buk\b|london|ireland|dublin|"
                     r"germany|berlin|munich|poland|india|bengaluru|bangalore|hyderabad|pune|singapore|china|shanghai|"
-                    r"beijing|japan|tokyo|israel|tel aviv|netherlands|amsterdam|mexico|brazil|australia|sydney|france|"
+                    r"beijing|japan|tokyo|israel|tel aviv|netherlands|amsterdam|brazil|australia|sydney|france|"
+                    r"(?<!new )mexico|"  # New Mexico is a state
                     r"paris|spain|taiwan|korea|seoul|philippines|malaysia|vietnam|romania|czech|hungary|costa rica|"
                     r"switzerland|zurich|sweden|denmark|uae|dubai|edinburgh|glasgow|manchester|belfast|cork|krakow|"
                     r"warsaw|prague|bucharest|budapest|madrid|barcelona|milan|lisbon|stockholm|copenhagen|vienna|"
                     r"brussels|chennai|mumbai|delhi|gurgaon|gurugram|noida|kolkata|manila|kuala lumpur|shenzhen|"
                     r"hangzhou|taipei|hsinchu|osaka|melbourne|auckland|sao paulo|bogota|buenos aires|guadalajara|"
-                    r"monterrey|heredia)\b")
+                    r"monterrey|heredia|"
+                    # NVIDIA's "Armenia, Yerevan; Armenia, Remote" read as remote U.S. (2026-11-23). Names that are
+                    # also U.S. places (Georgia, Athens, Lima, Lebanon, Belgrade) stay out
+                    r"armenia|yerevan|ukraine|kyiv|kiev|lviv|serbia|bulgaria|sofia|croatia|zagreb|slovakia|bratislava|"
+                    r"slovenia|ljubljana|estonia|tallinn|latvia|riga|lithuania|vilnius|finland|helsinki|norway|oslo|"
+                    r"austria|belgium|luxembourg|portugal|porto|italy|rome|turkey|türkiye|istanbul|ankara|egypt|"
+                    r"south africa|cape town|johannesburg|nigeria|lagos|kenya|nairobi|pakistan|karachi|lahore|"
+                    r"bangladesh|dhaka|sri lanka|colombo|nepal|indonesia|jakarta|thailand|bangkok|hong kong|"
+                    r"new zealand|argentina|chile|colombia|medellin|peru|uruguay|montevideo|saudi arabia|riyadh|"
+                    r"qatar|doha|kazakhstan|almaty)\b")
 # a Workday link names its location first: /job/GB---Edinburgh/..., /job/CA-ON---Toronto/..., /job/IND-Hyderabad/...
 NOT_US_PATH = re.compile(r"(?i)/job/(GB|UK|IN|IND|CN|CHN|DE|FR|IE|PL|SG|JP|IL|NL|MX|BR|AU|CA|CR|PH|MY|RO|HU|CZ|ES|IT|"
                          r"KR|TW|VN|CH|SE|DK|AE|ARG|COL|CHL)[-_]")
@@ -143,8 +167,14 @@ def load_sources(paths: Paths, tracker_urls: Iterable[str]) -> Sources:
 # --------------------------------------------------------------------------- filters
 
 
+def title_blocked(title: str) -> bool:
+    """A word in the title that rules the posting out: seniority or a degree level, another discipline, a non-U.S.
+    gender tag."""
+    return bool(SENIOR.search(title) or NOT_FIELD.search(title) or NOT_US_TITLE.search(title))
+
+
 def wanted(title: str, location: str, url: str = "") -> bool:
-    if not title or SENIOR.search(title) or NOT_FIELD.search(title) or NOT_US_TITLE.search(title):
+    if not title or title_blocked(title):
         return False
     if url and (NOT_US_PATH.search(url) or NOT_US.search(urlparse(url).path.replace("-", " "))):
         return False
@@ -277,7 +307,9 @@ def scan_smartrecruiters(company: str, since: datetime, get: Callable[..., Any])
 
 
 def parse_list(text: str, source: str) -> tuple[list[Found], list[str]]:
-    """SimplifyJobs-style README tables: rows aged 0d (posted in the last day), and every link (to learn feeds)."""
+    """SimplifyJobs-style README tables: rows aged 0d or 1d, and every link (to learn feeds). A list can lag: New-Grad
+    didn't update from Nov 18 to Nov 21 4:30pm, so Friday's postings came in already 1d old and no search saw them
+    (2026-11-22). The search drops the rows an earlier one saw (dedupe)."""
     found, links = [], []
     company = ""
     for row in re.findall(r"<tr>(.*?)</tr>", text, re.S):
@@ -292,13 +324,15 @@ def parse_list(text: str, source: str) -> tuple[list[Found], list[str]]:
             continue  # closed postings have no Apply link
         link = clean_url(html.unescape(m.group(1)))
         links.append(link)
-        if re.sub(r"<[^>]+>", "", cells[-1]).strip() != "0d":
+        age = re.fullmatch(r"([01])d", re.sub(r"<[^>]+>", "", cells[-1]).strip())
+        if not age:
             continue
         title = html.unescape(re.sub(r"<[^>]+>", "", cells[1])).strip()
-        location = re.sub(r"<[^>]+>", "", html.unescape(cells[2].replace("<br>", "; "))).strip()
+        # cities are split by <br>, </br> or <br/>: JP Morgan's "Columbus, OH</br>NYC" read as "OHNYC" (2026-11-23)
+        location = re.sub(r"<[^>]+>", "", html.unescape(re.sub(r"</?br\s*/?>", "; ", cells[2]))).strip()
+        posted = datetime.now(timezone.utc).date() - timedelta(days=int(age.group(1)))
         found.append(Found(url=link, company=company, title=re.sub(r"\s*🎓|\s*🛂|\s*🇺🇸", "", title).strip(),
-                           location=location, ats=detect_ats(link), source=source,
-                           posted_at=datetime.now(timezone.utc).date().isoformat()))
+                           location=location, ats=detect_ats(link), source=source, posted_at=posted.isoformat()))
     return found, links
 
 

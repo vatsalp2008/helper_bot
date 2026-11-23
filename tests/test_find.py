@@ -28,11 +28,26 @@ def test_only_early_career_tech_roles_in_the_us() -> None:
     assert wanted("Software Engineer Intern", "Toronto, Canada; New York, NY, United States")
 
 
+def test_a_state_written_out_is_in_the_us() -> None:  # Garmin, 2026-11-22: "Salem, Oregon" read as outside the U.S.
+    assert wanted("Software Engineer 1", "Salem, Oregon")
+    assert wanted("Data Analyst Intern", "Des Moines, Iowa")
+    assert wanted("Software Engineer Intern", "Albuquerque, New Mexico")
+    assert not wanted("Software Engineer 1", "Waterloo, Ontario")
+
+
 def test_research_roles_are_left_out() -> None:  # Vatsal, 2026-11-17: no research positions
     assert not wanted("Automated Driving Advanced Development Intern, Machine Learning Research (Cambridge)", "Cambridge, MA")
     assert not wanted("Research Scientist Intern, LLMs", "Remote - US")
     assert not wanted("AI Researcher Intern", "Seattle, WA")
     assert wanted("Machine Learning Engineer Intern", "Seattle, WA")
+
+
+def test_autonomy_roles_count_as_software() -> None:  # Neros, 2026-11-22: its "Autonomy Intern" writes C++ and Python
+    assert wanted("Autonomy Intern - Summer 2027", "Torrance, California, United States")
+    assert wanted("Autonomous Vehicles Engineering Intern", "Pittsburgh, PA")
+    assert not wanted("Autonomy Hardware Intern", "Boston, MA")
+    assert not wanted("Autonomy Research Intern", "Boston, MA")
+    assert not wanted("Electrical Engineer Intern - Summer 2027", "Torrance, California, United States")
 
 
 def test_german_style_gender_tags_mean_not_us() -> None:  # GE Aerospace, 2026-11-17: "Remote" hid Germany
@@ -41,6 +56,19 @@ def test_german_style_gender_tags_mean_not_us() -> None:  # GE Aerospace, 2026-1
     assert not wanted("Software Engineer Intern (all genders)", "")
     assert not wanted("Software Engineer Intern", "Remote, Germany")
     assert wanted("Software Engineer Intern (AI/ML)", "Remote - US")
+
+
+def test_remote_in_another_country_is_not_us() -> None:  # NVIDIA Armenia, 2026-11-23
+    assert not wanted("Software Engineering Intern", "Armenia, Yerevan; Armenia, Remote")
+    assert not wanted("Software Engineering Intern", "Remote - Ukraine")
+    assert not wanted("Data Engineer Intern", "Istanbul, Turkey")
+    assert not wanted("Software Engineer Intern", "Lisbon, Portugal")
+    assert not wanted("Software Engineer Intern", "", url="https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite/"
+                                                         "job/Armenia-Yerevan/Software-Engineering-Intern_JR2030226")
+    # U.S. places that share a name with a country or city elsewhere still count
+    assert wanted("Software Engineer Intern", "Atlanta, Georgia")
+    assert wanted("Software Engineer Intern", "Remote - US")
+    assert wanted("Software Engineer Intern", "Remote, United States; Oslo, Norway")
 
 
 def test_greenhouse_counts_new_postings_and_reused_ones() -> None:
@@ -95,6 +123,32 @@ def test_lists_give_todays_rows_and_teach_feeds() -> None:
     assert found[0].url == "https://jobs.smartrecruiters.com/Acme/744000000000002"  # tracking removed
     assert "https://job-boards.greenhouse.io/acme/jobs/55" in links  # an older row still teaches Acme's board
 
+
+def test_lists_also_give_yesterdays_rows() -> None:
+    # 2026-11-22: New-Grad-Positions didn't update from Nov 18 to Nov 21 4:30pm, so Friday's postings (Garmin, Oracle,
+    # TransCore...) came in already 1d old and no search saw them. Rows an earlier search saw are dropped as known.
+    found, _ = parse_list(ROW.replace("<td>0d</td>", "<td>1d</td>"), "list: SimplifyJobs/New-Grad-Positions")
+    assert [f.title for f in found] == ["Software Engineer Intern"]
+    assert found[0].posted_at == (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
+    assert parse_list(ROW.replace("<td>0d</td>", "<td>2d</td>"), "list: x")[0] == []
+
+
+def test_a_list_row_splits_cities_on_any_line_break() -> None:  # JP Morgan, 2026-11-23: "Columbus, OH</br>NYC"
+    for br in ("</br>", "<br>", "<br/>", "<br />"):
+        found, _ = parse_list(ROW.replace("<td>Austin, TX</td>", f"<td>Columbus, OH{br}NYC</td>"), "list: x")
+        assert found[0].location == "Columbus, OH; NYC"
+        assert wanted(found[0].title, found[0].location, found[0].url)
+
+
+def test_list_city_abbreviations_are_in_the_us() -> None:  # Benchling's "SF", 2026-11-23
+    assert wanted("Software Engineer Intern", "SF")
+    assert wanted("Software Engineer Intern", "SF Bay Area")
+    assert wanted("Data Science Intern", "Bay Area, CA")
+
+def test_packaging_means_the_engineering_discipline_only() -> None:  # Calyx Containers, 2026-11-23
+    assert wanted("Junior Software Developer - Print & Packaging", "West Valley City, UT")
+    assert not wanted("Packaging Engineer Intern", "Austin, TX")
+    assert not wanted("Packaging Engineering Co-op", "Austin, TX")
 
 def test_dedupe_drops_applied_listed_and_repeated_postings() -> None:
     a = Found(url="https://job-boards.greenhouse.io/acme/jobs/1", company="Acme", title="SWE Intern", location="NY",

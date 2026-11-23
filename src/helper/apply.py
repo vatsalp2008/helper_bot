@@ -488,7 +488,7 @@ def _auto_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, plan: Answ
             reasons.append("required fields still empty: " + "; ".join(dict.fromkeys(empty)))
         errors = visible_errors(form) if form is not None else ["helper couldn't find the form"]
         if errors:
-            reasons.append("the form shows errors: " + "; ".join(e[:80] for e in errors[:3]))
+            reasons.append("the form shows errors: " + "; ".join(_clip(e) for e in errors[:3]))
         if form is None or len(adapter.submit_buttons(form)) != 1:
             turned_off = getattr(adapter, "disabled_submit_buttons", None)
             if form is not None and turned_off and not adapter.submit_buttons(form) and turned_off(form):
@@ -663,7 +663,7 @@ def _flow_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, planned: l
     if job.ats == "workday":
         # Vatsal, 2026-11-16: on Workday's Review page, submit whether or not he stepped in along the way. Workday only
         # shows Review once every required field is filled; an error on the page or an unclear button still stops it.
-        reasons = ["the Review page shows errors: " + "; ".join(e[:80] for e in errors[:3])] if errors else []
+        reasons = ["the Review page shows errors: " + "; ".join(_clip(e) for e in errors[:3])] if errors else []
         if not hasattr(adapter, "submit_review"):
             reasons.append("helper can't click this site's Submit button")
         return reasons
@@ -1032,11 +1032,23 @@ def _wait_out_captcha(page: Any, wait: float, poll: float) -> bool:
 
 # A page that answers Submit by saying the application didn't go through: "There was an error verifying your
 # application. Please try again." (Lever's check on TRI, 2026-11-17). That's a clear "not sent", not an unclear result.
+# Ashby's spam check says "We couldn't submit your application. Your application submission was flagged as possible
+# spam" (Benchling, 2026-11-23): refused outright too, so another click in the same window won't help.
 _SUBMIT_REJECTED_RE = re.compile(
     r"(?i)\berror (verifying|submitting|processing) your application\b"
     r"|\byour application (could not|couldn't|was not|wasn't) (be )?(submitted|sent|processed|received)\b"
     r"|\b(unable|failed) to submit your application\b"
+    r"|\b(we )?(could not|couldn't|were unable to) submit your application\b"
+    r"|\bflagged as (possible |potential |likely )?spam\b"
 )
+
+
+def _clip(text: str, limit: int = 160) -> str:
+    """A page's message shortened at a word, not mid-word (Ashby's spam flag showed as 'flagged as p', 2026-11-23)."""
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip(" ,.;:") + "..."
 
 
 def _submit_rejected(page: Any) -> Optional[str]:
@@ -1103,7 +1115,7 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
         if refused:
             # the form stopped the submit with its own field errors: nothing was sent, so it isn't a submit to log
             # as unverified (All Options' BambooHR, 2026-11-18: State had reset; logged as sent and put in Notion)
-            _say("The form didn't take the submit; nothing was sent. It shows: " + "; ".join(e[:80] for e in refused[:4])
+            _say("The form didn't take the submit; nothing was sent. It shows: " + "; ".join(_clip(e) for e in refused[:4])
                  + ". Fix it in the window yourself and click Submit; helper keeps watching for the confirmation.")
             submit_seen["value"], since_submit = False, None
             before = visible_errors(form)
@@ -1148,6 +1160,21 @@ def _record_status(paths: Paths, cfg: Config, state: Any, status: str, *, screen
         conn.close()
 
 
+def _stays(paths: Paths, cfg: Config, state: Any) -> str:
+    """The sentence naming the tracker's real status when nothing was sent. Garmin's iCIMS window (2026-11-22) was
+    closed at the CAPTCHA before anything was filled, and the message said 'filled' while the row was 'drafted'."""
+    from .tracker.commands import open_db
+
+    if not state.application_id:
+        return ""
+    conn = open_db(paths, cfg)
+    try:
+        row = conn.execute("SELECT status FROM applications WHERE id = ?", (state.application_id,)).fetchone()
+    finally:
+        conn.close()
+    return f" The application stays '{row['status']}'." if row else ""
+
+
 def _log_outcome(paths: Paths, cfg: Config, state: Any, outcome: str, shot: Optional[Path], results: list[Any], *,
                  mode: str = "review", problems: Optional[list[str]] = None, ats: Optional[str] = None) -> FillOutcome:
     """Spec 9 steps 10 and 11: SQLite first, then Notion, then the CSV. Every fill is also logged for the auto-submit
@@ -1168,13 +1195,14 @@ def _log_outcome(paths: Paths, cfg: Config, state: Any, outcome: str, shot: Opti
     if outcome in ("closed", "timeout", "rejected"):
         set_step(state, "submit", "waiting_for_user", "not submitted yet")
         save_state(paths, state)
+        stays = _stays(paths, cfg, state)
         if outcome == "rejected":
             return FillOutcome("filled", "Not sent: the site answered Submit with an error and didn't take the "
-                                         "application from helper's window. The application stays 'filled'. Apply in "
+                                         f"application from helper's window.{stays} Apply in "
                                          f"your normal browser (`helper assist {state.run_id}` opens it with a paste "
                                          f"sheet), then `helper mark {state.application_id} applied`.", results)
         how = "the browser was closed" if outcome == "closed" else "the wait ran out"
-        return FillOutcome("filled", f"Not submitted ({how}). The application stays 'filled'. Run `helper fill "
+        return FillOutcome("filled", f"Not submitted ({how}).{stays} Run `helper fill "
                                      f"{state.run_id}` to fill it again, or mark it after applying by hand: "
                                      f"`helper mark {state.application_id} applied`.", results)
     status = "applied" if outcome == "confirmed" else "submitted_unverified"

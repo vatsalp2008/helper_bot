@@ -166,6 +166,35 @@ def test_find_skips_a_posting_whose_full_title_fails_the_filters(repo: Path, mon
         conn.close()
 
 
+def test_a_page_title_that_only_leaves_out_the_field_keeps_the_posting(repo: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Aon (2026-11-23): the list said "Early Careers Health Analytics Specialist", the iCIMS page "Early Careers:
+    # Health Specialist", and the search skipped a data science role as not a fit
+    from helper import find
+
+    paths = Paths(repo)
+    cfg = load_config(paths)
+    aon = find.Found(url="https://jobs.aon.com/jobs/113794?icims=1&lang=en-us", company="Aon",
+                     title="Early Careers Health Analytics Specialist", location="Chicago, IL; Atlanta, GA",
+                     ats="icims", source="list", how="helper fills")
+    vague = find.Found(url="https://jobs.acme.test/jobs/2", company="Acme", title="Early Careers Specialist",
+                       location="Chicago, IL", ats="icims", source="list", how="helper fills")
+    monkeypatch.setattr(find, "search", lambda *a, **k: ([aon, vague], find.Sources()))
+
+    def check(paths, cfg, found, limit):  # type: ignore[no-untyped-def]
+        found[0].title = "Early Careers: Health Specialist"
+        for f in found:
+            f.eligibility = {"recommendation": "build", "blockers": [], "warnings": []}
+    monkeypatch.setattr(find, "check_all", check)
+    out = hunt.find_command(paths, cfg, 24, 10)
+    assert "Ineligible (on the list as skipped): 1" in out  # only the posting neither title puts in the field
+    conn = open_db(paths, cfg)
+    try:
+        assert queue.find(conn, aon.url) is None
+        assert queue.find(conn, vague.url)["status"] == "skipped"
+    finally:
+        conn.close()
+
+
 def test_a_network_hiccup_leaves_a_posting_unchecked_not_skipped(  # Nelnet's SSLError, 2026-11-17
         repo: Path, sample_profile_text: str, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from helper import apply as apply_mod
@@ -281,6 +310,8 @@ def test_a_window_closed_while_a_flow_waits_shows_on_the_list(repo: Path, monkey
     monkeypatch.setattr(apply, "_history", lambda *args: ([], []))
     outcome = apply.fill_run(paths, cfg, run_id, headless=True, wait_minutes=0.1, poll_seconds=0.2)
     assert outcome.status == "filled" and "the browser was closed" in outcome.message, outcome.message
+    # Garmin (2026-11-22): closed at the CAPTCHA before anything was filled, so the row is still 'drafted'
+    assert "The application stays 'drafted'." in outcome.message, outcome.message
     row = _row(paths, cfg)
     assert row["status"] == "needs_you" and "Paused" not in row["reason"], row["reason"]
     assert "the window was closed" in row["reason"] and f"helper fill {run_id} --keep-open" in row["reason"]
