@@ -568,7 +568,9 @@ def resume_text(out: TailorOutput, ctx: Context) -> str:
 
 def _named_in(term: str, text: str) -> bool:
     """A name spelled with inner capitals ("PuLP") is a product's own spelling, so only that spelling counts: "pulp
-    and paper" in the PNWER entry made PuLP look like something in the master list (Samsung, 2026-11-23)."""
+    and paper" in the PNWER entry made PuLP look like something in the master list (Samsung, 2026-11-23). A code name
+    isn't a claim: "Unix" in `Chef::FileAccessControl::Unix#mode_from_resource` (JPMC, 2026-11-24)."""
+    text = re.sub(r"\S*::\S*", " ", text)
     if re.search(r"[a-z][A-Z]", term):
         return bool(re.compile(phrase_regex(term).pattern).search(text))  # the same match, case-sensitive
     return in_text(term, text)

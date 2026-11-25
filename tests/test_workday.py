@@ -102,10 +102,35 @@ def test_intake() -> None:
     ("LS3002 GE Vernova Operations", "GE Vernova Operations"), ("GE Vernova Operations", "GE Vernova Operations"),
     ("01 & 04 Woodward, Inc.", "Woodward"),  # two company codes (2026-11-21: the list showed "& 04 Woodward")
     ("3M Company", "3M Company"), ("7-Eleven, Inc.", "7-Eleven"),
+    ("(0207) Sanofi US Services Inc.", "Sanofi US Services"),  # a code in front, in brackets (2026-11-24)
+    ("NADQ Nasdaq, Inc.", "Nasdaq"),  # the code abbreviates the next word (2026-11-24)
+    ("5674085 Merrill Lynch, Pierce, Fenner & Smith", "Merrill Lynch, Pierce, Fenner & Smith"),  # a 7-digit code
 ])
 def test_company_names(name: str, expected: str) -> None:
     ref = wd.parse_ref(URL)
     assert wd.company_name({"hiringOrganization": {"name": name}}, ref) == expected  # type: ignore[arg-type]
+
+
+def test_the_tenants_brand_beats_an_entity_the_posting_never_names() -> None:  # Signet, 2026-11-25
+    ref = wd.parse_ref("https://signetjewelers.wd1.myworkdayjobs.com/SignetCorporateCareers/job/Support-Center---Irving-TX/"
+                       "Software-Engineering-Intern--Digital-Commerce_REQ_84709")
+    text = "<p>Signet Jewelers is the world's largest retailer of diamond jewelry, with Kay Jewelers and Zales.</p>"
+    data = {"hiringOrganization": {"name": "Zale Delaware, Inc."}, "jobPostingInfo": {"jobDescription": text}}
+    assert wd.company_name(data, ref) == "Signet Jewelers"  # type: ignore[arg-type]
+    named = {"hiringOrganization": {"name": "Zale Delaware, Inc."},
+             "jobPostingInfo": {"jobDescription": "<p>Zale Delaware and Signet Jewelers...</p>"}}
+    assert wd.company_name(named, ref) == "Zale Delaware"  # type: ignore[arg-type]
+
+
+def test_bank_of_americas_tenant_is_bank_of_america() -> None:  # 2026-11-25: read as "5674085 Merrill Lynch..."
+    ref = wd.parse_ref("https://ghr.wd1.myworkdayjobs.com/en-US/lateral-us/job/Pennington/Software-Engineer-I--Java_26043787")
+    data = {"hiringOrganization": {"name": "5674085 Merrill Lynch, Pierce, Fenner & Smith"}}
+    assert wd.company_name(data, ref) == "Bank of America"  # type: ignore[arg-type]
+
+
+def test_a_short_tenant_without_an_organization_is_an_acronym() -> None:  # HPE, 2026-11-24
+    ref = wd.parse_ref("https://hpe.wd5.myworkdayjobs.com/Jobsathpe/job/Spring-Texas/Cloud-Security-Engagement-Intern_1216079")
+    assert wd.company_name({"hiringOrganization": {"name": ""}}, ref) == "HPE"
 
 
 def test_small_conversions() -> None:
@@ -700,6 +725,28 @@ def test_claude_answers_while_the_form_waits(repo: Path) -> None:
     assert redrawn[1].value is None  # "Why Mockco?" under another field is asked again, never guessed
     assert [x["field"] for x in json.loads((folder / "questions_needed.json").read_text())["questions"]] == ["workday:q9"]
 
+    # Oracle keeps step 1's fields on later steps (JPMC, 2026-11-24): a best guess Claude confirmed with the same
+    # value is settled for the rest of the run
+    (folder / "questions_needed.json").unlink()
+    race = "Select the races you identify with."
+    guess = [PlannedAnswer(field="generic:dq-option-7", label=race, type="multi_select", required=False, kind="confirm",
+                           value="Asian", options=["Asian", "White"])]
+
+    def claude_race() -> None:
+        time.sleep(0.3)
+        provided.write_text(json.dumps({"answers": [{"field": "generic:dq-option-7", "answer": "Asian"}]}))
+
+    writer = threading.Thread(target=claude_race)
+    writer.start()
+    _ask_claude_midfill(paths, state, job, guess, lambda: False, wait_seconds=10, poll=0.1)
+    writer.join()
+    assert guess[0].kind == "auto"
+    (folder / "questions_needed.json").unlink()
+    next_step = [PlannedAnswer(field="generic:dq-option-7", label=race, type="multi_select", required=False,
+                               kind="confirm", value="Asian", options=["Asian", "White"])]
+    _ask_claude_midfill(paths, state, job, next_step, lambda: False, wait_seconds=0.5, poll=0.1)
+    assert next_step[0].kind == "auto" and not (folder / "questions_needed.json").exists()
+
 
 # --------------------------------------------------------------------------- `helper apply` on a Workday link
 
@@ -776,6 +823,21 @@ def test_company_names_lose_codes_and_legal_suffixes() -> None:  # Dexcom, Rocke
     ref = parse_ref("https://dexcom.wd1.myworkdayjobs.com/Dexcom/job/Remote-California/SW-Development-Engineer-1_JR121398")
     for raw, clean in (("1 DexCom", "DexCom"), ("Rocket Limited Partnership", "Rocket"), ("100 Salesforce, Inc.", "Salesforce")):
         assert company_name({"hiringOrganization": {"name": raw}}, ref) == clean
+
+
+def test_the_brand_in_the_title_beats_a_legal_entity_name() -> None:  # GE Vernova, 2026-11-24
+    from helper.adapters.workday import company_name, parse_ref
+
+    ref = parse_ref("https://gevernova.wd5.myworkdayjobs.com/Vernova_ExternalSite/job/Charleroi-USA/"
+                    "GE-Vernova-Engineering-Automation-Internship---Summer-2027_R5059697-2")
+    data = {"hiringOrganization": {"name": "GE Renewables Grid"},
+            "jobPostingInfo": {"title": "GE Vernova Engineering Automation Internship - Summer 2027"}}
+    assert company_name(data, ref) == "GE Vernova"
+    # a legal name that already holds the brand, or a title that doesn't start with it, keeps the legal name
+    data["hiringOrganization"]["name"] = "LS3002 GE Vernova Operations"
+    assert company_name(data, ref) == "GE Vernova Operations"
+    data = {"hiringOrganization": {"name": "GE Renewables Grid"}, "jobPostingInfo": {"title": "Software Intern"}}
+    assert company_name(data, ref) == "GE Renewables Grid"
 
 
 def test_a_remote_posting_names_its_country() -> None:  # GE Aerospace, 2026-11-17: "Remote", Germany only

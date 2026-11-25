@@ -11,9 +11,9 @@ import re
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from urllib.parse import urlparse
 
 from pydantic import ValidationError
@@ -94,8 +94,16 @@ def _context(paths: Paths, cfg: Config, run_id: str, job: Job) -> AnswerContext:
         internships_done=sum(1 for e in master.experience if re.search(r"(?i)\bintern(ship)?\b", e.name or "")),
         projects_done=len(master.projects),
         documents={**documents(paths, profile), **_letter_documents(paths, state.options)},
-        grades=grades(paths),
+        grades=grades(paths), applied_at_company=_sent_at(paths, cfg, job.company, run_id),
     )
+
+
+def _sent_at(paths: Paths, cfg: Config, company: str, run_id: str) -> int:
+    """Sent applications at this company in the tracker, this run's own left out."""
+    from .companies import same_company
+    from .eligibility import IN_PROGRESS, load_applications
+    return sum(1 for a in load_applications(paths.db(cfg)) if a.run_id != run_id and same_company(a.company, company)
+               and a.status not in IN_PROGRESS + ("skipped", "failed"))
 
 
 def grades(paths: Paths) -> dict[str, str]:
@@ -160,7 +168,9 @@ def _merge(plan: AnswerPlan, provided: dict[str, Any]) -> list[str]:
             continue
         if not text:
             continue
-        if "—" in text or "–" in text or "--" in text:
+        # the site's own option can carry a dash ("Engineering – Computer Science & Technology", Veeva, 2026-11-23):
+        # picking it writes nothing of ours, so rule 4 holds
+        if ("—" in text or "–" in text or "--" in text) and text not in a.options:
             problems.append(f"{name}: no em dashes or en dashes (rule 4)")
             continue
         if a.max_length and len(text) > a.max_length:
@@ -328,26 +338,35 @@ def rescan(paths: Paths, cfg: Config, run_id: str, scan: Optional[Any] = None) -
     read that kind of form (Rippling, 2026-11-18: the first read missed its dropdowns and rating questions, so most of
     the form stayed empty). The old plan and answer files stay beside the new ones as *.before-rescan.json. Questions
     the rules can't answer go to Claude as in `helper continue` (WaitingForClaude)."""
-    from .adapters import adapter_for, generic
+    from .adapters import adapter_for, ashby, dom, generic
 
     folder = run_dir(paths, run_id)
     job = Job.model_validate(read_json(folder / "job.json"))
     link = job.apply_url or job.url or ""
-    if adapter_for(link) is not generic:
-        raise HelperError(f"--rescan is for company-site forms; {job.ats} forms are read from the site's own data.")
-    result = (scan or generic.scan_posting)(link)
-    if not result.questions:
+    adapter = adapter_for(link)
+    if adapter is ashby:
+        # Ashby's form is read from its page too (Illumio, 2026-11-23: a phone box with a consent choice was read as
+        # the choice alone), so a refill after a reading fix needs it read again
+        questions, _ = (scan or (lambda url: dom.scan_form(url, ashby.ANCHORS, ashby.HOSTS)))(link)
+        apply_url = None
+    elif adapter is generic:
+        result = (scan or generic.scan_posting)(link)
+        questions, apply_url = result.questions, result.apply_url
+    else:
+        raise HelperError(f"--rescan is for company-site and Ashby forms; {job.ats} forms are read from the site's own "
+                          "data.")
+    if not questions:
         raise HelperError("helper couldn't read the form's questions again (the posting may have closed, or the page "
                           "turned helper's hidden browser away). The old plan stays as it was.")
-    job.questions = result.questions
-    if result.apply_url:  # the form behind the Apply button (Disney: .../hvhapply?jobSeqNo=..., 2026-11-18), so the
-        job.apply_url = result.apply_url  # fill opens it, not the posting page the questions aren't on
+    job.questions = questions
+    if apply_url:  # the form behind the Apply button (Disney: .../hvhapply?jobSeqNo=..., 2026-11-18), so the
+        job.apply_url = apply_url  # fill opens it, not the posting page the questions aren't on
     write_json(folder / "job.json", job.model_dump(mode="json"))
     for name in (PLAN, NEEDED, PROVIDED):
         if (folder / name).is_file():
             (folder / name).replace(folder / name.replace(".json", ".before-rescan.json"))
     state = load_state(paths, run_id)
-    set_step(state, "answers", "pending", f"the form was read again: {len(result.questions)} question(s)")
+    set_step(state, "answers", "pending", f"the form was read again: {len(questions)} question(s)")
     save_state(paths, state)
     return answers_step(paths, cfg, run_id)
 
@@ -415,8 +434,7 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
     seen = {"captcha": False}
     with browser_session(paths, cfg, headless=headless) as context:
         page = context.pages[0] if context.pages else context.new_page()
-        page.on("request", lambda req: submit_seen.update(value=True) if adapter.is_submit_request(req.url, req.method)
-                else None)
+        page.on("request", _submit_watcher(adapter, submit_seen, folder))
         form = _open_form(page, adapter, job.apply_url or job.url, wait, poll_seconds, seen)
         if form is None:
             reason = getattr(adapter, "no_form_reason", None)
@@ -432,6 +450,8 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
             if hasattr(adapter, "fill_education"):  # the profile's schools, for forms with an Education section
                 results += adapter.fill_education(form, lambda: _history(paths, cfg, state, folder, profile)[1],
                                                   make_pause(cfg))
+            page, form, results = _more_pages(paths, cfg, state, job, context, page, form, adapter, plan, results,
+                                              pdf, profile, wait, poll_seconds)
         _snapshot(page, form, folder / "filled.png")
         write_json(folder / "fill_log.json", [vars(r) for r in results])
         failed_required = [r for r in results if not r.ok and (_required(plan, r.field)
@@ -475,6 +495,112 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
                         problems=run_problems(results, seen["captcha"]), ats=job.ats)
 
 
+FORM_PAGES = 8  # a company form's steps helper follows by itself
+
+
+def _more_pages(paths: Paths, cfg: Config, state: Any, job: Job, context: Any, page: Any, form: Any, adapter: Any,
+                plan: AnswerPlan, results: list[Any], pdf: Path, profile: Profile, wait: float,
+                poll_seconds: float) -> tuple[Any, Any, list[Any]]:
+    """A company form that spans pages ("Page 1 of 3 - Basic Information", Veeva, 2026-11-23: helper filled page 1 and
+    stopped, and the next page opened in a window it didn't watch). While a page has Next and no final Submit, helper
+    clicks Next, reads the new page's questions, plans them (Claude drafts what the rules can't answer while the window
+    waits), and fills them. A required answer only Vatsal has, or a page that refuses Next, waits for him to move on.
+    Returns the page and form now in front and every fill result; Submit stays with the usual rules."""
+    if not hasattr(adapter, "next_button"):
+        return page, form, results
+    folder = run_dir(paths, state.run_id)
+    actx: Optional[AnswerContext] = None  # built only when there is a next page: a one-page form needs nothing more
+    current = list(plan.answers)
+    for _ in range(FORM_PAGES):
+        nxt = adapter.next_button(form)
+        if nxt is None:
+            break
+        yours = [a.label for a in current if a.required and a.type != "file"
+                 and (a.kind in ("unknown", "skip") or a.value is None)]
+        before_pages, sig = list(context.pages), adapter.form_signature(page)
+        if yours:
+            _say("Answer these yourself in the window, then click Next (helper continues on the next page):\n"
+                 + "\n".join(f"  - {label[:120]}" for label in yours[:8]))
+            moved = _await_step(context, page, sig, adapter, before_pages, wait * 60, poll_seconds)
+        else:
+            nxt.click()
+            moved = _await_step(context, page, sig, adapter, before_pages, 30, poll_seconds)
+            if moved is None:
+                shown = visible_errors(form)
+                _say("The form didn't go on to its next page" + (": it shows " + "; ".join(_clip(e) for e in shown[:3])
+                                                                 if shown else "") + ". Fix it in the window yourself "
+                     "and click Next; helper continues on the next page.")
+                moved = _await_step(context, page, sig, adapter, before_pages, wait * 60, poll_seconds)
+        if moved is None:
+            break
+        if moved is not page:
+            _say("The form's next page opened in a new window; helper follows it there.")
+            page = moved
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+        except Exception:
+            pass
+        found = (getattr(adapter, "step_form", None) or adapter.find_form)(page, timeout_ms=15000)
+        if found is None:
+            _say("helper couldn't read the form's next page. Finish it in the window yourself; helper watches for the "
+                 "confirmation and logs it.")
+            break
+        form = found
+        if adapter.is_confirmation(page, form):
+            break
+        actx = actx or _context(paths, cfg, state.run_id, job)
+        actx.approved = _approved(paths)
+        current = plan_answers(adapter.discover(form), actx).answers
+        here = adapter.form_signature(page)
+        _ask_claude_midfill(paths, state, job, current, lambda: adapter.form_signature(page) != here, wait * 60,
+                            poll_seconds)
+        if not cfg.drafts_need_review:  # Vatsal, 2026-11-15: Claude's drafts need no review
+            for a in current:
+                if a.status == "needs_review" and a.source.startswith("Claude"):
+                    a.status = "approved"
+        plan.answers.extend(current)
+        write_json(folder / PLAN, plan.model_dump(mode="json"))
+        _say(f"Next page: filling {sum(a.kind not in ('skip', 'unknown') for a in current)} question(s).")
+        results += adapter.fill_form(form, current, pdf, country=profile.tier1.address.country,
+                                     city=profile.tier1.address.city, pause=make_pause(cfg))
+    return page, form, results
+
+
+def _await_step(context: Any, page: Any, sig: str, adapter: Any, before_pages: list[Any], seconds: float,
+                poll: float) -> Optional[Any]:
+    """The page showing the form's next step: a window it opened, or this page with a different form. None when
+    nothing moved in time or the window was closed."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        fresh = [p for p in context.pages if p not in before_pages and not p.is_closed()]
+        if fresh:
+            return fresh[-1]
+        if page.is_closed():
+            return None
+        try:
+            if adapter.form_signature(page) != sig:
+                return page
+        except Exception:
+            pass
+        time.sleep(poll)
+    return None
+
+
+def _submit_watcher(adapter: Any, submit_seen: dict[str, bool], folder: Path) -> Callable[[Any], None]:
+    """Counts the site's submit request, and notes which request it was in submit_requests.log: three Illumio forms
+    were logged as submitted while their screenshots showed the form untouched (2026-11-23), and nothing said which
+    request had counted."""
+    def watch(req: Any) -> None:
+        if adapter.is_submit_request(req.url, req.method):
+            submit_seen["value"] = True
+            try:
+                with (folder / "submit_requests.log").open("a", encoding="utf-8") as log:
+                    log.write(f"{datetime.now().isoformat(timespec='seconds')} {req.method} {req.url}\n")
+            except OSError:
+                pass
+    return watch
+
+
 def _auto_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, plan: AnswerPlan, results: list[Any], page: Any,
                    form: Optional[Any], adapter: Any, seen: dict[str, bool]) -> list[str]:
     """Spec 10.5: the reasons helper must not submit this run by itself (none means it may)."""
@@ -484,8 +610,15 @@ def _auto_blockers(paths: Paths, cfg: Config, folder: Path, job: Job, plan: Answ
         reasons = []
         empty = [a.label[:60] for a in plan.answers if a.required and a.kind in ("unknown", "skip")]
         empty += [r.label[:60] for r in results if not r.ok and _required(plan, r.field)]
+        # the form's own required fields, read live: a plan with no questions finds nothing missing (Serko's Workable
+        # form, 2026-11-24: helper filled nothing and clicked Submit)
+        live = getattr(adapter, "empty_required", None)
+        if form is not None and live is not None:
+            empty += [label[:60] for label in live(form)]
         if empty:
             reasons.append("required fields still empty: " + "; ".join(dict.fromkeys(empty)))
+        if not any(r.ok and r.value not in (None, "") for r in results):
+            reasons.append("helper filled nothing on this form")
         errors = visible_errors(form) if form is not None else ["helper couldn't find the form"]
         if errors:
             reasons.append("the form shows errors: " + "; ".join(_clip(e) for e in errors[:3]))
@@ -558,8 +691,7 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
         _say(f"Auto-submit is off for this run: {REVIEW_ONLY[job.ats]}.")
     with browser_session(paths, cfg, headless=headless) as context:
         page = context.pages[0] if context.pages else context.new_page()
-        page.on("request", lambda req: submit_seen.update(value=True) if adapter.is_submit_request(req.url, req.method)
-                else None)
+        page.on("request", _submit_watcher(adapter, submit_seen, folder))
         page.goto(job.apply_url or job.url, wait_until="domcontentloaded")
         if job.ats == "workday":
             from .adapters import workday_page
@@ -691,7 +823,9 @@ def _copy_merged(plan: AnswerPlan, answers: list[PlannedAnswer]) -> None:
     by_field = {a.field: a for a in plan.answers}
     for a in answers:
         merged = by_field.get(a.field)
-        if merged is not None and merged.value is not None and a.value != merged.value:
+        # a confirmed best guess keeps its value but is settled now (JPMC's race question, asked on every Oracle step
+        # while helper's guess and Claude's answer were the same, 2026-11-24)
+        if merged is not None and merged.value is not None and (a.value, a.kind) != (merged.value, merged.kind):
             for name in ("value", "kind", "status", "confidence", "source"):
                 setattr(a, name, getattr(merged, name))
 
@@ -1118,12 +1252,18 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
         if refused:
             # the form stopped the submit with its own field errors: nothing was sent, so it isn't a submit to log
             # as unverified (All Options' BambooHR, 2026-11-18: State had reset; logged as sent and put in Notion)
-            _say("The form didn't take the submit; nothing was sent. It shows: " + "; ".join(_clip(e) for e in refused[:4])
-                 + ". Fix it in the window yourself and click Submit; helper keeps watching for the confirmation.")
+            shown = "; ".join(_clip(e) for e in refused[:4]).rstrip()  # no ".." after "try again later." (Serko)
+            _say("The form didn't take the submit; nothing was sent. It shows: " + shown
+                 + ("" if shown.endswith((".", "!", "?")) else ".")
+                 + " Fix it in the window yourself and click Submit; helper keeps watching for the confirmation.")
             submit_seen["value"], since_submit = False, None
             before = visible_errors(form)
             if clicked is not None:
                 _clear_submit_clicked(page)
+        if since_submit is not None and captcha_visible(page):
+            # the site holds the submit for a CAPTCHA that Vatsal solves: the minute starts once it's gone (Veeva,
+            # 2026-11-23: its thank-you page came after the CAPTCHA, and helper had logged submitted_unverified)
+            since_submit = time.monotonic()
         if since_submit is not None and time.monotonic() - since_submit > 60:
             return "unverified"  # rule 10: never retry; an unclear result is submitted_unverified
         if not warned_captcha and captcha_visible(page):

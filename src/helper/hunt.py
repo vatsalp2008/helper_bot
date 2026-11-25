@@ -117,6 +117,25 @@ def find_command(paths: Paths, cfg: Any, hours: float, limit: int, check: bool =
     return find.summary(found, sources, hours, rel(paths, path))
 
 
+def _run_for(paths: Paths, url: str) -> Optional[tuple[str, dict[str, Any], Optional[int]]]:
+    """The newest run started for this posting link: its id, its job.json and its application id."""
+    from .ats import clean_url
+
+    for job_file in sorted(paths.runs.glob("*/job.json"), reverse=True):
+        try:
+            job = json.loads(job_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if url in {clean_url(u) for u in (job.get("url"), job.get("apply_url")) if u}:
+            state_file = job_file.parent / "state.json"
+            try:
+                app_id = json.loads(state_file.read_text(encoding="utf-8")).get("application_id")
+            except (OSError, ValueError):
+                app_id = None
+            return job_file.parent.name, job, app_id
+    return None
+
+
 def add(paths: Paths, cfg: Any, urls: list[str], *, status: str = "queued", reason: Optional[str] = None) -> list[str]:
     """Put postings on the list, with their details from the latest `helper find` when it has them."""
     from .ats import clean_url
@@ -135,6 +154,14 @@ def add(paths: Paths, cfg: Any, urls: list[str], *, status: str = "queued", reas
                             posted_at=c.get("posted_at"), job_id=c.get("job_id"), status=status, reason=reason)
             if new is None and status != "queued":
                 queue.set_status(conn, url, status, reason)
+            if not c and (run := _run_for(paths, url)) is not None:
+                # a link listed after its run started stayed "?" (Moderna, Veeva, SAP, 2026-11-23)
+                run_id, job, app_id = run
+                queue.fill_details(conn, url, company=job.get("company"), title=job.get("role_title"),
+                                   location=job.get("location"), ats=job.get("ats"), job_id=job.get("job_id"))
+                conn.execute("UPDATE postings SET run_id = COALESCE(run_id, ?), application_id = COALESCE("
+                             "application_id, ?) WHERE url = ?", (run_id, app_id, url))
+                c = {"company": job.get("company"), "title": job.get("role_title")}
             out.append(f"{'added' if new else 'already listed'}: {c.get('company') or url} | {c.get('title') or ''}")
         conn.commit()
         refresh(paths, conn)

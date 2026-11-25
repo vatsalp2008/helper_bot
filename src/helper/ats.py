@@ -14,7 +14,8 @@ _HOSTS: list[tuple[str, str]] = [
     ("icims", r"(^|\.)icims\.com$"),
     ("smartrecruiters", r"(^|\.)smartrecruiters\.com$"),
     ("taleo", r"(^|\.)taleo\.net$"),
-    ("successfactors", r"(^|\.)successfactors\.(com|eu)$|(^|\.)sapsf\.com$"),
+    # SAP's own career site runs on SuccessFactors (its iXp internships, 2026-11-23)
+    ("successfactors", r"(^|\.)successfactors\.(com|eu)$|(^|\.)sapsf\.com$|^(careers|jobs)\.sap\.com$"),
     ("workable", r"(^|\.)workable\.com$"),
     ("rippling", r"(^|\.)rippling\.com$"),
     ("jazzhr", r"(^|\.)applytojob\.com$"),
@@ -36,6 +37,8 @@ def detect_ats(url: Optional[str]) -> str:
     for name, pattern in _HOSTS:
         if re.search(pattern, host):
             return name
+    if re.match(r"(?i)/hcmUI/CandidateExperience/", urlparse(url).path or ""):
+        return "oracle"  # Oracle Candidate Experience on a company's own domain (Dell, 2026-11-23)
     return "unknown"
 
 

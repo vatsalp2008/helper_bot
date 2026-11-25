@@ -270,5 +270,13 @@ def test_rescan_reads_a_company_form_again_and_hands_new_questions_to_claude(
     job = Job.model_validate(read_json(folder / "job.json"))
     job.url = job.apply_url = "https://job-boards.greenhouse.io/acme/jobs/1"
     write_json(folder / "job.json", job.model_dump(mode="json"))
-    with pytest.raises(HelperError, match="--rescan is for company-site forms"):
+    with pytest.raises(HelperError, match="--rescan is for company-site and Ashby forms"):
         ap.rescan(paths, cfg, run_id, scan=lambda url: generic.Scan(questions=new))
+    # an Ashby form is read from its page, so it can be read again (Illumio's phone box, 2026-11-23)
+    job.url = "https://jobs.ashbyhq.com/acme/0e0b3a8f-0000-4000-8000-000000000001"
+    job.apply_url = job.url + "/application"
+    write_json(folder / "job.json", job.model_dump(mode="json"))
+    asked: list[str] = []
+    with pytest.raises(WaitingForClaude):
+        ap.rescan(paths, cfg, run_id, scan=lambda url: asked.append(url) or (new, "Intern @ Acme"))
+    assert asked == [job.apply_url]

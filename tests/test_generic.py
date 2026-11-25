@@ -609,3 +609,136 @@ def test_a_submit_button_the_site_keeps_turned_off_is_counted_apart(browser: Any
     page.set_content('<form><button type="submit">Apply</button></form>')
     assert len(generic.submit_buttons(page)) == 1 and generic.disabled_submit_buttons(page) == 0
     page.close()
+
+
+def test_a_name_from_the_site_s_address_is_spelled_as_the_posting_spells_it() -> None:  # SAP, 2026-11-23
+    from helper.adapters.generic import as_spelled
+
+    assert as_spelled("sap", "SAP iXp Intern. At SAP, we help. Join SAP's team.") == "SAP"
+    assert as_spelled("veeva", "Veeva Systems builds cloud software.") == "Veeva"
+    assert as_spelled("acme", "We build rockets.") == "Acme"  # never named: title case as before
+    assert as_spelled("sap", "a sappy story") == "Sap"  # a whole word only
+
+
+def test_the_careers_sites_brand_beats_a_payroll_entity() -> None:  # Disney, 2026-11-25
+    from helper.adapters.generic import employer_brand
+
+    text = ("Technology is at the heart of Disney's past. Disney Entertainment and ESPN Product & Technology builds "
+            "for Disney+. Join Disney in The Woodlands, Texas.")
+    url = "https://join.disneycareers.com/global/en/job/10164423/Media-Engineering-Intern"
+    assert employer_brand("Woodlands Entertainment LLC PAY SVC", url, text) == "Disney"
+    assert employer_brand("Disney Entertainment & Sports LLC", url, text) == "Disney Entertainment & Sports"
+    # a site named for the employer keeps the posting's own name; a site whose name the posting never uses too
+    assert employer_brand("Garmin International, Inc.", "https://careers.garmin.com/jobs/1", "Garmin " * 4) == \
+        "Garmin International"
+    assert employer_brand("Acme Robotics", "https://jobs.example-host.com/1", "We build robots.") == "Acme Robotics"
+
+
+def test_oracle_s_site_name_gives_the_employer_in_front() -> None:  # JPMC, 2026-11-23
+    from helper.adapters.generic import site_employer
+
+    assert site_employer("JPMC Candidate Experience page") == "JPMC"
+    assert site_employer("Candidate Experience site") == ""
+    assert site_employer("Veeva Careers") == "Veeva Careers"
+    assert site_employer("Amazon.jobs") == "Amazon"  # 2026-11-24
+
+
+def test_workable_posting_comes_from_its_api_not_the_apply_form():
+    """Serko (2026-11-24): the list's link opened Workable's form, so the company read as "Apply" and the description
+    was only the form's labels."""
+    from helper.adapters.generic import fetch_job, workable_job
+
+    class Resp:
+        def __init__(self, data: Any, status: int = 200) -> None:
+            self.status_code, self._data = status, data
+
+        def json(self) -> Any:
+            return self._data
+
+    class Session:
+        def __init__(self) -> None:
+            self.urls: list[str] = []
+
+        def get(self, url: str, timeout: int = 30) -> Resp:
+            self.urls.append(url)
+            if url.endswith("/accounts/serko-ltd"):
+                return Resp({"name": "Serko Ltd"})
+            if url.endswith("/jobs/2BD3D4F4DE"):
+                return Resp({"title": "Software Engineer 1", "remote": False,
+                             "locations": [{"city": "Seattle", "region": "Washington", "country": "United States"},
+                                           {"city": "Hidden", "hidden": True}],
+                             "description": "<p>Build the <b>experience layer</b>.</p>",
+                             "requirements": "<ul><li>Web development</li></ul>", "benefits": "<p>$90,000</p>"})
+            return Resp({}, 404)
+
+    from helper.models import FormQuestion
+
+    scanned: list[str] = []
+
+    def form_only(url: str) -> Any:  # the form's questions still come from the page: an empty plan filled nothing
+        scanned.append(url)
+        return generic.Scan(title="Apply", description="AUTOFILL APPLICATION", questions=[
+            FormQuestion(label="Expected Salary", field_name="generic:salary", type="text", required=True)])
+
+    session = Session()
+    job = fetch_job("https://apply.workable.com/serko-ltd/j/2BD3D4F4DE/apply", session=session, scan=form_only)
+    assert [q.label for q in job.questions] == ["Expected Salary"]
+    assert scanned == ["https://apply.workable.com/serko-ltd/j/2BD3D4F4DE/apply"]
+    assert (job.company, job.role_title, job.location, job.ats) == (
+        "Serko Ltd", "Software Engineer 1", "Seattle, Washington", "workable")
+    assert "experience layer" in job.description_text and "Web development" in job.description_text
+    assert "Requirements" in job.description_text and "Apply" not in job.company
+    assert job.apply_url == "https://apply.workable.com/serko-ltd/j/2BD3D4F4DE/apply"
+    assert workable_job("https://example.com/careers/1", session=session) is None
+    assert workable_job("https://apply.workable.com/gone/j/X1/", session=session) is None  # 404: the page is read
+
+
+
+_COVERED_FORM = """<form>
+<div><label for="fn">First name *</label><input id="fn" name="firstname" required></div>
+<div><label for="em">Email *</label><input id="em" name="email" aria-required="true"></div>
+<div><label for="sal">Expected Salary</label><span>*</span><input id="sal" name="salary" required></div>
+<div><label for="cv">Resume *</label><input id="cv" name="cv" type="file" required></div>
+<div><label for="nt">Notes</label><textarea id="nt" name="notes"></textarea></div>
+<button type="submit" onclick="window.sent = true; return false;">Submit application</button>
+</form>
+<div role="dialog" aria-modal="true" aria-label="Cookie Consent" data-ui="cookie-consent"
+     style="position:fixed;left:0;right:0;bottom:0;height:100%;background:rgba(0,0,0,.4);z-index:9">
+  <p>This website uses cookies to improve user's experience.</p>
+  <button onclick="window.cookies='accepted'; this.parentNode.remove()">Accept all</button>
+  <button onclick="window.cookies='declined'; this.parentNode.remove()">Decline all</button>
+</div>"""
+
+
+def test_the_live_form_s_empty_required_fields_and_a_covering_cookie_banner(browser: Any) -> None:
+    """Serko's Workable form (2026-11-24): the plan had no questions, so helper typed nothing, found nothing missing,
+    and clicked Submit under a cookie notice that covered the page. The form itself says what's still empty."""
+    page = browser.new_page()
+    page.set_content(_COVERED_FORM)
+    root = page.main_frame
+    assert generic.empty_required(root) == ["First name", "Email", "Expected Salary", "Resume"]
+    # the banner covers the button: the click is refused without pressing it, and the fill goes on in review mode
+    form = page.main_frame
+    assert generic.submit(form) is False and page.evaluate("() => window.sent") is None
+    assert generic.decline_cookies(page) and page.evaluate("() => window.cookies") == "declined"
+    assert not generic.decline_cookies(page)  # nothing left to decline
+    page.fill("#fn", "Alex")
+    page.fill("#em", "alex@example.com")
+    page.fill("#sal", "100000")
+    page.set_input_files("#cv", {"name": "AlexExample_Resume.pdf", "mimeType": "application/pdf", "buffer": b"%PDF"})
+    assert generic.empty_required(root) == []
+    page.close()
+
+
+def test_a_company_site_with_nothing_planned_never_auto_submits(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """An empty plan must not read as 'every required field is filled' (Serko, 2026-11-24)."""
+    from helper.apply import fill_run
+    from helper.config import load_config
+    from helper.runs import write_json
+
+    paths, run_id = start(repo, FORM, mode="auto")
+    write_json(paths.runs / run_id / "answers_plan.json", {"answers": []})
+    fill_run(paths, load_config(paths), run_id, headless=True, wait_minutes=0.05, poll_seconds=0.3)
+    printed = capsys.readouterr().out
+    assert "helper clicked Submit once" not in printed and "every condition holds" not in printed, printed
+    assert "helper filled nothing on this form" in printed and "required fields still empty" in printed, printed

@@ -59,6 +59,19 @@ def test_product_management_roles_are_searched() -> None:  # First Resonance, 20
     assert not wanted("Engineering Manager, New Grad Programs", "Seattle, WA")
 
 
+def test_business_intelligence_roles_are_searched() -> None:  # Lifeway, 2026-11-23
+    assert wanted("Summer Internship - Business Intelligence", "Remote in USA")
+    assert wanted("BI Developer Intern", "Austin, TX")
+    assert not wanted("Business Development Intern", "Austin, TX")
+
+
+def test_platform_engineering_internships_are_searched() -> None:  # Illumio, 2026-11-23
+    assert wanted("Engineering Intern, Architecture Platform", "Sunnyvale, CA")
+    assert wanted("Engineering Intern, Security Platforms", "Sunnyvale, CA")
+    assert wanted("Security Platforms Engineer Intern", "Sunnyvale, CA")
+    assert not wanted("Mechanical Engineering Intern, Test Platform", "Sunnyvale, CA")
+
+
 def test_german_style_gender_tags_mean_not_us() -> None:  # GE Aerospace, 2026-11-17: "Remote" hid Germany
     assert not wanted("Applied AI Engineer Intern (m/f/d) – Spring 2027", "Remote")
     assert not wanted("Data Science Intern (m/w/d)", "Remote")
@@ -116,6 +129,11 @@ def test_lever_ashby_smartrecruiters_and_workday_feeds() -> None:
     assert len(wd) == 1 and wd[0].job_id == "jr123"
     assert wd[0].url == "https://acme.wd1.myworkdayjobs.com/External/job/Boston-MA/Software-Engineer-Intern_JR123-1"
     assert workday_req("/job/X/Intern---Data-Science--SMAI_JR117444") == "jr117444"
+    # ids with a dash keep it (ASML's J-, Leidos's R-, Revvity's JR-): a bare 'r' matched every R- posting
+    assert workday_req("/job/San-Diego-CA-USA/Internship-Co-Op--AI-Engineer_J-00358475") == "j-00358475"
+    assert workday_req("/job/Fort-Belvoir-VA/Cybersecurity-Intern_R-00197087") == "r-00197087"
+    assert workday_req("/job/CAD-Remote--ON/Full-stack-AI-Developer-Intern_JR-045796") == "jr-045796"
+    assert workday_req("/job/X/Data-Intern_R12345-1") == "r12345"
 
 
 ROW = ('<tr>\n<td><strong><a href="https://simplify.jobs/c/Acme">Acme</a></strong></td>\n<td>Software Engineer Intern'
@@ -158,6 +176,12 @@ def test_packaging_means_the_engineering_discipline_only() -> None:  # Calyx Con
     assert wanted("Junior Software Developer - Print & Packaging", "West Valley City, UT")
     assert not wanted("Packaging Engineer Intern", "Austin, TX")
     assert not wanted("Packaging Engineering Co-op", "Austin, TX")
+
+def test_manufacturing_means_the_engineering_discipline_only() -> None:  # Veolia, 2026-11-24
+    assert wanted("Manufacturing Software Engineer Intern", "Boulder, CO")
+    assert wanted("Manufacturing Data Analyst Intern", "Boulder, CO")
+    assert not wanted("Manufacturing Engineer Intern", "Boulder, CO")
+    assert not wanted("Manufacturing Engineering Co-op", "Austin, TX")
 
 def test_dedupe_drops_applied_listed_and_repeated_postings() -> None:
     a = Found(url="https://job-boards.greenhouse.io/acme/jobs/1", company="Acme", title="SWE Intern", location="NY",

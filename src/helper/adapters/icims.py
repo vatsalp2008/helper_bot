@@ -33,7 +33,9 @@ MAX_PAGES = 30
 
 _NEXT_RE = re.compile(r"(?i)^\s*(next|continue|save (and|&) (continue|next)|proceed|next step|log ?in|sign ?in|"
                       r"create (an |my )?account|register|start application|apply for this job online|"
-                      r"update (my )?profile|save profile)\b")
+                      r"update (my )?profile|save profile|"
+                      # the email step's only button on Schwab's site (2026-11-24): a privacy notice, not an agreement
+                      r"i acknowledge (the )?privacy (notice|policy|statement))\b")
 _SUBMIT_RE = re.compile(r"(?i)\bsubmit\b|\bfinish\b|complete (my |your )?application|send (my )?application")
 _USERNAME_RE = re.compile(r"(?i)\buser ?name\b|\blogin (id|name)\b|\buser id\b")
 _EMAIL_LABEL_RE = re.compile(r"(?i)e-?mail")
@@ -330,6 +332,48 @@ def _one_page(page: Any, frame: Any, ctx: FlowContext, out: FlowResult, refilled
     return not _form_page(page, frame, ctx, out, before, refilled)
 
 
+# the consent text beside a box on the email step: a privacy notice is ticked, never anything binding
+_PRIVACY_CONSENT_RE = re.compile(r"(?i)privacy|personal data|data protection|\bgdpr\b")
+_BINDING_RE = re.compile(r"(?i)arbitrat|class action|waive|jury")
+_CONSENT_TEXT_JS = r"""b => {
+  const ids = (b.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+  const described = ids.map(id => (document.getElementById(id) || {}).innerText || '').join(' ');
+  const label = b.labels && b.labels[0] ? b.labels[0].innerText : '';
+  if (described.trim()) return described + ' ' + label;
+  let text = '';  // the words around it, up to where another box's words begin
+  for (let p = b, i = 0; i < 5 && p.parentElement; i++) {
+    const up = p.parentElement;
+    if ([...up.querySelectorAll('input[type=checkbox]')].some(x => x !== b)) break;
+    p = up; text = up.innerText || '';
+  }
+  return text + ' ' + label;
+}"""
+
+
+def _email_step_extras(frame: Any, ctx: FlowContext) -> list[FieldResult]:
+    """The rest of the email step. Medpace's Next stays disabled until "I accept" (its privacy notice and consent to
+    processing personal data) is ticked; Schwab's refused the email without Country Code and Phone Number (both
+    2026-11-24). Only those: the account's other details come after."""
+    results: list[FieldResult] = []
+    for box in _visible(frame, "input[type=checkbox]"):
+        try:
+            words = str(box.evaluate(_CONSENT_TEXT_JS))
+        except Exception:
+            continue
+        if _PRIVACY_CONSENT_RE.search(words) and not _BINDING_RE.search(words):
+            results.append(FieldResult("icims:privacy_consent", "Privacy notice consent", common.tick(box), "ticked",
+                                       "the email step's privacy consent"))
+    questions = [q for q in generic.discover(frame) if q.type in ("text", "select") and not _EMAIL_LABEL_RE.search(q.label)]
+    # Schwab labels its phone box just "Number", beside "Phone Country Code": its name (css_phoneNumber) says phone
+    questions = [q.model_copy(update={"label": "Phone Number"})
+                 if q.type == "text" and re.search(r"(?i)phone", q.field_name or "") and not re.search(r"(?i)\bphone\b", q.label)
+                 else q for q in questions]
+    answers = [a for a in ctx.plan(questions) if a.key in ("phone", "phone_country_code")] if questions else []
+    if answers:
+        results += generic.fill_form(frame, answers, ctx.resume_pdf, country=None, city=None, pause=ctx.pause)
+    return results
+
+
 def _account_step(page: Any, frame: Any, stage: str, ctx: FlowContext, out: FlowResult, before: str) -> bool:
     creds = ctx.credentials
     if creds is None:
@@ -341,6 +385,7 @@ def _account_step(page: Any, frame: Any, stage: str, ctx: FlowContext, out: Flow
             return _hand_over(page, frame, ctx, "helper couldn't find iCIMS's email box. Sign in in the window.") \
                 != "timeout"
         out.account = out.account or "email entered"
+        out.results += _email_step_extras(frame, ctx)
     elif stage == "password":
         if not _type_secret(frame, _visible(frame, "input[type=password]")[0], creds.password):
             return _hand_over(page, frame, ctx, "sign in in the window.") != "timeout"

@@ -376,3 +376,8 @@ def test_a_discipline_missing_from_the_list_takes_its_broader_field(browser: Any
     assert [(r.ok, r.detail) for r in results] == [(True, "")]
     assert page.get_attribute("#discipline--0", "data-selected") == "Engineering"  # never Electrical Engineering
     page.close()
+
+
+def test_a_board_name_drops_job_board() -> None:  # Rubrik, 2026-11-24
+    assert gh.board_company("Rubrik Job Board") == "Rubrik" and gh.board_company("Airbnb") == "Airbnb"
+    assert gh.board_company("Acme Careers") == "Acme" and gh.board_company("Jobs") == "Jobs"

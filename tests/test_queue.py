@@ -110,6 +110,20 @@ def test_a_link_listed_without_details_takes_its_runs_details(repo: Path) -> Non
     assert (_row(paths, cfg)["company"], _row(paths, cfg)["title"]) == ("Acme", "Software Engineer Intern")
 
 
+def test_a_link_listed_after_its_run_started_takes_its_runs_details(repo: Path) -> None:  # Moderna, 2026-11-23
+    paths, cfg = _setup(repo)
+    link = "https://careers.example.com/job/abc-123/data-analyst/"
+    (paths.runs / "r7").mkdir(parents=True)
+    (paths.runs / "r7" / "job.json").write_text(json.dumps({
+        "url": link + "?utm_source=x", "company": "Example Co", "role_title": "Data Analyst",
+        "location": "New York, NY", "ats": "generic"}), encoding="utf-8")
+    (paths.runs / "r7" / "state.json").write_text(json.dumps({"application_id": 42}), encoding="utf-8")
+    hunt.add(paths, cfg, [link])
+    row = _row(paths, cfg, link)
+    assert (row["company"], row["title"], row["run_id"], row["application_id"]) == (
+        "Example Co", "Data Analyst", "r7", 42)
+
+
 def test_marking_applied_finds_a_posting_listed_by_its_run_only(repo: Path) -> None:
     # Airbnb and apexanalytix (2026-11-18): listed before their applications existed, so the rows held only the run
     paths, cfg = _setup(repo)

@@ -121,6 +121,9 @@ def test_a_new_account_is_created_and_every_page_filled_up_to_submit(page: Any, 
     result = icims.run_flow(page, flow(LOGIN, said, pdf))
     rec = page.evaluate("() => window.recorded")
     assert (rec["email"], rec["username"], rec["password"]) == (LOGIN.email, LOGIN.username, LOGIN.password)
+    # the email step's phone, its country code and the privacy consent (Schwab, Medpace, 2026-11-24); never arbitration
+    assert rec["phone"] == "555-010-0000" and rec["countryCode"] == "United States of America (+1)"
+    assert rec["arbitration"] is False
     assert (rec["first"], rec["last"]) == (PROFILE.tier1.first_name, PROFILE.tier1.last_name)
     assert (rec["resume"], rec["auth"]) == (pdf.name, "Yes") and rec["why"].startswith("Mockco's data tools")
     assert result.account == "created" and result.reached_review
@@ -241,3 +244,14 @@ def test_a_disabled_forward_button_is_handed_over_not_waited_on() -> None:  # Co
             pass
 
     assert icims._click(Frame(), {"i": 0}) is False and not button.clicked
+
+
+def test_the_privacy_notice_button_goes_on_from_the_email_step() -> None:
+    # Charles Schwab (2026-11-24): the email step's only button reads "I Acknowledge the Privacy Notice"
+    class Frame:
+        def evaluate(self, js: str) -> list[dict[str, Any]]:
+            return [{"i": 0, "text": "Search jobs"}, {"i": 1, "text": "I Acknowledge the Privacy Notice"}]
+
+    button, says_submit = icims._forward_button(Frame())
+    assert button == {"i": 1, "text": "I Acknowledge the Privacy Notice"} and not says_submit
+    assert not icims._NEXT_RE.match("I acknowledge the arbitration agreement")

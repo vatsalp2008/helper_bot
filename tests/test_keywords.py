@@ -96,6 +96,16 @@ def test_everyday_rest_and_the_rocky_mountains_are_no_technologies(setup) -> Non
     assert rocky is not None and rocky.spellings == ["Rocky"] and rocky.count == 1
 
 
+def test_shapes_is_no_shap(setup) -> None:  # type: ignore[no-untyped-def]
+    # Moderna (2026-11-23): "science that shapes the future of medicine" read as SHAP, a keyword no resume could sort
+    master, vocab, sets = setup
+    kw = extract_keywords("About us\n- We pursue science that shapes the future of medicine.\n", master, vocab, sets,
+                          TechFamiliesFile())
+    assert kw.term("SHAP") is None
+    kw = extract_keywords("Requirements\n- Explain models with SHAP values.\n", master, vocab, sets, TechFamiliesFile())
+    assert kw.term("SHAP") is not None
+
+
 def test_t_mobile_fiber_is_no_go_framework(setup) -> None:  # type: ignore[no-untyped-def]
     # T-Mobile (2026-11-20): "The Fiber Growth team" read as Go's Fiber framework, listed as a gap no resume could fill
     master, vocab, sets = setup
@@ -116,3 +126,9 @@ def test_open_data_is_not_an_open_source_signal(setup) -> None:  # type: ignore[
         assert extract_keywords(text, master, vocab, sets, TechFamiliesFile()).open_source_signals == [], text
     kw = extract_keywords("Contributions to open-source projects are a plus.", master, vocab, sets, TechFamiliesFile())
     assert kw.open_source_signals == ["open-source"]
+
+
+def test_springboot_written_as_one_word_is_spring_boot(setup) -> None:  # type: ignore[no-untyped-def]
+    master, vocab, sets = setup  # JPMC's "Software Engineer I-Java/Springboot/SQL", 2026-11-24
+    kw = extract_keywords("We use Java, Springboot and SQL.", master, vocab, sets, TechFamiliesFile())
+    assert kw.term("Spring Boot") is not None

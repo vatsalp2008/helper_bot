@@ -364,6 +364,21 @@ def _blank_quote(m: re.Match[str]) -> str:
     return " " * (len(m.group(0)) - len(end)) + end
 
 
+# "5-10MB vs. 150MB+ for Electron" was cut at "vs.", so Electron was checked as its own sentence's claim (webAI,
+# 2026-11-23): abbreviations don't end a sentence
+_ABBREV_END_RE = re.compile(r"(?i)\b(?:vs|e\.g|i\.e|etc|approx|incl|resp|no)\.$")
+
+
+def _sentences(text: str) -> list[str]:
+    out: list[str] = []
+    for part in re.split(r"(?<=[.!?])\s+", text):
+        if out and _ABBREV_END_RE.search(out[-1]):
+            out[-1] += " " + part
+        else:
+            out.append(part)
+    return out
+
+
 def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Context, job: Job, tailor: TailorOutput,
                      extra: str, posting: str, others: dict[str, str], on_resume: set[str], r: Report,
                      given: Optional[list[Any]] = None, item_tech: Optional[dict[str, set[str]]] = None) -> None:
@@ -389,13 +404,17 @@ def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Conte
     # Facts belong to the item a sentence is about, as on the resume: a sentence naming no item continues the last
     # one named in the paragraph; before any is named, any of the resume's items may back it.
     current: list[MasterItem] = []
-    for sentence in re.split(r"(?<=[.!?])\s+", checked):
+    for sentence in _sentences(checked):
         named = [i for i in items if _mentions(i, sentence, ctx)]
         current = named or current
         about = current or items
         label = ", ".join(i.id for i in about) if len(about) < len(items) else "this resume's items"
         _check_numbers(sentence, about, ctx, where, r, label, given or [])
         for token in sorted(find_identifier_tokens(sentence)):
+            if same_company(token, job.company) or in_text(token, job.role_title):
+                # the company's own name ("micro1") or a word of the role's title ("5G" in "5G vRAN Automation Intern",
+                # which another check asks the letter to name): neither is a claim (2026-11-23)
+                continue
             if ctx.vocab.canonical(token) or any(token.lower() in {t.lower() for t in i.allowed_tokens}
                                                  or in_text(token, ctx.item_text(i)) for i in about):
                 continue
@@ -445,6 +464,8 @@ def _check_paragraph(paragraph: str, n: int, items: list[MasterItem], ctx: Conte
 _SEASON_WORDS = {"spring", "summer", "fall", "autumn", "winter"}
 _PLACE_WORDS = {"us", "usa", "u.s.", "united", "states", "remote", "hybrid", "onsite", "on-site", "in-person", "city",
                 "nyc"}
+# a graduating class at the title's end: "Full Stack AI Engineer - May 2027 Grads" (Ryan, 2026-11-24)
+_COHORT_WORDS = {"grad", "grads", "graduate", "graduates", "new", "class", "of", "may", "june", "december", "january"}
 
 
 def _letter_words(text: str) -> str:
@@ -462,8 +483,10 @@ def _role_names(title: str, location: Optional[str]) -> list[str]:
     place = set(_letter_words(location or "").split())
     while len(parts) > 1:
         tail = _letter_words(parts[-1]).split()
-        if not tail or not all(w in place or w in _PLACE_WORDS or w in _SEASON_WORDS or re.fullmatch(r"(?:19|20)\d\d", w)
-                               for w in tail):
+        cohort = any(w in ("grad", "grads", "graduate", "graduates", "class") for w in tail) and all(
+            w in _COHORT_WORDS or w in _SEASON_WORDS or re.fullmatch(r"(?:19|20)\d\d", w) for w in tail)
+        if not tail or not (cohort or all(w in place or w in _PLACE_WORDS or w in _SEASON_WORDS
+                                          or re.fullmatch(r"(?:19|20)\d\d", w) for w in tail)):
             break
         parts.pop()
         names.append(_letter_words(" ".join(parts)))

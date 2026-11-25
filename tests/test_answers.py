@@ -11,7 +11,7 @@ import pytest
 import yaml
 
 from helper.adapters.greenhouse import job_from_api
-from helper.answers import AnswerContext, key_for, match_option, plan_answers
+from helper.answers import AnswerContext, AnswerPlan, key_for, match_option, plan_answers
 from helper.models import AnswersFile, ApprovedAnswer, Config, FormQuestion, Profile
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -89,6 +89,16 @@ def test_sponsorship_follows_the_cpt_opt_rule() -> None:
     assert includes.value == "Yes"
     unclear = one(q("Do you require sponsorship (CPT/OPT)?", "select", ["Yes", "No"]))
     assert unclear.kind == "unknown" and "CPT/OPT" in (unclear.note or "")
+    # Badger Meter, 2026-11-23: "i.e." defines sponsorship to include OPT
+    defined = one(q("Do you now or in the future require sponsorship for employment? (i.e., H-1B, Visa Status, OPT, L2)",
+                    "select", ["Yes, I require sponsorship.", "No, I do not require sponsorship."]))
+    assert defined.value == "Yes, I require sponsorship."
+    # Cboe, 2026-11-24: F-1 given as an example of sponsorship
+    f1 = one(q("Will you now or in the future, require sponsorship for employment visa status (ex: F-1 student visa, "
+               "H-1B visa status)?", "select", ["Yes", "No"]))
+    assert f1.value == "Yes"
+    left_out = one(q("Will you require visa sponsorship, not including OPT?", "select", ["Yes", "No"]))
+    assert left_out.kind == "unknown"
     authorized = one(q("Are you legally authorized to work in the US without sponsorship?", "select", ["Yes", "No"]))
     assert authorized.value == "Yes"
 
@@ -225,6 +235,11 @@ def test_salary_comes_from_the_posting_when_vatsal_says_so() -> None:
     assert one(q("Expected hourly pay?", "number"), job=job, profile=profile).value == "34"
     unposted = one(q("What are your annual salary expectations?", "number"), profile=profile)
     assert unposted.kind == "unknown"  # no pay in the posting and the box takes numbers: Vatsal decides
+    # what he earns now is never the posting's pay: Serko's Workable form got 100000 for "Current Salary" (2026-11-24)
+    for label in ("Current Salary", "What is your current base compensation?", "Previous salary", "Current CTC"):
+        current = one(q(label), job=job, profile=profile)
+        assert (current.key, current.kind, current.value) == ("current_salary", "unknown", None), label
+    assert one(q("Expected Salary"), job=job, profile=profile).value == "71000"
 
 
 def test_ai_screening_and_talent_pool_consents_follow_the_profile() -> None:
@@ -239,6 +254,12 @@ def test_ai_screening_and_talent_pool_consents_follow_the_profile() -> None:
              "select", ["I understand and I’m ready for my application to be retained for other opportunities.",
                         "I understand and I’m not ready for my application to be retained."])
     assert one(pool, profile=profile).value == pool.options[0]
+    # GE Vernova's mentions email too, and went to the email rule (2026-11-24)
+    ge = q("In addition to the role you are applying for, do you consent to GE Vernova retaining your Candidate "
+           "profile* to assess your suitability for roles for which you may not have applied, and to contact you by "
+           "email and by other electronic means about job opportunities and GE Vernova news?",
+           "select", ["I consent", "I do not consent"])
+    assert key_for(ge)[0] == "keep_for_other_roles" and one(ge, profile=profile).value == "I consent"
     assert one(ai).kind == "unknown"  # without the profile setting, Vatsal answers
     assert key_for(q("Do you have experience with AI tools?"))[0] != "ai_consent"
 
@@ -422,6 +443,10 @@ def test_a_closer_option_beats_an_alias_and_years_must_agree() -> None:
     options = ["East Asian", "South Asian", "Southeast Asian", "White"]  # Affirm, 2026-11-15: it chose "East Asian"
     assert match_option("Asian (South Asian)", options, aliases=("Asian",))[0] == "South Asian"
     assert match_option("Asian (South Asian)", ["White", "Asian"], aliases=("Asian",))[0] == "Asian"
+    # long options that both say "Asian": the one holding every word of the value wins (Strava, 2026-11-25)
+    long = ["East Asian (inclusive of Chinese, Japanese, Korean, Mongolian, Tibetan, and Taiwanese)",
+            "South Asian (inclusive of Bangladeshi, Bhutanese, Indian, Nepali, Pakistani, and Sri Lankan)"]
+    assert match_option("Asian (South Asian)", long, aliases=("Asian",))[0] == long[1]
     assert match_option("May 2027", ["Spring 2028", "Fall 2027"])[0] in (None, "Fall 2027")  # never another year
     grad = one(q("What is your anticipated graduation year?", "select",
                  ["Fall/Winter 2027", "Spring 2028", "Fall/Winter 2028", "Other"]))
@@ -550,6 +575,9 @@ def test_a_plain_upload_box_is_the_resume() -> None:  # ASML's Workday, 2026-11-
     assert one(q("Upload a file (5MB max)", "file")).key == "resume"
     attachments = one(q("Upload a file (5MB max)", "file", required=False, description="Additional Attachments section"))
     assert attachments.key != "resume" and attachments.kind == "skip"  # Camping World, 2026-11-16
+    # a box in Workday's "Resume/CV/additional documents" section is the resume's (MIPS, 2026-11-24)
+    both = one(q("Upload a file (5MB max)", "file", description="Resume/CV/additional documents section"))
+    assert (both.key, both.kind) == ("resume", "file")
     assert one(q("Please attach any additional documents here", "file", required=False)).key != "resume"
 
 
@@ -628,6 +656,15 @@ def test_a_list_of_countries_is_checked_against_the_profile_citizenship() -> Non
     assert key_for(group_d)[0] == "citizen_of_listed" and one(group_d, profile=profile).value == "No"
     listed = q("Are you a citizen of any one of these countries: Cuba, Freedonia, Iran?", "select", ["Yes", "No"])
     assert one(listed, profile=profile).value == "Yes"
+    # Nasdaq, 2026-11-24: the embargoed-countries pair, not the country-name and U.S.-status answers
+    recent = q("Is the most recent country from which you hold or have been granted citizenship in Cuba, Iran, North "
+               "Korea, or Syria?", "select", ["Yes", "No"])
+    assert key_for(recent)[0] == "citizen_of_listed" and one(recent, profile=profile).value == "No"
+    residency = q("Do you currently hold permanent resident alien status (or similar designation) inside of Cuba, Iran, "
+                  "North Korea, or Syria?", "select", ["Yes", "No"])
+    assert key_for(residency)[0] == "listed_residency" and one(residency, profile=profile).value is None
+    here = q("Are you a citizen of the country in which this job posting is located?", "select", ["Yes", "No"])
+    assert key_for(here)[0] == "us_citizen"
 
 
 def test_a_date_box_only_takes_a_date() -> None:  # Analog Devices, 2026-11-16: "Master of Science" became "/01/"
@@ -777,6 +814,21 @@ def test_highest_education_completed_is_the_finished_degree() -> None:  # Scout 
     done = one(q("What is the highest level of education you have completed?", "select", options), profile=profile)
     assert (done.key, done.value) == ("degree_completed", "Bachelor's degree or international equivalent")
     assert one(q("Highest level of education", "select", options), profile=profile).key == "degree"
+    merck = ["High School Diploma/GED", "Associates Degree/LPN", "BA/BS/BSN", "MA/MS/MBA", "PharmD", "PhD",
+             "None of the Above"]  # Merck, 2026-11-24
+    done = one(q("Indicate the highest level of education that you have completed:", "select", merck), profile=profile)
+    assert (done.key, done.value, done.kind) == ("degree_completed", "BA/BS/BSN", "auto")
+
+
+def test_ai_matching_consent_opts_in() -> None:  # Merck, 2026-11-24
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier2.ai_screening_consent.value = "Yes"
+    options = ["By checking this box, I consent to the use of AI tools in the recruitment process and to the processing "
+               "of my personal information to match me with future opportunities.",
+               "By checking this box, I consent to the processing of my personal information, but I want to opt out of "
+               "the use of AI tools to match me with future opportunities."]
+    answer = one(q("Use of AI for Future AI Matching (Optional)", "select", options), profile=profile)
+    assert (answer.key, answer.value) == ("ai_consent", options[0])
 
 
 def test_a_phone_type_list_without_mobile_gets_personal_primary() -> None:  # BMO, 2026-11-18
@@ -881,3 +933,85 @@ def test_a_languages_section_is_answered_from_the_spoken_languages() -> None:
     assert one(q("Overall", "select", scale, description=section)).kind == "unknown"
     other = one(q("Language", "text", description="primaryQuestionnaire section"), profile=profile)
     assert other.value != "English" or other.source != "profile spoken_languages"
+
+
+
+def test_a_dropdown_s_own_option_may_carry_a_dash() -> None:  # Veeva, 2026-11-23
+    from helper.apply import _merge
+
+    options = ["Engineering (Non-Computer Science)", "Engineering – Computer Science & Technology", "Other"]
+    question = q("Please select your field of study:", "select", options, name="study")
+    plan = AnswerPlan(answers=[one(question).model_copy(update={"kind": "unknown", "value": None})])
+    assert _merge(plan, {"answers": [{"field": "study", "answer": "Engineering – Computer Science & Technology"}]}) == []
+    plan = AnswerPlan(answers=[one(question).model_copy(update={"kind": "unknown", "value": None})])
+    written = _merge(plan, {"answers": [{"field": "study", "answer": "Computer Science – my favorite"}]})
+    assert written and "rule 4" in written[0]  # Claude's own words still never carry one
+
+
+def test_program_lists_and_yes_no_start_dates() -> None:
+    """Plains Pipeline's Workday questions (2026-11-24) went to Claude: 'What academic program are you currently
+    enrolled in?' listed programs, and 'able to start on the start date listed' was a Yes/No."""
+    program = one(q("What academic program are you currently enrolled in?", "select",
+                    ["High School", "Diploma", "Bachelor/Masters", "PHD", "Program Not Listed",
+                     "I have Already Graduated"]))
+    assert (program.key, program.kind, program.value) == ("enrolled", "auto", "Bachelor/Masters")
+    assert one(q("Are you currently enrolled in a degree program?", "select", ["Yes", "No"])).value == "Yes"
+    start = one(q("Are you able to start on the start date listed on the job posting?", "select", ["Yes", "No"]))
+    assert (start.key, start.value) == ("start_date", "Yes")
+    full_time = one(q("Are you able to start on the start date listed on the job posting?", "select", ["Yes", "No"]),
+                    employment="full_time")
+    assert full_time.value != "Yes"  # a full-time start date isn't known: Claude or Vatsal answers it
+
+
+def test_rubrik_s_name_school_and_employer_questions() -> None:  # Rubrik, 2026-11-24
+    legal = one(q("What is your Legal Name?"))
+    assert legal.kind == "auto" and legal.value == PROFILE.tier1.full_name
+    school = one(q("Is the university you are currently attending located in the United States?", "select",
+                   ["Yes", "No"]))
+    assert school.kind == "auto" and school.value == "Yes"
+    never = "I have never been employed by Figma or contracted to provide services to Figma"
+    employed = one(q("Are you currently or have you ever been employed by Figma or contracted to provide services to "
+                     "Figma?", "select", [never, "I am currently a full/part-time employee for Figma",
+                                          "I was previously a contractor for Figma"]))
+    assert employed.kind == "auto" and employed.value == never
+    assert key_for(q("What is the name of your university?"))[0] == "school"
+
+
+def test_an_earlier_application_comes_from_the_tracker() -> None:  # Ryan and Cboe, 2026-11-24
+    ryan = q("Have you ever applied for a position at a Ryan entity?", "select", ["Yes", "No"])
+    cboe = q("Have you previously applied for a position at Cboe and/or Bats Global Markets?", "select", ["Yes", "No"])
+    assert key_for(ryan)[0] == key_for(cboe)[0] == "applied_before"
+    assert one(ryan, applied_at_company=1).value == "Yes" and one(cboe, applied_at_company=0).value == "No"
+    assert one(ryan).kind == "unknown"  # not looked up
+    assert key_for(q("Have you ever worked for Cboe before?", "select", ["Yes", "No"]))[0] == "previous_employee"
+
+
+def test_strava_name_and_graduation_questions() -> None:  # Strava on Ashby, 2026-11-25
+    assert key_for(q("First & Last Name"))[0] == "full_name"  # was the last name alone
+    assert key_for(q("First and last name"))[0] == "full_name"
+    assert key_for(q("Last name"))[0] == "last_name"
+    grad = q("If you are enrolled in a university or college, what year do you graduate?", "radio",
+             ["Spring 2027", "Summer 2027", "Fall/Winter 2027", "Spring 2028"])
+    assert key_for(grad)[0] == "graduation_date"  # was the school
+
+
+def test_sponsorship_with_an_example_naming_stem_opt_is_yes() -> None:  # Bank of America, 2026-11-25
+    label = ("Will you now or in the future require sponsorship for employment visa status with Bank of America as your "
+             "employer (example: the application or transfer of F-1 STEM OPT extension, H-1B visa status, and TN visa "
+             "status)?")
+    a = one(q(label, "select", ["Yes", "No"]))
+    assert a.key == "sponsorship" and a.value == "Yes"
+    assert key_for(q("Phone Extension"))[0] == "phone_extension" and key_for(q("Extension"))[0] == "phone_extension"
+
+
+def test_drapers_country_list_and_crowes_ai_notice() -> None:  # 2026-11-25
+    profile = PROFILE.model_copy(deep=True)
+    profile.tier1.citizenship = "Freedonia"
+    listed = q("List those country(ies):")
+    assert key_for(listed)[0] == "citizenship_country" and one(listed, profile=profile).value == "Freedonia"
+    notice = q("<b>Just-In-Time Notice</b> <br> How we review applications & your choices: </br> We use an "
+               "AI\u2011assisted resume\u2011screening tool to help recruiters manage applications.", "select",
+               ["Opt In", "Opt Out"])
+    assert key_for(notice)[0] == "ai_consent"
+    profile.tier2.ai_screening_consent.value = "Yes"
+    assert one(notice, profile=profile).value == "Opt In"  # always yes to AI screening (Vatsal, 2026-11-17)

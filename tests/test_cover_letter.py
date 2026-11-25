@@ -252,6 +252,25 @@ def test_the_run_s_graduation_date_can_be_named(ready: Path) -> None:  # Rockwel
     assert not any("'December'" in str(e) for e in report.errors), report.errors
 
 
+def test_a_company_name_with_a_digit_can_be_named(ready: Path) -> None:  # micro1, 2026-11-23
+    # "micro1" was refused as an identifier no resume item has
+    paths = Paths(ready)
+    ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
+                                                             grad_date="May 2027"))
+    items = [ctx.master.item(i) for i in [e.entry_id for e in TAILOR.experience] + [p.project_id for p in TAILOR.projects]]
+    profile = Profile.model_validate(yaml.safe_load((FIXTURES / "profile_sample.yaml").read_text(encoding="utf-8")))
+    posting = job().model_copy(update={"company": "micro1"})
+    letter = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [*P[:3], P[3] + " Thank you, micro1."]})
+    report = validate_letter(letter, ctx, items, posting, TAILOR, profile)
+    assert not any("'micro1'" in str(e) for e in report.errors), report.errors
+    # a role title's own identifier, like "5G" (Samsung's 5G vRAN Automation Intern)
+    posting = job().model_copy(update={"role_title": "5G vRAN Automation Intern"})
+    letter = CoverLetterOutput.model_validate({**LETTER, "paragraphs": [
+        "I'm applying for the 5G vRAN Automation Intern role. " + P[0], *P[1:]]})
+    report = validate_letter(letter, ctx, items, posting, TAILOR, profile)
+    assert not any("'5G'" in str(e) for e in report.errors), report.errors
+
+
 def test_a_title_s_trailing_place_and_year_can_be_left_out(ready: Path) -> None:  # Citi, 2026-11-20
     paths = Paths(ready)
     ctx = load_context(paths, load_config(paths), RunOptions(projects_per_resume=5, bullets_per_item=2,
@@ -319,3 +338,19 @@ def test_quotes_that_end_a_sentence_and_postings_own_hyphens(ready: Path) -> Non
     errors = [str(e) for e in validate_letter(letter.model_copy(update={"hook": None}), ctx, items, base, TAILOR,
                                               profile).errors]
     assert any("'AI-assisted'" in e for e in errors), errors
+
+
+def test_an_abbreviation_does_not_end_a_sentence() -> None:  # webAI, 2026-11-23
+    from helper.cover_letter import _sentences
+
+    text = "It ships in 5-10MB vs. 150MB+ for Electron. Then I tested it, e.g. on Windows. Done."
+    assert _sentences(text) == ["It ships in 5-10MB vs. 150MB+ for Electron.", "Then I tested it, e.g. on Windows.",
+                                "Done."]
+
+
+def test_a_graduating_class_at_the_title_s_end_can_be_left_out() -> None:  # Ryan, 2026-11-24
+    from helper.cover_letter import _role_names
+
+    names = _role_names("Full Stack AI Engineer - May 2027 Grads", "Plano; Washington; Houston; Atlanta")
+    assert "full stack ai engineer" in names
+    assert _role_names("Engineer - Platform Team", None) == ["engineer platform team"]

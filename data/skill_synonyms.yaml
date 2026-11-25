@@ -800,3 +800,108 @@ synonyms:
       - "already approved: Hypothesis Testing, Statistical Analysis"
     approved: true
     note: Added 2026-11-23 for Stantec's Data Scientist Intern - Water, Summer 2027 ("work may include exploratory data analysis (EDA), statistical testing, machine learning, generative AI, data visualization").
+
+  - term: Technical Writing
+    evidence:
+      - "pnwer: wrote the team's technical documentation, including a decision log of 28 architecture and design tradeoffs and a setup guide"
+      - "pnwer: Washington and Idaho research delivered as a 7-page summary and an 11-page full report with 14 follow-up questions for the client"
+      - "spiceai: contributor-checklist doc fix"
+    approved: true
+    note: Added 2026-11-23 for Moderna's 2027 Co-Op, PTE ("Clear written and verbal communication skills, including an interest in technical writing and document editing"). Project documentation and client reports; no SOPs, work instructions or controlled documents.
+
+  - term: Data Manipulation
+    evidence:
+      - "kalini_ml: data pipeline (Pandas, SQL, 20+ features, 15% F1-score improvement)"
+      - "pnwer: Python (pandas) data pipeline pulling official public data from U.S. Census Bureau, Statistics Canada, BLS, BEA, Bank of Canada"
+      - "traffic_accident: stratified 10% sample (772,840 rows); preprocessing with leakage detection, imputation, weather bucketing"
+      - "experimentiq: dbt transformation layer (staging/intermediate/marts) over DuckDB and Snowflake"
+      - "already approved: Data Wrangling, Data Cleaning"
+    approved: true
+    note: Added 2026-11-23 for Veeva Systems' Marketing Analytics - Data Analyst, July 2027 ("your focus is on data logic, manipulation, and insights"; "Your data manipulation will provide the analytical foundation"). Pandas, SQL and dbt work; no Excel.
+
+  - term: Model Serving
+    evidence:
+      - "echocoach: Fine-Tuning & Serving Optimization; benchmarked serving latency across fp16, INT8 and INT4 quantization (28, 24 and 41 tok/sec)"
+      - "perceptnet: TensorRT INT8 quantization via ONNX export, with CUDA-accelerated inference at ~22ms/frame (>40 FPS)"
+      - "kalini_ml: model optimization (40% inference speedup, Flask APIs, production deployment)"
+      - "afterglow: a small CNN quantized and exported to ONNX, served via onnxruntime-web"
+    approved: true
+    note: Added 2026-11-23 for micro1's ML Engineer, whose list of ML Engineering camps starts with "Inference/Serving".
+
+  - term: Model Compression
+    evidence:
+      - "echocoach: benchmarked fp16, INT8 and INT4 quantization; INT4 gave a 46% decode-speed gain (28 to 41 tok/sec)"
+      - "perceptnet: TensorRT INT8 quantization via ONNX export"
+      - "afterglow: a small CNN quantized and exported to ONNX, served via onnxruntime-web"
+      - "skills: Model Optimization (LoRA fine-tuning, quantization (fp16/INT8/INT4))"
+    approved: true
+    note: Added 2026-11-23 for micro1's ML Engineer ("Model Compression/Optimization"). Quantization only; no pruning or distillation.
+
+  - term: Coding Agents
+    evidence:
+      - "themanager: an AI-powered software factory whose 7-agent pipeline (planner, architect, coder, tester, reviewer, debugger, docs) turns specs into executable code"
+      - "themanager: MCP integration (11 tools, 3 resources, 2 prompts) giving Cursor, Claude Code and Windsurf editor-native access"
+      - "already approved: AI-Assisted Development"
+    approved: true
+    note: Added 2026-11-23 for micro1's ML Engineer ("Practical proficiency with Python and coding agents").
+
+  - term: Data Reconciliation
+    evidence:
+      - "pnwer: data-integrity checks that block publishing if totals don't reconcile or Washington's figures don't match the Embassy of Canada's published numbers"
+      - "pnwer: build-time data validation against a second independent source"
+      - "portfolio highlights: public-data pipeline engineering with build-time data validation and automated multi-source reconciliation (PNWER)"
+    approved: true
+    note: Added 2026-11-24 for DV Trading's Junior Trading Operations Analyst ("Reconcile positions, cash and P&L against clearing firm and exchange records"). Automated checks that totals reconcile across sources; no trade, position or cash reconciliation.
+
+  - term: Performance Analysis
+    evidence:
+      - "echocoach: benchmarked LLM serving across fp16, INT8 and INT4 (28, 24 and 41 tok/sec) and traced INT8's slower decode to dequantization overhead"
+      - "streamline: built load testing and latency analysis tooling to measure p99 latency and system throughput"
+      - "afterglow: a benchmarking page that replays recorded fixture sessions headlessly to measure filter jitter/lag"
+      - "already approved: Performance Optimization, Performance Testing, Performance Tuning"
+    approved: true
+    note: Added 2026-11-24 for AMD's Spring/Summer 2027 Masters AI Rack/Cluster Design Engineering Co-Op ("familiarity with Linux environments, command-line tools, performance analysis, benchmarking"). Software and model benchmarking; no hardware, cluster or interconnect profiling.
+
+  - term: AI-Enabled Development
+    evidence:
+      - "themanager: an AI-powered software factory whose 7-agent pipeline (planner, architect, coder, tester, reviewer, debugger, docs) turns specs into executable code"
+      - "themanager: MCP integration (11 tools, 3 resources, 2 prompts) giving Cursor, Claude Code and Windsurf editor-native access"
+      - "already approved: AI-Assisted Development, Coding Agents"
+    approved: true
+    note: Added 2026-11-25 for M&T Bank's 2027 Technology Development Program - Software Engineering (AI & Engineering Platforms) ("developing skills in modern software engineering, AI-enabled development, platform engineering, and automation").
+
+  - term: Authorization
+    evidence:
+      - "swarm: OAuth token vault with per-Bee scope isolation, extended to OIDC-based SSO; default-deny compliance architecture and a permanent deny-list, with human review gates"
+      - "ecommerce_platform: Terraform-provisioned scoped IAM roles per service and a VPC with segmented subnets/security groups; JWT authentication"
+      - "already approved: Access Control; already claimable: OAuth, OIDC, IAM, Authentication"
+    approved: true
+    note: Added 2026-11-25 for Strava's Software Engineering Intern, Server, Security ("You understand web security fundamentals like the OWASP Top 10, authentication, and authorization"). Scoped OAuth tokens and IAM roles in his own projects; no OWASP testing or pentest work.
+
+  - term: Applications Integration
+    evidence:
+      - "swarm: Stripe API integration for automated billing workflows; OAuth token vault extended to OIDC-based SSO for third-party integrations"
+      - "themanager: QuickBooks API integration for automated financial data sync; a GraphQL API layer alongside existing REST/MCP endpoints"
+      - "kalini_sde: automation tools (Python, Bash, 8 workflows) with a Slack API integration"
+      - "ecommerce_platform: transactional outbox pattern with Kafka event streaming for reliable inter-service communication across 9 microservices"
+    approved: true
+    note: Added 2026-11-25 for BMO's Software Engineer, Winter 2027 (Co-op/Internship) ("Intermediate level of proficiency ... Applications Integration ... System and Technology Integration"). Third-party API integrations and inter-service messaging in his own projects; no enterprise integration platform work.
+
+  - term: System Integration
+    evidence:
+      - "themanager: QuickBooks API integration for automated financial data sync; a GraphQL API layer alongside existing REST/MCP endpoints"
+      - "kalini_sde: automation tools (Python, Bash, 8 workflows) with a Slack API integration"
+      - "swarm: Stripe API integration for automated billing workflows; OAuth token vault extended to OIDC-based SSO for third-party integrations"
+      - "ecommerce_platform: transactional outbox pattern with Kafka event streaming for reliable inter-service communication across 9 microservices"
+      - "already approved: Applications Integration (same evidence)"
+    approved: true
+    note: Added 2026-11-25 for M&T Bank's 2027 Technology Development Program - Software Engineering (Commercial Application Development) ("developing skills in software development, testing, system integration, application modernization, and AI-enabled development"). Third-party API integrations and inter-service messaging in his own projects; no enterprise integration platform work.
+
+  - term: Data Integration
+    evidence:
+      - "pnwer: a Python (pandas) data pipeline pulling official public data from U.S. Census Bureau, Statistics Canada, BLS, BEA, Bank of Canada and the Federal Register into one dashboard and 360 fact sheets, with build-time validation against a second independent source"
+      - "experimentiq: Kafka event simulator and a dbt transformation layer (staging/intermediate/marts) over DuckDB and Snowflake"
+      - "pulsetrader: Kafka with Avro schema evolution (Confluent Schema Registry) into Flink jobs, TimescaleDB and BigQuery"
+      - "already approved: ETL, Data Ingestion, Applications Integration"
+    approved: true
+    note: Added 2026-11-25 for T-Mobile's Summer 2027 Software Engineer Internship, REQ381357 ("hands-on experience with system development, data integration, testing, and validation"; "Familiarity with AWS cloud services, relational databases, data integration, or ETL processes"). Multi-source data pipelines in his own projects; no enterprise integration platform work.

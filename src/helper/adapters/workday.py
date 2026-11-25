@@ -116,15 +116,67 @@ def _strip_code_word(name: str) -> str:
         initials = "".join(w[0] for w in rest if w[:1].isalpha()).upper()
         if initials.startswith(code) or rest[0].upper().startswith(code):
             return " ".join(rest)
+        # the next word's own abbreviation: "NADQ Nasdaq, Inc." (2026-11-24)
+        if code[0] == rest[0][:1].upper() and re.fullmatch(".*".join(map(re.escape, code)) + ".*", rest[0].upper()):
+            return " ".join(rest)
     return name
+
+
+def _squash(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def _brand_in_title(title: str, tenant: str, legal_name: str) -> str:
+    """The company's own brand when the title starts with it and the link's tenant names it, but the legal entity
+    doesn't: 'GE Vernova Engineering Automation Internship' on gevernova, hired by 'GE Renewables Grid' (2026-11-24)."""
+    want = _squash(tenant)
+    if len(want) < 4 or want in _squash(legal_name):
+        return ""
+    words = title.split()
+    for n in range(1, min(4, len(words)) + 1):
+        if _squash(" ".join(words[:n])) == want:
+            return " ".join(words[:n])
+    return ""
+
+
+# tenants whose hiring entity isn't the brand the posting names: Bank of America's "ghr" hires through "5674085
+# Merrill Lynch, Pierce, Fenner & Smith" for a posting that says "At Bank of America" (2026-11-25)
+_TENANT_BRANDS = {"ghr": "Bank of America"}
+
+
+def _posting_text(data: dict[str, Any]) -> str:
+    raw = (data.get("jobPostingInfo") or {}).get("jobDescription") or ""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", raw))
+
+
+def _brand_in_text(text: str, tenant: str, legal_name: str) -> str:
+    """The brand the link's tenant names, spelled as the posting spells it, when the posting never names the hiring
+    entity: "Zale Delaware" hires for a posting that says "Signet Jewelers is the world's largest..." on the
+    signetjewelers tenant (2026-11-25)."""
+    want = _squash(tenant)
+    if len(want) < 4 or not text or _squash(legal_name) in _squash(text):
+        return ""
+    words = re.findall(r"[A-Za-z0-9][A-Za-z0-9&'.-]*", text)
+    for n in (1, 2, 3):
+        for i in range(len(words) - n + 1):
+            phrase = " ".join(words[i:i + n]).strip(".'")
+            if _squash(phrase) == want:
+                return phrase
+    return ""
 
 
 def company_name(data: dict[str, Any], ref: WorkdayRef) -> str:
     """'ADUS-Adobe Inc.' -> 'Adobe'. Falls back to the tenant name in the link."""
+    if ref.tenant.lower() in _TENANT_BRANDS:
+        return _TENANT_BRANDS[ref.tenant.lower()]
     name = ((data.get("hiringOrganization") or {}).get("name") or "").strip()
+    brand = _brand_in_title(((data.get("jobPostingInfo") or {}).get("title") or "").strip(), ref.tenant, name)
+    if brand:
+        return brand
     name = re.sub(r"\s*\([^)]*\)\s*$", "", name)  # "(US01)"
+    name = re.sub(r"^\(\s*[A-Z0-9]{2,8}\s*\)\s*", "", name)  # "(0207) Sanofi US Services Inc." (2026-11-24)
     name = re.sub(r"^(?:[A-Z]{2,6}\d*|\d{2,6})\s*[-_:]\s*", "", name)  # an internal company code: "ADUS-"
-    name = re.sub(r"^\d{1,6}(?:\s*[&/,]\s*\d{1,6})*\s+", "", name)  # "100 Salesforce", "1 DexCom", and two codes:
+    name = re.sub(r"^\d{1,8}(?:\s*[&/,]\s*\d{1,8})*\s+", "", name)  # "100 Salesforce", "1 DexCom", and two codes:
     # "01 & 04 Woodward, Inc." (2026-11-21; the list showed "& 04 Woodward")
     name = re.sub(r"(?i)^company\s+\d+\s*[-_:]\s*", "", name)  # "Company 19 - John Hancock..." (2026-11-17)
     name = _strip_code_word(name)  # "GAIC Great American...", "LAB Labcorp...", "C01 Carrier", "LS3002 GE Vernova"
@@ -133,7 +185,10 @@ def company_name(data: dict[str, Any], ref: WorkdayRef) -> str:
                       r"|SE|LP|L\.P)\.?$",
                       "", name, flags=re.I).strip(" ,.")
         name = re.sub(r"\s+(US|USA|U\.S\.|America|Americas|North America)$", "", name).strip(" ,.")
-    return name or ref.tenant.replace("-", " ").title()
+    if name:
+        return _brand_in_text(_posting_text(data), ref.tenant, name) or name
+    # no hiring organization: the tenant, and a short one is an acronym ("hpe" is HPE, 2026-11-24)
+    return ref.tenant.upper() if re.fullmatch(r"[a-z]{2,3}", ref.tenant) else ref.tenant.replace("-", " ").title()
 
 
 def job_from_api(data: dict[str, Any], url: str, ref: WorkdayRef) -> Job:

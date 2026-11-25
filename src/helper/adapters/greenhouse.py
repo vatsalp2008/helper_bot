@@ -138,13 +138,18 @@ def fetch_job(url: str, session: Optional[Any] = None) -> Job:
     return job_from_api(data, url, board)
 
 
+def board_company(name: str) -> str:
+    """The company in a board's name: "Rubrik Job Board" is Rubrik (2026-11-24)."""
+    return re.sub(r"(?i)[\s,|:-]+(?:job board|jobs? board|careers?(?: site| page)?|jobs)$", "", name.strip()).strip()
+
+
 def job_from_api(data: dict[str, Any], url: str, board: str) -> Job:
     content = data.get("content") or ""
     location = (data.get("location") or {}).get("name")
     return Job(
         url=url,
         ats="greenhouse",
-        company=data.get("company_name") or board.replace("-", " ").title(),
+        company=board_company(data.get("company_name") or "") or board.replace("-", " ").title(),
         role_title=data["title"],
         location=location,
         job_id=str(data["id"]),

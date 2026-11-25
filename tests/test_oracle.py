@@ -26,7 +26,9 @@ def test_links_and_routing() -> None:
     assert ref.apply_url == POSTING + "/apply/email"
     assert oracle.parse_ref("https://edel.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/job/24969"
                             "/apply/section/2").job_id == "24969"
-    assert oracle.parse_ref("https://careers.example.com/hcmUI/CandidateExperience/en/sites/CX/job/1") is None
+    # Oracle's app under a company's own domain is still Oracle's app (Dell, 2026-11-23); other company pages aren't
+    assert oracle.parse_ref("https://careers.example.com/hcmUI/CandidateExperience/en/sites/CX/job/1").job_id == "1"
+    assert oracle.parse_ref("https://careers.example.com/jobs/CX/job/1") is None
     assert adapter_for(POSTING) is oracle
 
 
@@ -197,6 +199,18 @@ def test_required_fields_left_empty_are_named_before_submit(page: Any) -> None:
       <div class="input-row"><label class="input-row__label input-row__label--required">Pick one</label>
         <ul role="list"><li><button class="cx-select-pill-section cx-select-pill-section--selected">A</button></li></ul></div>""")
     assert oracle._required_gaps(page) == ["City"]
+
+
+def test_a_typed_signature_is_not_named_empty(page: Any) -> None:
+    # JPMC (2026-11-23 and 24): the e-signature's Full Name was typed last and kept the focus, so Oracle hadn't marked
+    # its row filled and helper said "These required fields look empty: Full Name"; a search box still needs its pick
+    page.set_content("""<div class="input-row"><label class="input-row__label input-row__label--required">Full Name
+        </label><input name="fullName" value="Alex Example"></div>
+      <div class="input-row"><label class="input-row__label input-row__label--required">City</label>
+        <input role="combobox" value="Sea"></div>""")
+    page.focus("input[name=fullName]")
+    assert oracle._required_gaps(page) == ["City"]
+    assert page.evaluate("() => document.activeElement.tagName") == "BODY"
 
 
 def test_a_box_oracle_locked_with_its_value_is_left_alone(page: Any) -> None:
@@ -432,3 +446,25 @@ def test_a_site_named_for_a_division_takes_the_posting_s_own_employer_name() -> 
         == "Ralliant"
     assert oracle.fuller_employer("Vertiv Holdings", "Vertiv Holdings and More Vertiv Holdings") == "Vertiv Holdings"
     assert oracle.fuller_employer("Fortinet", "Fortinet is hiring.") == "Fortinet"
+
+
+def test_a_company_domain_and_a_lettered_job_id_are_oracle() -> None:  # Dell, 2026-11-23
+    ref = oracle.parse_ref("https://enterpriseplatform.dell.com/hcmUI/CandidateExperience/en/sites/careers/job/"
+                           "R271283/?utm_medium=jobshare")
+    assert ref is not None and (ref.host, ref.site, ref.job_id) == ("enterpriseplatform.dell.com", "careers", "R271283")
+    assert oracle.is_oracle_page("https://enterpriseplatform.dell.com/hcmUI/CandidateExperience/en/sites/careers/"
+                                 "job/R271283/apply/email")
+    # the email still goes only into Oracle's app, never a company page around it
+    assert not oracle.is_oracle_page("https://www.dell.com/careers/login")
+    assert oracle.parse_ref("https://www.dell.com/careers/job/R271283") is None
+
+
+def test_a_profile_landing_counts_only_after_the_submit_page() -> None:  # Dell, 2026-11-23
+    # Vatsal went back to a section from SUBMIT, then submitted; Oracle showed his profile and helper logged "closed"
+    class Page:
+        url = "https://enterpriseplatform.dell.com/hcmUI/CandidateExperience/en/sites/careers/my-profile"
+
+    before, after = Page(), Page()
+    assert not oracle._landed_after_submit(before)  # a returning candidate's profile before any SUBMIT isn't it
+    oracle._AT_SUBMIT.add(id(after))
+    assert oracle._landed_after_submit(after) and id(after) in oracle._SUBMITTED

@@ -60,6 +60,13 @@ def levels(e: Eligibility) -> dict[str, str]:
     # Cigna's Business Analytics Intern, 2026-11-23: "visa support" rather than "visa sponsorship"
     "Therefore, this temporary internship is open only to individuals who are eligible for employment in the United "
     "States and who would not require visa support including H-1B, CPT/OPT/STEM, etc., now or in the future.",
+    # Veeva's Analytics Development Program, 2026-11-23
+    "Veeva does not provide sponsorship for employment visa status (e.g., H-1B, OPT, or TN status) for this "
+    "employment position.",
+    # Sanofi's NCES statistician intern, 2026-11-24
+    "Students currently on CPT, OPT, or STEM OPT usually require future sponsorship for long term employment and do "
+    "not meet the Internal requirements for this program unless eligible for an alternative long-term status that "
+    "does not require company sponsorship.",
 ])
 def test_named_visa_exclusions_block(text: str) -> None:
     e = check(text)
@@ -138,6 +145,27 @@ def test_spelled_out_us_person_statuses_block_a_visa_holder() -> None:  # Atlant
     assert "us_person_required" not in levels(notice)
 
 
+def test_only_us_persons_are_eligible_blocks_a_visa_holder() -> None:  # Moderna, 2026-11-23
+    moderna = check("Export Control Notice. This position may involve access to technology or data that is subject to "
+                    "U.S. export control laws, including the Export Administration Regulations (EAR). Due to the nature "
+                    "of the work and regulatory requirements, only individuals who qualify as U.S. persons (citizens, "
+                    "permanent residents, asylees, or refugees) are eligible for this position.")
+    assert moderna.blocked and levels(moderna)["us_person_required"] == "blocker"
+
+
+def test_citizen_or_permanent_resident_blocks_a_visa_holder() -> None:  # Johns Hopkins APL, 2026-11-24
+    apl = check("You meet our minimum qualifications for the job if you...\n- Have a minimum 3.0 GPA on a 4.0 scale.\n"
+                "- Are a US citizen or permanent resident. To access APL's facilities and networks, US Citizenship or "
+                "permanent resident status is required, subject to applicable laws.\n",
+                title="2027 Internship - Artificial Intelligence and Complex Systems")
+    assert apl.blocked and levels(apl)["us_person_required"] == "blocker"
+    assert levels(check("- Are a U.S. citizen or permanent resident"))["us_person_required"] == "blocker"
+    citizen = PROFILE.model_copy(deep=True)
+    citizen.tier2.us_citizen_or_permanent_resident.value = "Yes"
+    assert "us_person_required" not in levels(check("US Citizenship or permanent resident status is required.",
+                                                    profile=citizen))
+
+
 def test_us_abbreviation_does_not_split_the_sentence() -> None:  # ICF, 2026-11-16
     icf = check("Bachelor's degree in computer science.\n- Due to contract requirements, U.S. Citizenship is required\n"
                 "Preferred: Python.")
@@ -148,8 +176,10 @@ def test_us_abbreviation_does_not_split_the_sentence() -> None:  # ICF, 2026-11-
 
 
 def test_degree_level() -> None:
-    assert levels(check("Currently pursuing a Bachelor's degree in Computer Science."))["undergrad_only"] == "warning"
-    assert levels(check("Open to rising juniors or seniors."))["undergrad_only"] == "warning"
+    # a note, not a warning: he applies anyway and auto-submit still sends it (Vatsal, 2026-11-25, Bandwidth)
+    bachelors = levels(check("Currently pursuing a Bachelor's degree in Computer Science."))
+    assert bachelors["undergrad_only"] == "note" and "warning" not in bachelors.values()
+    assert levels(check("Open to rising juniors or seniors."))["undergrad_only"] == "note"
     both = check("Currently pursuing a BS or MS in Computer Science.")
     assert "undergrad_only" not in levels(both)
     curly = check("Currently pursuing a Bachelor’s or Master’s degree in Computer Science.")
@@ -157,7 +187,7 @@ def test_degree_level() -> None:
     higher = check("Currently pursuing a bachelor’s degree (or higher) from an accredited college or university.")
     assert "undergrad_only" not in levels(higher)  # Honeywell Aerospace, 2026-11-20
     gpa = check("Currently pursuing a bachelor's degree in Computer Science with a GPA of 3.0 or higher.")
-    assert levels(gpa)["undergrad_only"] == "warning" and "grad_students_considered" not in levels(gpa)
+    assert levels(gpa)["undergrad_only"] == "note" and "grad_students_considered" not in levels(gpa)
     pay = check("Hourly rate: Bachelor's students $40/hr, Master's students $45/hr, PhD students $50/hr.")
     assert levels(pay)["grad_students_considered"] == "note"
 
@@ -246,6 +276,9 @@ def test_deadlines_and_urgency() -> None:
     assert levels(check("Apply by March 1, 2027."))["deadline"] == "note"
     assert levels(check("Application deadline: October 1, 2026"))["deadline_passed"] == "warning"
     assert levels(check("Applications are reviewed on a rolling basis."))["urgency"] == "note"
+    assert levels(check("We have an urgent need for interns this summer."))["urgency"] == "note"
+    # a mission statement isn't a hiring deadline (GE Vernova, 2026-11-24)
+    assert "urgency" not in levels(check("Addressing the climate crisis is an urgent global priority."))
 
 
 # --------------------------------------------------------------------------- 7. caps (8.3)
@@ -514,6 +547,21 @@ def test_eligibility_for_a_clearance_blocks() -> None:  # Applied Research Assoc
     assert "clearance_required" not in levels(check("Check your eligibility to obtain a visa for travel."))
 
 
+def test_a_polygraph_clearance_without_the_word_clearance_blocks() -> None:  # Freedom TSG, 2026-11-24
+    freedom = check("Required Qualifications: TS/SCI with Full Scope Polygraph   A bachelor's degree in a technical "
+                    "discipline and three (3) years of experience.", title="Junior Software Engineer 817")
+    assert freedom.blocked and levels(freedom)["clearance_required"] == "blocker"
+    assert "clearance_required" not in levels(check("TS/SCI with polygraph preferred but not required."))
+
+
+def test_fully_cleared_individuals_is_a_clearance_requirement() -> None:  # Amentum, Hanover MD, 2026-11-24
+    amentum = check("The DevOps team positions require fully cleared individuals with an extensive range of "
+                    "experience and abilities to develop applications for Computer Network Operations.",
+                    title="Software Engineer 1")
+    assert amentum.blocked and levels(amentum)["clearance_required"] == "blocker"
+    assert "clearance_required" not in levels(check("Our cleared and uncleared engineers work side by side."))
+
+
 def test_a_posting_in_another_country_is_blocked() -> None:  # GE Aerospace, 2026-11-17: "Remote, Germany"
     ge = check("This is a remote position open only to candidates who live in Germany.", location="Remote, Germany")
     assert ge.blocked and levels(ge)["outside_us"] == "blocker"
@@ -571,3 +619,88 @@ def test_rising_senior_and_bachelors_enrollment_wording_is_noticed() -> None:  #
     attain = check("An eight-week paid internship program onsite for undergraduate students who are rising seniors.\n"
                    "- Current enrollment in an accredited Bachelor's degree program")
     assert "undergrad" in " ".join(levels(attain))
+
+
+def test_a_continuing_education_benefit_is_no_return_to_school() -> None:  # webAI, 2026-11-23
+    from helper.eligibility import _RETURNING_RE
+
+    assert not _RETURNING_RE.search("Benefits: 401k match, Flexible PTO Policy, Continuing education support")
+    assert _RETURNING_RE.search("You must continue your studies after the internship.")
+
+
+def test_the_title_s_season_beats_another_in_the_text() -> None:  # Lifeway, 2026-11-23
+    from datetime import date
+
+    from helper.eligibility import _season
+
+    text = ("This intern supports UI improvements planned for Winter-Spring 2027. Program Duration: June 7 - August 11, "
+            "2027 (11 weeks).")
+    assert _season("Summer Internship | Front-End Engineer", text, date(2026, 11, 23)) == ("summer", 2027)
+    assert _season("Summer Internship | Back-End", "We hire every summer.", date(2026, 11, 23)) == ("summer", 2027)
+    assert _season("Software Engineer Intern - Summer 2027", text, date(2026, 11, 23)) == ("summer", 2027)
+    assert _season("Spring 2027 Co-op", "Summer 2026 alumni say hi.", date(2026, 11, 23)) == ("spring", 2027)
+    # AMD, 2026-11-24: "Spring/Summer 2027" co-op runs January to August, a summer term, so December 2027
+    amd = "Spring/Summer 2027 Masters AI Rack/Cluster Design Engineering Co-Op"
+    assert _season(amd, "Duration: January 25, 2027 to August 13, 2027", date(2026, 11, 24)) == ("summer", 2027)
+    assert check("You are currently pursuing a Master's degree in Computer Science.", title=amd).grad_date == \
+        "December 2027"
+
+
+def test_dated_seasons_joined_by_a_slash_or_after_graduating_make_a_window() -> None:  # Illumio, 2026-11-23
+    from helper.eligibility import _grad_window
+
+    lo, hi, _ = _grad_window(["Currently enrolled in a full-time bachelors or masters Computer Science program with an "
+                              "expected graduation date in Winter 2026/Spring 2027"])
+    assert lo == (2026, 12) and hi == (2027, 6)  # May 2027 fits
+    lo, hi, _ = _grad_window(["Currently pursuing a full-time Bachelor's or Master's in Computer Science, graduating "
+                              "Winter 2027 or Spring 2028"])
+    assert lo == (2027, 12) and hi == (2028, 6)  # December 2027 fits, May 2027 doesn't
+
+
+def test_a_summer_start_named_only_by_its_date_is_summer() -> None:  # Illumio and ASML, 2026-11-23
+    from helper.eligibility import _season
+
+    illumio = "THIS IS A 12 WEEK INTERNSHIP PROGRAM BEGINNING ON MAY 24TH 2027 OR JUNE 21ST 2027."
+    assert _season("AI-Based Scale & Performance Test Automation Intern", illumio) == ("summer", 2027)
+    asml = ("Must be available for 12 weeks for one of these sessions starting with the following dates: 6/2/2027 or "
+            "6/14/2027")
+    assert _season("Internship - Data Analyst", asml) == ("summer", 2027)
+    assert _season("Data Analyst", "Start date: June 1, 2027. A full-time role.") == (None, None)  # not an internship
+
+
+@pytest.mark.parametrize("title", [
+    "Markets Quantitative Analyst Summer Internship Program 2028 New York",  # Barclays, 2026-11-24
+    "Software Engineer Intern (Summer 2028)",
+    "Spring 2028 Co-op: Data Engineering",
+])
+def test_an_internship_term_after_his_graduation_is_blocked(title):
+    e = check("Join our 10 week program. Target graduation within one year of the internship's end.", title=title)
+    assert levels(e).get("term_after_graduation") == "blocker"
+    assert e.recommendation != "build"
+
+
+@pytest.mark.parametrize("title", [SUMMER, "Winter 2027 Co-op: Data Engineering", "Software Engineer Intern"])
+def test_a_term_before_his_graduation_is_fine(title):
+    assert "term_after_graduation" not in levels(check("Join our 10 week program.", title=title))
+
+
+def test_degree_completed_between_window_blocks_a_later_graduate():
+    """General Motors, 2026-11-24: 'Degree completed between May 2025 and August 2026, with availability to begin
+    employment in 2026.'"""
+    e = check("Degree completed between May 2025 and August 2026, with availability to begin employment in 2026.",
+              title="Software Systems Engineer - Early Career")
+    assert levels(e).get("grad_window") == "blocker"
+
+
+def test_a_june_to_august_program_with_no_year_is_the_coming_summer() -> None:  # Cboe, 2026-11-24
+    from datetime import date
+
+    from helper.eligibility import _RETURNING_RE, _season
+
+    text = ("To be eligible for this internship, applicants must be enrolled in a university or college program and "
+            "should not be scheduled to graduate before December of the year in which the internship takes place. Our "
+            "internship program runs from June to August and you will wrap up your internship with a final "
+            "presentation.")
+    assert _season("Software Engineer Intern (C++)", text, date(2026, 11, 24)) == ("summer", 2027)
+    assert _RETURNING_RE.search(text)
+    assert _season("Software Engineer", "Our busy season runs from June to August.", date(2026, 11, 24)) == (None, None)

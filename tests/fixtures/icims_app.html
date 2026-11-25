@@ -19,14 +19,29 @@
     if (next) next.addEventListener('click', e => { e.preventDefault(); onNext(); });
   }
   function email() {
+    // Schwab's email step also asks the phone and its country code, and Medpace's keeps Next disabled until its
+    // privacy consent is ticked (2026-11-24); an arbitration box beside them must stay unticked
     show(`<h2>Sign in</h2><label for="email">Email</label>
           <input type="email" id="email" name="css_loginName">
-          <input type="submit" id="enterEmailSubmitButton" value="Next" data-next>`, () => {
+          <label for="cc">Country Code</label>
+          <select id="cc" name="css_phoneCountryCode"><option value="">Select</option>
+            <option>Canada (+1)</option><option>United States of America (+1)</option><option>India (+91)</option></select>
+          <label for="ph">Number</label><input type="text" id="ph" name="css_phoneNumber">
+          <div><p id="gdpr_desc">I have read Mockco's privacy policy and consent to the processing of my personal
+            data.</p><label for="accept_gdpr"><input type="checkbox" id="accept_gdpr" name="accept_gdpr" value="1"
+            aria-describedby="gdpr_desc"> I accept</label></div>
+          <div><p id="arb_desc">I agree to resolve any dispute by binding arbitration.</p><label for="arb"><input
+            type="checkbox" id="arb" aria-describedby="arb_desc"> I agree</label></div>
+          <input type="submit" id="enterEmailSubmitButton" value="Next" data-next disabled>`, () => {
       rec.email = val('email');
+      Object.assign(rec, {phone: val('ph'), countryCode: val('cc'), arbitration: document.getElementById('arb').checked});
       if (!rec.email) return error('Enter your email');
       rec.email === 'known@mockmail.test' ? password() : create();
     });
   }
+  document.addEventListener('change', e => {  // Next waits for the privacy consent
+    if (e.target.id === 'accept_gdpr') document.getElementById('enterEmailSubmitButton').disabled = !e.target.checked;
+  });
   function create() {
     show(`<h2>Create your account</h2>
           <label for="fn">First Name</label><input id="fn" required>

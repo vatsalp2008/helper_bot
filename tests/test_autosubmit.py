@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -328,6 +329,7 @@ def test_a_submit_the_form_refuses_is_not_logged_as_sent(monkeypatch: Any) -> No
         browser.close()
     assert outcome == "timeout"  # never "unverified": nothing was sent, and helper doesn't click Submit again
     assert any("didn't take the submit; nothing was sent" in s and "Please make a selection." in s for s in said)
+    assert not any(".." in s for s in said)  # a message ending in "." gets no second one (Serko, 2026-11-24)
 
 
 _ASHBY_REFUSAL = """<form>
@@ -375,3 +377,120 @@ def test_a_half_filled_school_entry_blocks_auto_submit() -> None:
                            "Oct. 2021 to May 2025", "discipline: no option matches 'Computer Engineering'")]
     reasons = blockers(gate(answers=answers, results=results))
     assert any("Education 2: Bachelor of Engineering" in r and "wasn't filled completely" in r for r in reasons)
+
+
+_STEP_FORM = """<form id="f"><h3>Page 1 of 2 - Basic Information</h3>
+  <label for="e">Email *</label><input id="e" name="email" required>
+  <button type="button" id="next">NEXT</button>
+</form>
+<script>
+const page2 = '<h3>Page 2 of 2</h3><label for="c">City *</label><input id="c" name="city" required>'
+  + '<button type="submit">Submit</button>';
+document.getElementById('next').onclick = () => {
+  if (location.hash === '#popup') {
+    const w = window.open('', '_blank');
+    w.document.write('<form>' + page2 + '</form>');
+  } else {
+    document.getElementById('f').innerHTML = page2;
+  }
+};
+</script>"""
+
+
+@pytest.mark.parametrize("where", ["same", "popup"])
+def test_a_company_form_s_next_pages_are_followed_and_filled(monkeypatch: Any, tmp_path: Path, where: str) -> None:
+    """Veeva (2026-11-23): "Page 1 of 3" with NEXT. helper filled page 1, never followed Next, and the next page opened
+    in a window it didn't watch. Now it clicks Next, follows the page (or the new window) and fills the next page."""
+    playwright_api = pytest.importorskip("playwright.sync_api")
+    import helper.apply as ap
+    from helper.adapters import generic
+    from helper.answers import AnswerPlan, PlannedAnswer
+
+    def planned(questions: list[Any], ctx: Any) -> Any:
+        values = {"Email": "alex@example.com", "City": "Seattle"}
+        return AnswerPlan(answers=[PlannedAnswer(field=q.field_name, label=q.label, type=q.type, required=q.required,
+                                                 kind="auto", value=values.get(q.label.rstrip(" *"), "x"))
+                                   for q in questions])
+
+    said: list[str] = []
+    monkeypatch.setattr(ap, "_say", said.append)
+    monkeypatch.setattr(ap, "_context", lambda *a, **k: SimpleNamespace(approved=None))
+    monkeypatch.setattr(ap, "_approved", lambda paths: None)
+    monkeypatch.setattr(ap, "plan_answers", planned)
+    monkeypatch.setattr(ap, "_ask_claude_midfill", lambda *a, **k: None)
+    monkeypatch.setattr(ap, "run_dir", lambda paths, run_id: tmp_path)
+    cfg = SimpleNamespace(drafts_need_review=False, human_pause_seconds=[0, 0])
+    monkeypatch.setattr(ap, "make_pause", lambda cfg: (lambda: None))
+    profile = SimpleNamespace(tier1=SimpleNamespace(address=SimpleNamespace(country=None, city=None)))
+    with playwright_api.sync_playwright() as pw:
+        try:
+            browser = pw.chromium.launch(headless=True)
+        except Exception as exc:
+            pytest.skip(f"Chromium isn't installed: {exc}")
+        context = browser.new_context()
+        page = context.new_page()
+        page.goto("about:blank#" + where)
+        page.set_content(_STEP_FORM)
+        page.evaluate(f"() => {{ location.hash = '{where}' }}")
+        form = page.main_frame
+        plan = planned(generic.discover(form), None)
+        results = generic.fill_form(form, plan.answers, tmp_path / "r.pdf", country=None, city=None,
+                                    pause=lambda: None)
+        assert generic.next_button(form) is not None and not generic.submit_buttons(form)
+        state = SimpleNamespace(run_id="r1")
+        page2, form2, results = ap._more_pages(SimpleNamespace(), cfg, state, SimpleNamespace(), context, page, form,
+                                               generic, plan, results, tmp_path / "r.pdf", profile, 0.05, 0.1)
+        city = form2.locator("input[name=city]").input_value()
+        finals = len(generic.submit_buttons(form2))
+        browser.close()
+    assert city == "Seattle" and finals == 1, said
+    assert (page2 is not page) == (where == "popup")
+    assert [a.label.rstrip(" *") for a in plan.answers] == ["Email", "City"]
+    assert any("Next page: filling 1 question(s)" in s for s in said), said
+
+
+def test_a_captcha_after_submit_holds_the_unverified_clock(monkeypatch: Any) -> None:  # Veeva, 2026-11-23
+    # helper clicked Submit, a CAPTCHA appeared, Vatsal solved it after a few minutes and the thank-you page showed;
+    # helper had given up after 60 seconds and logged submitted_unverified
+    from helper import apply as ap
+
+    calls = {"captcha": 0, "confirm": 0}
+
+    def captcha(page: object) -> bool:
+        calls["captcha"] += 1
+        return calls["captcha"] <= 40  # about 200 simulated seconds of CAPTCHA
+
+    class Page:
+        def is_closed(self) -> bool:
+            return False
+
+        def wait_for_timeout(self, ms: float) -> None:
+            pass
+
+        def locator(self, selector: str) -> Any:
+            return SimpleNamespace(inner_text=lambda timeout=0: "")
+
+    class Adapter:
+        def is_confirmation(self, page: object, form: object = None) -> bool:
+            calls["confirm"] += 1
+            return calls["captcha"] > 41  # the thank-you page right after the CAPTCHA
+
+    monkeypatch.setattr(ap, "captcha_visible", captcha)
+    monkeypatch.setattr(ap, "asks_for_emailed_code", lambda page, form=None: False)
+    monkeypatch.setattr(ap, "_say", lambda text: None)
+    clock = iter(range(0, 100_000, 5))
+    monkeypatch.setattr(ap.time, "monotonic", lambda: next(clock))
+    assert ap._wait_for_submit(Page(), Adapter(), {"value": True}, 60, 0.01) == "confirmed"
+
+
+def test_the_request_counted_as_a_submit_is_logged(tmp_path: Path) -> None:  # Illumio, 2026-11-23
+    from helper import apply as ap
+    from helper.adapters import ashby
+
+    seen = {"value": False}
+    watch = ap._submit_watcher(ashby, seen, tmp_path)
+    watch(SimpleNamespace(url="https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiJobBoardWithTeams", method="POST"))
+    assert not seen["value"] and not (tmp_path / "submit_requests.log").exists()
+    url = "https://jobs.ashbyhq.com/api/non-user-graphql?op=ApiSubmitSingleApplicationFormAction"
+    watch(SimpleNamespace(url=url, method="POST"))
+    assert seen["value"] and url in (tmp_path / "submit_requests.log").read_text(encoding="utf-8")

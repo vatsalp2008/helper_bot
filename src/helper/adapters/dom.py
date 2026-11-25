@@ -47,6 +47,23 @@ DISCOVER_JS = r"""
     const required = /_required/.test(title.className) || !!c.querySelector('[required],[aria-required=true]');
     const description = text(c.querySelector('.ashby-application-form-question-description'));
     let type = null, options = [];
+    // a phone box with a consent choice under the same title ("Phone Number" with "Yes - I consent to receiving text
+    // messages", Illumio, 2026-11-23): read as the radio alone, the required number stayed empty and nothing was sent.
+    // Two questions: the box, keyed on its own wrapper, and the choice, keyed on the field.
+    const box = c.querySelector('input[type=tel], input[type=text], input[type=email], input:not([type])');
+    if (box && c.querySelector('input[type=radio]') && !c.querySelector('.ashby-application-form-input-yesno')) {
+      let wrap = box;
+      while (wrap.parentElement && wrap.parentElement !== c && !wrap.parentElement.querySelector('input[type=radio]'))
+        wrap = wrap.parentElement;
+      // with no wrapper of its own (the box beside the choices, or right in the field: Illumio's live form, where the
+      // field's own key replaced the box's), the box itself carries the key; _inside reads a tagged control
+      push(wrap, key + ':box', text(title), 'text', required, [], null);
+      const choices = [...c.querySelectorAll('input[type=radio]')].map(optionLabel);
+      const sms = choices.some(o => /text messag|\bsms\b/i.test(o || ''));
+      push(c, key, sms ? 'Consent to receive text messages (' + clean(text(title)) + ')' : text(title), 'radio',
+           required, choices, description);
+      continue;
+    }
     if (c.querySelector('.ashby-application-form-input-yesno')) { type = 'yesno'; options = ['Yes', 'No']; }
     else if (c.querySelector('input[type=radio]')) {
       type = 'radio';

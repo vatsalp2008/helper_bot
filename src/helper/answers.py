@@ -114,8 +114,12 @@ def match_option(value: str, options: list[str], aliases: tuple[str, ...] | list
                                for a in aliases):
                 # an option that starts with an alias counts like one that starts with the value itself ("Never
                 # been a contractor or an employee" for the past-employer rule's "never", Lucid, 2026-11-19)
-                prefix = any(_norm(a) and n.startswith(_norm(a) + " ") for a in aliases)
-                score = max(score, 0.95 if prefix else 0.9)
+                # "I have never been employed by Rubrik ..." starts with "never been employed" once its "I have" is
+                # set aside (Rubrik, 2026-11-24)
+                bare = re.sub(r"^i (?:have |am |was |ve )?", "", n)
+                prefix = any(_norm(a) and (n.startswith(_norm(a) + " ") or bare.startswith(_norm(a) + " "))
+                             for a in aliases)
+                score = max(score, (0.95 if prefix else 0.9) + (0.02 if tv and tv <= to else 0.0))
         if score > best_score or (score == best_score and best is not None and len(option) < len(best)):
             best, best_score = option, score  # on a tie the closer (shorter) option wins
     return best, round(best_score, 3)
@@ -130,7 +134,9 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     # (Direct Supply, 2026-11-16), so it comes before the internship count
     ("project_count", r"\bhow many\b.{0,80}\bprojects?\b|\bnumber of\b.{0,60}\bprojects?\b", 0.9),
     ("internship_count", r"\bhow many\b.{0,100}\binternships?\b|\bnumber of\b.{0,60}\binternships?\b", 0.9),
-    ("ai_consent", r"\bhiredscore\b|\bAI[- ]assisted (recruit|tool|screen)|\binvolving AI\b|"
+    ("ai_consent", r"\bhiredscore\b|\bAI[- ]assisted\b.{0,25}?\b(recruit|tool|screen)|\binvolving AI\b|"
+                   # "Use of AI for Future AI Matching (Optional)" (Merck, 2026-11-24)
+                   r"\buse of (AI|artificial intelligence)\b.{0,40}\bmatch\w*\b|\bAI (matching|screening)\b|"
                    r"\b(consent|opt[- ]?in|agree)\b.{0,80}\b(AI|artificial intelligence)\b|"
                    r"\b(AI|artificial intelligence)\b.{0,80}\b(consent|opt[- ]?in)\b|"
                    # "Do you permit Labcorp to process your data using Artificial Intelligence (AI) tools to evaluate
@@ -148,8 +154,12 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                              r".{0,120}\b(employ\w*|work\w*|board|trustee)\b", 0.95),
     ("employment_restrictions", r"\bnon-?compete\b|\bemployment restrictions?\b|\brestrictive covenants?\b|"
                                 r"\bnon-?solicit|\bcovenant not to compete\b", 0.9),  # Little Caesars, 2026-11-17
+    # GE Vernova, 2026-11-24: "do you consent to GE Vernova retaining your Candidate profile* to assess your
+    # suitability for roles for which you may not have applied, and to contact you by email" went to the email rule
     ("keep_for_other_roles", r"\bretain\w*\b.{0,80}\b(future|other|alternative)\b.{0,40}\b(roles?|opportunit\w*|"
-                             r"positions?|openings?)\b|\btalent (pool|community)\b", 0.9),
+                             r"positions?|openings?)\b|\btalent (pool|community)\b"
+                             r"|\b(roles?|positions?|jobs?|opportunit\w*) (for which|that) you (may |might )?(have )?"
+                             r"(not|never)( yet)?( have)? applied\b", 0.9),
     ("transcript", r"\btranscripts?\b|\bacademic record\b", 0.95),
     ("hiring_manager_note", r"\b(note|message)\b.{0,25}\b(hiring manager|recruiter|hiring team)\b", 0.9),
     ("cover_letter", r"\bcover letter\b", 0.95),
@@ -157,16 +167,21 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     # ^ Workday's resume box can say only "Upload a file (5MB max)" (ASML, 2026-11-16)
     # "Chosen Name" (MongoDB on Greenhouse, 2026-11-19) asks the same thing
     ("preferred_first_name", r"\b(preferred|chosen) (first )?name\b|\bnickname\b", 0.95),
+    # "First & Last Name" (Strava on Ashby, 2026-11-25) is the whole name, not the last name
+    ("full_name", r"\bfirst\s*(&|and|\+|/)\s*last\s+names?\b", 0.95),
     ("first_name", r"\bfirst name\b|\bgiven name\b", 0.95),
     ("last_name", r"\blast name\b|\bsurname\b|\bfamily name\b", 0.95),
-    ("full_name", r"\bfull (legal )?name\b|^\s*(legal )?name\s*\??\s*$", 0.9),
+    # "What is your Legal Name?" (Rubrik, 2026-11-24)
+    ("full_name", r"\bfull (legal )?name\b|^\s*(legal )?name\s*\??\s*$"
+                  r"|^\s*(what is |please (enter|provide) )?your (full |legal |full legal )?name\s*\??\s*$", 0.9),
     # "Would you like to receive communications via SMS and/or WhatsApp ... we will only communicate with you via email"
     # (Lucid, 2026-11-19) is a consent choice, not the email box: it was matched against the email address
     ("sms_consent", r"\b(receive|send|opt[- ]?in|consent|agree)\b.{0,80}\b(sms|whatsapp|text messag\w*)\b"
                     r"|\b(sms|whatsapp|text messag\w*)\b.{0,80}\b(receive|opt[- ]?in|consent|agree|communications?|updates)\b",
      0.9),
     ("email", r"\be-?mail\b", 0.95),
-    ("phone_extension", r"\bextension\b|^\s*ext\.?\s*$", 0.9),
+    # a phone's extension, not "F-1 STEM OPT extension" in a sponsorship question (Bank of America, 2026-11-25)
+    ("phone_extension", r"\b(phone|telephone|tel)\.?\s+extension\b|^\W*extension\W*$|^\s*ext\.?\s*$", 0.9),
     ("phone_type", r"\bphone (device )?type\b|\bdevice type\b|\btype of phone\b", 0.9),
     ("phone_country_code", r"\bcountry (phone )?code\b|\bdialing code\b", 0.9),
     ("phone", r"\bphone\b|(?<!t-)\bmobile\b|\bcell\b", 0.9),  # not "T-Mobile" (2026-11-16)
@@ -194,6 +209,13 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     # "Are you a citizen of any of the following countries: Group D (Armenia, ...)" (Analog Devices, 2026-11-16):
     # checked against the profile's citizenship, not the U.S.-citizen answer
     ("citizen_of_listed", r"\bcitizen (of|in) (any|one) (one )?of (these|the following|the listed)\b.{0,20}\bcountr", 0.95),
+    # "Is the most recent country from which you hold or have been granted citizenship in Cuba, Iran, North Korea, or
+    # Syria?" (Nasdaq, 2026-11-24): the same check, not the country-name answer
+    ("citizen_of_listed", r"\bcitizenships?\b[^?]{0,60}\b(in|of|from)\s+(cuba|iran|north korea|syria)\b", 0.95),
+    # "Do you currently hold permanent resident alien status (or similar designation) inside of Cuba, Iran, North
+    # Korea, or Syria?" (Nasdaq): not the U.S.-status answer; the profile doesn't record residency elsewhere
+    ("listed_residency", r"\bpermanent resident\w*\b[^?]{0,60}\b(in|inside( of)?|of)\s+(cuba|iran|north korea|syria)\b",
+     0.95),
     # "Please select all countries in which you currently hold citizenship or have an active permanent resident
     # status" (Marvell, 2026-11-18): a country list, not the U.S.-status question below
     # "Please specify dual citizenship if applicable" (Vertiv on Oracle, 2026-11-19): N/A with one citizenship
@@ -205,6 +227,9 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     # a list of statements, never "How did you hear about us? (select all that apply)"
     ("none_apply", r"\b(check|select|mark) all (of )?the following\b[^?]{0,40}\bapply\b|\bstatements? (that|which) appl(y|ies)\b", 0.9),
     ("dual_citizenship", r"\b(dual|second|other|additional) (citizenship|nationality)\b", 0.9),
+    # "List those country(ies):" under "Do you hold citizenship(s) with country(ies) other than the US?" (Draper,
+    # 2026-11-25): the profile's citizenship
+    ("citizenship_country", r"^\W*(please )?(list|name|specify) (those|these|the|all|each|your)? ?countr(y|ies)\b", 0.9),
     ("citizenship_country", r"^\W*nationality\W*$|\bcountry of citizenship\b|\bcitizenship country\b|\bcountry (of|where you hold) "
                             r"citizenship\b|\bwhat is your citizenship\b|^\W*citizenship\W*$|"
                             r"\bcountr(y|ies)\b[^.?]{0,40}\b(hold|have|held)\b[^.?]{0,15}\bcitizenships?\b", 0.9),
@@ -228,6 +253,9 @@ LABEL_RULES: list[tuple[str, str, float]] = [
      0.9),
     ("graduation_date", r"\bgraduat\w*\b.*\b(date|when|year|term|semester)\b|\bexpected graduation\b|\bgraduation\b"
                         r"|\bclass of\b|\bwhen (do|will) you graduate\b|\b(term|semester|season)\b.*\bgraduat"
+                        # "If you are enrolled in a university or college, what year do you graduate?" (Strava,
+                        # 2026-11-25) was read as the school
+                        r"|\b(what|which) (year|term|semester)\b.{0,30}\bgraduat"
                         # "When do you expect to complete your current degree program?" (Analog Devices, 2026-11-16)
                         r"|\bwhen (do|will) you (expect to )?(complete|finish)\b.{0,40}\b(degree|program|studies)\b"
                         r"|\b(expected|anticipated) (degree )?completion\b", 0.9),
@@ -250,6 +278,10 @@ LABEL_RULES: list[tuple[str, str, float]] = [
                           # "Have you worked at AppLovin or any of its affiliates before?" (Wurl, 2026-11-20); never
                           # "worked with" (a skill: "Have you worked with Python before?")
                           r"|\bhave you (ever )?(worked|been employed)\s+(at|for|by)\b.{0,80}\bbefore\b", 0.9),
+    # "Have you ever applied for a position at a Ryan entity?", "Have you previously applied for a position at Cboe
+    # and/or Bats Global Markets?" (2026-11-24): the tracker knows
+    ("applied_before", r"\b(ever|previously|before|already)\b.{0,20}\b(applied|submitted an application)\b"
+                       r"|\b(applied|submitted an application)\b.{0,80}\b(before|previously|in the past)\b", 0.9),
     ("major", r"\bmajor\b(?! life)|\bdiscipline\b|\bfield of study\b|\barea of study\b", 0.9),  # not "major life activities"
     # "What is the highest level of education you have completed?" (Scout Motors, 2026-11-18): the finished degree
     # (Bachelor's), not the Master's still in progress. Before the general degree rule.
@@ -262,6 +294,10 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("degree", r"\bdegree\b", 0.85),
     # never a question about what he did there: "Technical Accomplishments - School/Internships" took his school's
     # name (Shield AI, 2026-11-23)
+    # "Is the university you are currently attending located in the United States?" (Rubrik, 2026-11-24) asks where
+    # it is, not its name
+    ("school_in_us", r"\b(school|university|college|institution)\b.{0,60}\b(located|based)\b.{0,15}"
+                     r"\b(united states|u\.?s\.?a?\b)", 0.9),
     ("school", r"^(?!.*\b(accomplishments?|achievements?|projects?|experiences?|coursework)\b).*?"
                r"(\bschool\b|\buniversity\b|\bcollege\b|\binstitution\b)", 0.85),
     ("relocate_from", r"\b(moving|relocat\w*|move) from\b|\bcity,? state,? (and )?zip\b", 0.9),
@@ -271,6 +307,9 @@ LABEL_RULES: list[tuple[str, str, float]] = [
     ("start_date", r"\bstart date\b|\bwhen (can|could|would|will) you (be able to |be available to )?(start|begin)\b"
                    r"|\bavailab\w* to (start|begin)\b"
                    r"|\bearliest\b.*\b(start|begin)\b", 0.9),
+    # what he earns now isn't the posting's pay: Serko's Workable form got 100000 for "Current Salary" (2026-11-24)
+    ("current_salary", r"\b(current|present|previous|prior|last|most recent)\b.{0,20}\b(salary|compensation|pay|wages?"
+                       r"|ctc|base)\b", 0.95),
     ("salary", r"\bsalary\b|\bcompensation\b|\bpay (expectation|range)s?\b|\bwages?\b|"
                r"\b(desired|expected|hourly|annual)\b.{0,20}\b(pay|rate|wage)\b", 0.9),
     ("how_did_you_hear", r"\bhow did you (hear|learn|find|connect|come across|come to know)\b|\bwhere did you (hear|find|"
@@ -394,7 +433,8 @@ def _hispanic_choices_only(options: list[str]) -> bool:
 def key_for(q: FormQuestion) -> tuple[Optional[str], float]:
     if q.field_name in FIELD_KEYS:
         return FIELD_KEYS[q.field_name], 1.0
-    text = q.label
+    # "AI‑assisted" with a non-breaking hyphen and "<b>Just-In-Time Notice</b>" markup (Crowe, 2026-11-25)
+    text = re.sub(r"[\u2010-\u2015\u2212]", "-", re.sub(r"<[^>]+>", " ", q.label))
     if q.type == "date" and re.search(r"(?i)\b(today['’]?s|the current) date\b", text):
         # "Enter today's date below to confirm..." under a long AI-consent text (Kensho/HiredScore, 2026-11-16): the
         # consent rule's "Yes" typed into a date box came out as "/01/2001"
@@ -414,8 +454,11 @@ def key_for(q: FormQuestion) -> tuple[Optional[str], float]:
         if q.type == "date" and key not in _DATE_KEYS:  # only a date goes into a date box: "Yes" and "Master of
             continue  # Science" came out as "/01/2001" and "/01/" (Kensho, Analog Devices, 2026-11-16)
         if q.type == "file" and key == "resume" and not re.search(r"(?i)\bresume|\bcv\b", q.label) and \
-                re.search(r"(?i)additional|attachment|supporting|other", q.description or ""):
-            continue  # "Upload a file" under Additional Attachments isn't the resume box (Camping World, 2026-11-16)
+                re.search(r"(?i)additional|attachment|supporting|other", q.description or "") and \
+                not re.search(r"(?i)\bresume|\bcv\b", q.description or ""):
+            # "Upload a file" under Additional Attachments isn't the resume box (Camping World, 2026-11-16); under a
+            # "Resume/CV/additional documents section" it is (MIPS's Workday, 2026-11-24: left to Vatsal)
+            continue
         if re.search(pattern, text, re.IGNORECASE):
             if key == "eeo_race" and q.options and _hispanic_choices_only(q.options):
                 key = "eeo_hispanic"  # "What is your ethnicity?" offering only Hispanic or Latino (Soros, 2026-11-17)
@@ -444,6 +487,7 @@ class AnswerContext:
     documents: dict[str, str] = field(default_factory=dict)  # "transcript" / "undergrad_transcript" -> a file that exists
     grades: dict[str, str] = field(default_factory=dict)  # school -> GPA, from data/grades.yaml (forms only, rule 3)
     today: Optional[date] = None  # tests pin it; otherwise the real date
+    applied_at_company: Optional[int] = None  # sent applications at this company in the tracker; None = not looked up
 
 
 @dataclass
@@ -617,6 +661,13 @@ _LEVEL_FORMS = {
 }
 
 
+def _yes_no(options: list[str]) -> list[str]:
+    """[the Yes option, the No option] when a choice is a plain yes or no, else []."""
+    yes = [o for o in options if re.fullmatch(r"(?i)\W*yes\W*", o)]
+    no = [o for o in options if re.fullmatch(r"(?i)\W*no\W*", o)]
+    return [yes[0], no[0]] if len(yes) == 1 and len(no) == 1 and len(options) == 2 else []
+
+
 def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
     t1, t2 = ctx.profile.tier1, ctx.profile.tier2
     text = f"{q.label} {q.description or ''}"
@@ -677,6 +728,8 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value(t1.github_url, "profile github_url")
     if key == "portfolio_url":
         return Value(t1.portfolio_url, "profile portfolio_url")
+    if key == "school_in_us":  # Northeastern University, in Boston
+        return Value("Yes", "profile school (Northeastern University, Boston)", confidence=1.0)
     if key == "school":
         return Value(t1.current_school, "profile current_school")
     if key == "degree_completed":
@@ -685,7 +738,9 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
             return Value(None, "profile education", note="no finished degree in the profile")
         bachelor = re.search(r"(?i)\bbachelor", done[0].degree)
         return Value(done[0].degree, "profile education (finished degree)",
-                     aliases=("bachelor", "bachelors", "bachelor's", "undergraduate", "4 year") if bachelor else ())
+                     # Merck's Workday list writes it "BA/BS/BSN" (2026-11-24)
+                     aliases=("bachelor", "bachelors", "bachelor's", "undergraduate", "4 year", "ba", "bs", "bsc")
+                     if bachelor else ())
     if key == "degree":
         return Value(t1.degree, "profile degree", aliases=("master", "masters", "ms", "m s", "graduate"))
     if key == "major":
@@ -701,6 +756,11 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         back = (grad.year, grad.month) > end
         return Value("Yes" if back else "No", f"this run's graduation date ({ctx.grad_date}) and the internship term")
     if key == "enrolled":
+        program = [o for o in q.options if re.search(r"(?i)\bmaster", o)]
+        if current and q.options and not any(re.fullmatch(r"(?i)\W*(yes|no)\b.*", o) for o in q.options):
+            # "What academic program are you currently enrolled in?" lists programs, not Yes/No (Plains, 2026-11-24)
+            return Value(program[0] if len(program) == 1 else None, "profile education (a master's in progress)",
+                         note=None if len(program) == 1 else "no single master's program among the choices")
         return Value("Yes" if current else None, "profile education (a program in progress)")
     if key == "school_status" and current:
         return Value(_school_status(ctx.grad_date), "this run's graduation date",
@@ -729,9 +789,17 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value("Yes" if yes else "No", "profile us_citizen_or_permanent_resident (permanent right to work)")
     if key == "sponsorship":
         mentions = re.search(r"\b(CPT|OPT|F-?1)\b", f"{text} {' '.join(q.options)}")
-        includes = re.search(r"(includ\w*|such as|e\.g\.|counts?|consider\w*)[^.?]{0,60}\b(CPT|OPT)\b"
+        # "(i.e., H-1B, Visa Status, OPT, L2)" defines sponsorship to include OPT (Badger Meter, 2026-11-23)
+        # "(ex: F-1 student visa, H-1B visa status)" gives F-1 as a kind of sponsorship (Cboe, 2026-11-24), like the
+        # "(e.g. H-1B visa status, current F-1 visa)" question Vatsal answered Yes on 2026-11-15
+        # "(example: the application or transfer of F-1 STEM OPT extension, H-1B ...)" (Bank of America, 2026-11-25)
+        includes = re.search(r"(includ\w*|such as|e\.g\.|i\.e\.|\bex\b[:.]?|\bexamples?\b|means|counts?|consider\w*)"
+                             r"[^?]{0,60}?\b(CPT|OPT|F-?1)\b"
                              r"|\b(CPT|OPT)\b[^.?]{0,40}\b(count|includ|consider)", text, re.I)
-        if mentions and includes and t2.sponsorship.yes_when_question_includes_cpt_opt:
+        # "not including OPT" or "other than F-1" leaves student status out of it
+        excludes = re.search(r"(not includ\w*|exclud\w*|other than|except\w*|aside from)[^?]{0,40}?\b(CPT|OPT|F-?1)\b",
+                             text, re.I)
+        if mentions and includes and not excludes and t2.sponsorship.yes_when_question_includes_cpt_opt:
             return Value("Yes", "rule: sponsorship that includes CPT/OPT")
         if mentions:
             return Value(None, "rule: sponsorship and CPT/OPT",
@@ -742,6 +810,8 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
             return Value(None, "profile citizenship")
         listed = re.search(rf"(?i)\b{re.escape(t1.citizenship)}\b", q.label)
         return Value("Yes" if listed else "No", "profile citizenship (checked against the countries listed)")
+    if key == "listed_residency":
+        return Value(None, "", note="permanent residency in the listed countries isn't in the profile: Claude answers")
     if key == "other_citizenship":  # a citizenship besides the U.S. one (Draper, 2026-11-20)
         if not t1.citizenship:
             return Value(None, "profile citizenship")
@@ -805,7 +875,14 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
             if len(pick) == 1:
                 return Value(pick[0], "rule: internships can start now, full-time roles in the summer (Vatsal, "
                                       "2026-11-15)", confidence=0.95)
+        if ctx.employment in ("internship", "co_op") and _yes_no(q.options):
+            # "Are you able to start on the start date listed on the job posting?" (Plains, 2026-11-24): he's free
+            # from January 2027, so an internship's own start date works
+            return Value(_yes_no(q.options)[0], "rule: internships can start now; he's free from January 2027 "
+                         "(Vatsal, 2026-11-15)", confidence=0.95)
         return _start_date(ctx)
+    if key == "current_salary":
+        return Value(None, "", note="what you earn now isn't in the profile or the master list, so you answer it")
     if key == "salary":
         pay = posted_pay(ctx.job.description_text) if t2.salary_from_posting else None
         if pay is not None:
@@ -904,6 +981,13 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         return Value("No", "master list: no work there (it holds all your experience)", confidence=1.0,
                      aliases=("i have not", "have not worked", "never worked", "never been employed", "none of the above",
                               "never"))  # "Never been a contractor or an employee" (Lucid, 2026-11-19)
+    if key == "applied_before":
+        if ctx.applied_at_company is None:
+            return Value(None, "tracker")
+        if ctx.applied_at_company:
+            return Value("Yes", f"tracker: {ctx.applied_at_company} earlier application(s) at {ctx.job.company}",
+                         confidence=1.0)
+        return Value("No", f"tracker: no earlier application at {ctx.job.company}", confidence=1.0)
     if key == "location_city":
         state = _US_STATES.get((t1.address.state or "").upper(), t1.address.state or "")
         parts = [p for p in (t1.address.city, state, t1.address.country) if p]

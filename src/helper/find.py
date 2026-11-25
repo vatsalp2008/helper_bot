@@ -33,7 +33,7 @@ EARLY = re.compile(r"(?i)\bintern(ship)?s?\b|\bco-?op\b|new[- ]grad|university g
                    r"\s*(i|1)\b|\blevel (i|1)\b|apprentice")
 FIELD = re.compile(r"(?i)software|developer|programmer|\bdata\b|analytics|machine learning|\bml\b|\bai\b|"
                    r"artificial intelligence|computer vision|\bnlp\b|(data|research|applied|computer) scien|quant|"
-                   r"cloud|cyber|security engineer|back[- ]?end|front[- ]?end|full[- ]?stack|platform engineer|"
+                   r"cloud|cyber|security engineer|back[- ]?end|front[- ]?end|full[- ]?stack|platforms? engineer|"
                    r"infrastructure|devops|\bsre\b|site reliability|\bweb\b|mobile|\bios\b|android|"
                    r"information technology|\bIT\b|digital engineer|automation|robotics software|embedded software|"
                    # autonomy teams write the software that drives or flies (Neros's "Autonomy Intern", 2026-11-22)
@@ -43,8 +43,14 @@ FIELD = re.compile(r"(?i)software|developer|programmer|\bdata\b|analytics|machin
                    r"supply chain|operations analyst|business analyst|product analyst|"
                    # product management: 17 of his sent applications are PM roles; First Resonance's "Product
                    # Management Intern" was dropped by the title (2026-11-23)
-                   r"product manag")
-NOT_FIELD = re.compile(r"(?i)mechanical|electrical|civil|chemical|environmental|manufactur|technician|propulsion|"
+                   r"product manag|"
+                   # "Summer Internship - Business Intelligence" (Lifeway, 2026-11-23) was dropped by the title
+                   r"business intelligence|\bBI\b|"
+                   # "Engineering Intern, Architecture Platform" / "..., Security Platforms" (Illumio, 2026-11-23)
+                   r"engineering intern\W.{0,40}\bplatforms?\b")
+NOT_FIELD = re.compile(r"(?i)mechanical|electrical|civil|chemical|environmental|technician|propulsion|"
+                       # manufacturing engineers, not Veolia's "Manufacturing Software Engineer Intern" (2026-11-24)
+                       r"manufactur(?!ing (?:software|data|analytics|it)\b)|"
                        r"structural|optical|"
                        # packaging engineers, not Calyx's "Junior Software Developer - Print & Packaging" (2026-11-23)
                        r"packaging (engineer|technician|specialist|design|development)|industrial|nurs|sales|recruit|"
@@ -203,8 +209,10 @@ def _ts(value: Any) -> Optional[datetime]:
 
 
 def workday_req(path: str) -> str:
-    """'.../Intern---Data-Science--SMAI_JR117444' -> 'jr117444' (the req id helper stores, lowercased)."""
-    m = re.search(r"_([A-Za-z0-9]+)(?:-\d+)?/?$", path or "")
+    """'.../Intern---Data-Science--SMAI_JR117444' -> 'jr117444' (the req id helper stores, lowercased). The same id
+    `job_id_from_url` reads: '_R-00197087' is 'r-00197087', never 'r' (a stored 'r' hid every later R- posting as
+    already seen, 2026-11-24)."""
+    m = re.search(r"_([A-Za-z]*-?\d[\w-]*?)(?:-\d+)?/?$", path or "")
     return m.group(1).lower() if m else ""
 
 

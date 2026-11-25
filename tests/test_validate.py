@@ -339,3 +339,10 @@ def test_a_product_name_spelled_with_inner_capitals_is_matched_by_its_spelling()
     assert not _named_in("PuLP", text)  # the optimization library, not the paper industry
     assert _named_in("pulp", text) and _named_in("Kubernetes", text)
     assert _named_in("NumPy", "Used NumPy and Pandas") and not _named_in("NumPy", "a numpy-free build")
+
+
+def test_a_word_inside_a_code_name_is_not_a_claim() -> None:  # JPMC, 2026-11-24
+    from helper.validate import _named_in
+
+    text = "Fixed Chef::FileAccessControl::Unix#mode_from_resource on Ubuntu, Rocky Linux and Debian."
+    assert not _named_in("Unix", text) and _named_in("Debian", text) and _named_in("C#", "Languages: C#, Java")

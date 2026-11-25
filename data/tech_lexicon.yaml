@@ -42,6 +42,7 @@ aliases:
   GTFS-RT: [GTFS Realtime, GTFS]
   OpenStreetMap: [OSM, OpenStreetMap Overpass API]
   # backend and APIs
+  Spring Boot: [Springboot, SpringBoot]  # "Software Engineer I-Java/Springboot/SQL" (JPMC, 2026-11-24)
   REST APIs: [REST API, RESTful API, RESTful APIs, REST, RESTful]
   WebSocket: [WebSockets, Web Socket, Web Sockets]
   OAuth: [OAuth 2.0, OAuth2]
@@ -178,7 +179,9 @@ case_sensitive: [Go, R, C, Ray, Swift, Rust, Ruby, Express, Flask, Combine, Room
                  Svelte, Gatsby, Recoil, Cloud Run, Cloud Functions, Jenkins, Confluence, Asana, Hibernate, Mongoose,
                  Sinatra,
                  # "the rest of Melaleuca" isn't REST (2026-11-20)
-                 REST, RESTful]
+                 REST, RESTful,
+                 # "science that shapes the future of medicine" isn't SHAP (Moderna, 2026-11-23)
+                 SHAP]
 
 # T-Mobile's "Fiber Growth team" (2026-11-20) isn't Go's Fiber framework: bare "Fiber" is the product far more
 # often than the framework, so only "Go Fiber" or "GoFiber" name it

@@ -32,7 +32,16 @@ from .icims import Credentials, FlowContext  # noqa: F401  (the same shapes, so 
 from .workday import FlowResult
 
 HOST_RE = re.compile(r"(?i)(^|\.)oraclecloud\.com$")
-_PATH_RE = re.compile(r"(?i)/hcmUI/CandidateExperience/([^/]+)/sites/([^/]+)/(?:[^/]+/)*?(?:job|preview)/(\d+)")
+# Requisition ids can start with letters ("R271283"), and a company can serve Candidate Experience from its own
+# domain (Dell's enterpriseplatform.dell.com, 2026-11-23): the app's own path is what makes the page Oracle's
+_PATH_RE = re.compile(r"(?i)/hcmUI/CandidateExperience/([^/]+)/sites/([^/]+)/(?:[^/]+/)*?(?:job|preview)/([A-Za-z]*\d+)")
+_APP_PATH_RE = re.compile(r"(?i)^/hcmUI/CandidateExperience/")
+
+
+def is_oracle_page(url: str) -> bool:
+    """Oracle's own Candidate Experience app: on oraclecloud.com, or on a company domain under its /hcmUI path."""
+    parsed = urlparse(url or "")
+    return bool(HOST_RE.search(parsed.hostname or "") or _APP_PATH_RE.search(parsed.path or ""))
 MAX_PAGES = 15
 DEBUG_DIR: Optional[Path] = None  # set per run by apply.py: each page's markup goes there
 
@@ -64,7 +73,7 @@ def parse_ref(url: str) -> Optional[OracleRef]:
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
     m = _PATH_RE.search(parsed.path)
-    return OracleRef(host, m.group(1), m.group(2), m.group(3)) if HOST_RE.search(host) and m else None
+    return OracleRef(host, m.group(1), m.group(2), m.group(3)) if is_oracle_page(url) and m else None
 
 
 # Oracle's own job API (public, read-only) has the posting's text without the page around it: the page read took in
@@ -138,7 +147,8 @@ def fetch_job(url: str, session: Optional[Any] = None) -> Job:
         job.role_title = details.title or job.role_title
         job.location = details.location or job.location
         job.description_text, job.description_html = details.text, details.html
-    job.company = fuller_employer(job.company, job.description_text)
+    # "JPMC Candidate Experience page": the site's name with the employer in front (2026-11-23)
+    job.company = fuller_employer(generic.site_employer(job.company) or job.company, job.description_text)
     job.ats, job.job_id, job.apply_url = "oracle", job.job_id or ref.job_id, ref.apply_url
     # the boxes a posting page shows are Oracle's email step (Email Address, the honeypot, the privacy box; Honeywell,
     # 2026-11-20), not the application's questions, which come page by page during the fill
@@ -303,6 +313,17 @@ def _wait_for_change(page: Any, before: str, ctx: FlowContext) -> str:
 _SAVING_RE = re.compile(r"(?i)\bsaving job application info\b")  # shown only once SUBMIT is clicked
 _PROFILE_PATH_RE = re.compile(r"/my-profile/?$")
 _SUBMITTED: set[int] = set()  # pages (id) where Oracle took the SUBMIT; is_confirmation reads it
+# pages (id) that reached the SUBMIT page: landing on the profile later means it went in, even when helper had left
+# its wait at SUBMIT because Vatsal went back to a section (Dell, 2026-11-23: logged "closed" after his submit)
+_AT_SUBMIT: set[int] = set()
+
+
+def _landed_after_submit(page: Any) -> bool:
+    """A page that reached SUBMIT and now shows the candidate's profile: Oracle took the application."""
+    if id(page) in _AT_SUBMIT and _PROFILE_PATH_RE.search(urlparse(page.url).path):
+        _SUBMITTED.add(id(page))
+        return True
+    return False
 
 
 def _wait_at_submit(page: Any, ctx: FlowContext) -> str:
@@ -378,6 +399,7 @@ def run_flow(page: Any, ctx: FlowContext) -> FlowResult:
 def _one_page(page: Any, ctx: FlowContext, out: FlowResult, refilled: set[str], n: int) -> bool:
     """Handle the page in front of helper. True when the flow is over (confirmed, or left to Vatsal for good)."""
     _settle(page)
+    _landed_after_submit(page)
     if is_confirmation(page):
         out.reached_review = True
         return True
@@ -412,7 +434,7 @@ def _email_step(page: Any, ctx: FlowContext, out: FlowResult) -> bool:
     before = signature(page)
     email = ctx.credentials.email if ctx.credentials else ""
     box = _visible(page, "input[name=primary-email]")
-    if not HOST_RE.search(urlparse(page.url).hostname or ""):  # the email goes only into Oracle's own page
+    if not is_oracle_page(page.url):  # the email goes only into Oracle's own page
         box = []
     if not email or not box:
         return _hand_over(page, ctx, "type your email in the window and click Next.") != "timeout"
@@ -490,6 +512,7 @@ def _form_page(page: Any, ctx: FlowContext, out: FlowResult, refilled: set[str])
             note += " helper couldn't finish: " + "; ".join(dict.fromkeys(failed[:6])) + "."
         ctx.say(f"helper stops here: review the application in the window and click '{submit['text']}' yourself "
                 f"(helper never clicks Submit on Oracle yet).{note}")
+        _AT_SUBMIT.add(id(page))
         result = _wait_at_submit(page, ctx)
         if result == "changed":
             out.reached_review = False
@@ -651,7 +674,12 @@ _REQUIRED_GAPS_JS = r"""() => {
     const label = row.querySelector('.input-row__label--required');
     if (!label) continue;
     const locked = [...row.querySelectorAll('input, textarea')].some(i => (i.readOnly || i.disabled) && i.value);
-    const filled = row.classList.contains('input-row--filled') || locked
+    // a plain box with its text typed counts, though Oracle marks the row only once the box loses focus (the
+    // e-signature's Full Name, the last box typed, "looked empty" on both JPMC runs, 2026-11-23 and 24); a search
+    // box (role=combobox) still counts only once its choice shows
+    const typed = [...row.querySelectorAll('input:not([role]):not([type=checkbox]):not([type=radio]), textarea')]
+      .some(i => (i.value || '').trim() !== '');
+    const filled = row.classList.contains('input-row--filled') || locked || typed
       || row.querySelector('.cx-select-pill-section--selected, [aria-checked=true], input:checked');
     if (!filled) out.push((label.innerText || '').replace(/\s+/g, ' ').replace(/\s*\*\s*$/, '').trim());
   }
@@ -674,6 +702,11 @@ def _locked(root: Any, key: str) -> bool:
 
 def _required_gaps(page: Any) -> list[str]:
     """Required fields Oracle draws as empty (no 'input-row--filled'), by their labels."""
+    try:  # the last box typed keeps the focus, and Oracle takes its value on blur
+        page.main_frame.evaluate("() => document.activeElement && document.activeElement.blur && "
+                                 "document.activeElement.blur()")
+    except Exception:
+        pass
     try:
         return list(dict.fromkeys(page.main_frame.evaluate(_REQUIRED_GAPS_JS)))
     except Exception:
@@ -851,7 +884,8 @@ def _fill_history(page: Any, ctx: FlowContext) -> list[common.FieldResult]:
 def is_confirmation(page: Any, form: Optional[Any] = None) -> bool:
     if id(page) in _SUBMITTED:  # helper saw Oracle take Vatsal's SUBMIT (_wait_at_submit)
         return True
-    if common.is_confirmation(page, form, hosts=("oraclecloud.com",)):
+    hosts = ("oraclecloud.com",) + ((urlparse(page.url).hostname or "",) if is_oracle_page(page.url) else ())
+    if common.is_confirmation(page, form, hosts=hosts):  # Oracle on a company's own domain too (Dell, 2026-11-23)
         return True
     try:
         text = page.main_frame.locator("body").inner_text(timeout=2000)[:3000]
@@ -871,4 +905,4 @@ def is_submit_request(url: str, method: str) -> bool:
 
 
 def find_form(page: Any, timeout_ms: int = 20000) -> Optional[Any]:
-    return page.main_frame if HOST_RE.search(urlparse(page.url).hostname or "") else None
+    return page.main_frame if is_oracle_page(page.url) else None

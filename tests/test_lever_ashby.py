@@ -271,3 +271,43 @@ def test_a_school_the_list_lacks_is_reported_not_guessed(browser: Any) -> None:
     assert entry.locator("input[role=combobox]").input_value() == ""  # nothing typed is left behind as an answer
     assert entry.locator("input[id$='-degree']").input_value() == "Master of Science"
     page.close()
+
+
+def test_an_ashby_phone_box_with_a_consent_choice_is_two_questions(browser: Any) -> None:  # Illumio, 2026-11-23
+    # "Phone Number" held a tel box and a text-message consent radio: helper read only the radio, the required number
+    # stayed empty, and Illumio's form never sent
+    from types import SimpleNamespace
+
+    page = browser.new_page()
+    page.set_content("""<form><div data-field-path="a0fc">
+      <label class="ashby-application-form-question-title _required">Phone Number</label>
+      <div class="ashby-application-form-question-description">By providing your mobile number you consent...</div>
+      <div><input type="tel" name="phone"></div>
+      <fieldset><label><input type="radio" name="c" value="y"> Yes - I consent to receiving text messages</label>
+        <label><input type="radio" name="c" value="n"> No - I do not consent to receiving text messages</label></fieldset>
+    </div></form>""")
+    questions = dom.discover(page.main_frame)
+    assert [(q.label, q.type) for q in questions] == [
+        ("Phone Number", "text"), ("Consent to receive text messages (Phone Number)", "radio")]
+    answers = [SimpleNamespace(field="ashby:a0fc:box", label="Phone Number", type="text", value="+1 206 555 0100",
+                               kind="auto", required=True, key="phone"),
+               SimpleNamespace(field="ashby:a0fc", label="Consent", type="radio", kind="auto", required=True,
+                               value="Yes - I consent to receiving text messages", key="sms_consent")]
+    results = dom.fill_dom_form(page.main_frame, answers, Path("r.pdf"), city=None, pause=lambda: None,
+                                date_text=lambda s: s)
+    assert all(r.ok for r in results), results
+    assert page.input_value("input[name=phone]") == "+1 206 555 0100"
+    assert page.is_checked("input[value=y]")
+    # the live form put the box right in the field, beside the choices: the field's key replaced the box's
+    page.set_content("""<form><div data-field-path="a0fc">
+      <label class="ashby-application-form-question-title _required">Phone Number</label>
+      <input type="tel" name="phone">
+      <label><input type="radio" name="c" value="y"> Yes - I consent to receiving text messages</label>
+      <label><input type="radio" name="c" value="n"> No - I do not consent to receiving text messages</label>
+    </div></form>""")
+    assert [q.type for q in dom.discover(page.main_frame)] == ["text", "radio"]
+    results = dom.fill_dom_form(page.main_frame, answers, Path("r.pdf"), city=None, pause=lambda: None,
+                                date_text=lambda s: s)
+    assert all(r.ok for r in results), results
+    assert page.input_value("input[name=phone]") == "+1 206 555 0100" and page.is_checked("input[value=y]")
+    page.close()

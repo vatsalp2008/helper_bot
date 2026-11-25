@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -313,6 +314,41 @@ _COPYRIGHT_RE = re.compile(r"(?:©|\(c\)|Copyright)\s*(?:©\s*)?(?:\d{4}(?:\s*[-
                            re.IGNORECASE)
 
 
+def site_employer(site: str) -> str:
+    """The employer in a site's name: "JPMC Candidate Experience page" is Oracle's site name with JPMC in front
+    (2026-11-23)."""
+    name = re.sub(r"(?i)\s*[-|:]?\s*candidate experience(?: site| page)?\s*$", "", site or "").strip()
+    # a site named by its own address: "Amazon.jobs" is Amazon (2026-11-24)
+    return re.sub(r"(?i)^([a-z][\w&-]*)\.(?:jobs|careers|com|io|ai)$", r"\1", name)
+
+
+_LEGAL_TAIL_RE = re.compile(r"(?i)[,\s]+(?:inc|llc|l\.l\.c|ltd|corp|corporation|plc|lp|l\.p)\.?\s*$")
+
+
+def employer_brand(company: str, url: str, text: str) -> str:
+    """The brand a company's own careers site is named for, over a payroll entity in its job data: Disney's
+    join.disneycareers.com named "Woodlands Entertainment LLC PAY SVC" for a Disney Entertainment and ESPN internship
+    (2026-11-25). Otherwise the name without its legal suffix ("Disney Entertainment & Sports LLC")."""
+    name = (company or "").strip()
+    for _ in range(2):
+        name = _LEGAL_TAIL_RE.sub("", name).strip(" ,.")
+    labels = (urlparse(url).hostname or "").lower().split(".")
+    site = labels[-2] if len(labels) >= 2 else ""
+    brand = re.sub(r"(?:careers?|jobs?)$", "", re.sub(r"^(?:careers?|jobs?|join)", "", site))
+    squash = lambda t: re.sub(r"[^a-z0-9]", "", t.lower())  # noqa: E731
+    named = len(re.findall(rf"(?i)(?<![\w-]){re.escape(brand)}(?![\w-])", text or "")) if brand else 0
+    if len(brand) >= 4 and squash(brand) not in squash(name) and named >= 3:
+        return as_spelled(brand, text)
+    return name or (company or "").strip()
+
+
+def as_spelled(name: str, text: str) -> str:
+    """A name taken from the site's address, spelled the way the posting spells it: careers.sap.com is "SAP", not
+    "Sap" (2026-11-23). Title case when the posting never writes it."""
+    found = re.findall(rf"(?i)(?<![\w-]){re.escape(name)}(?![\w-])", text or "")
+    return max(sorted(set(found)), key=found.count) if found else name.title()
+
+
 def ukg_employer(homepage: str, text: str) -> str:
     """UKG Pro job boards (recruiting.ultipro.com/<tenant>/...) name the employer only by their footer link to its own
     site (CAS: www.cas.org/careers; Melaleuca: melaleucajobs.com, 2026-11-20): the site's name, as the description
@@ -341,7 +377,7 @@ def copyright_owner(text: str) -> str:
     return "" if not name or name.lower() in ("all", "the") or _GENERIC_SITE_NAME.match(name) else name
 
 
-_ORACLE_JOB_RE = re.compile(r"(?i)/hcmUI/CandidateExperience/[^/]+/sites/([^/]+)/(?:[^/]+/)*job/(\d+)")
+_ORACLE_JOB_RE = re.compile(r"(?i)/hcmUI/CandidateExperience/[^/]+/sites/([^/]+)/(?:[^/]+/)*job/([A-Za-z]*\d+)")
 # The site's own requisition endpoint, asked from the page (same origin, as the page's scripts do): read-only
 _ORACLE_DETAILS_JS = r"""
 async ([site, id]) => {
@@ -396,7 +432,8 @@ def _read_posting(page: Any) -> tuple[str, str, str]:
     }""")
     title = data["h1"] or data["ogtitle"] or data["title"]
     host = (urlparse(page.url).hostname or "").removeprefix("www.").removeprefix("careers.").removeprefix("jobs.")
-    company = data["site"] or (host.split(".")[0].replace("-", " ").title() if host else "")
+    label = host.split(".")[0].replace("-", " ") if host else ""
+    company = site_employer(data["site"] or "") or (as_spelled(label, data.get("text") or "") if label else "")
     if _GENERIC_SITE_NAME.match(company) or "oraclecloud" in host:
         # Oracle's "Candidate Experience site" is no employer (Fortinet, 2026-11-16): use the copyright line
         owner = copyright_owner(data.get("footer") or "")
@@ -472,6 +509,23 @@ def _sources(page: Any) -> list[str]:
 
 def _form_frame(page: Any) -> Optional[Any]:
     return next((f for f in _frames(page) if _has_form(f)), None)
+
+
+def step_form(page: Any, timeout_ms: int = 15000) -> Optional[Any]:
+    """A later page of an application helper is already in: the frame with the most real fields. Its first page's
+    test (an email or resume box) doesn't hold there: Veeva's page 2 asks other things (2026-11-23)."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        sizes = []
+        for f in _frames(page):
+            try:
+                sizes.append((f.evaluate(_FORM_SIZE_JS)["count"], f))
+            except Exception:
+                continue
+        best = max(sizes, key=lambda x: x[0], default=(0, None))
+        if best[0] >= 1 or time.monotonic() >= deadline:
+            return best[1] if best[0] >= 1 else None
+        page.wait_for_timeout(500)
 
 
 def _login_wall(page: Any) -> bool:
@@ -654,10 +708,59 @@ def _handed_over(link: str) -> Optional[Job]:
     return adapter.fetch_job(link) if adapter.__name__ != __name__ else None
 
 
+_WORKABLE_RE = re.compile(r"^https?://apply\.workable\.com/([^/?#]+)/j/([0-9A-Za-z]+)", re.I)
+
+
+def workable_job(url: str, session: Optional[Any] = None) -> Optional[Job]:
+    """A Workable posting from Workable's public posting API. Its links often open the application form (".../apply"),
+    whose page has no description and whose title is "Apply" (Serko, 2026-11-24: the company read as "Apply")."""
+    import requests
+
+    m = _WORKABLE_RE.match(url or "")
+    if not m:
+        return None
+    account, code = m.groups()
+    session = session or requests.Session()
+    try:
+        r = session.get(f"https://apply.workable.com/api/v2/accounts/{account}/jobs/{code}", timeout=30)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        a = session.get(f"https://apply.workable.com/api/v1/accounts/{account}", timeout=30)
+        company = (a.json().get("name") if a.status_code == 200 else None) or None
+    except (requests.RequestException, ValueError):
+        return None
+    if not isinstance(data, dict) or not data.get("title"):
+        return None
+    places = [p for p in (data.get("locations") or [data.get("location") or {}]) if isinstance(p, dict)
+              and not p.get("hidden")]
+    location = "; ".join(", ".join(x for x in (p.get("city"), p.get("region") or p.get("country")) if x)
+                         for p in places) or None
+    if data.get("remote"):
+        location = f"{location} (remote)" if location else "Remote"
+    parts = [(h, data.get(k)) for h, k in (("", "description"), ("Requirements", "requirements"),
+                                          ("Benefits", "benefits"))]
+    body = "\n\n".join(f"{h}\n{html_to_text(v)}" if h else html_to_text(v) for h, v in parts if v)
+    return Job(url=url, ats="workable", company=company or account, role_title=data["title"], location=location,
+               description_text=body, source="workable_api", fetched_at=now_iso(),
+               apply_url=f"https://apply.workable.com/{account}/j/{code}/apply")
+
+
 def fetch_job(url: str, session: Optional[Any] = None, scan: Callable[[str], Scan] = scan_posting) -> Job:
     from ..ats import detect_ats
     from ..errors import HelperError, NeedsUser
 
+    if _WORKABLE_RE.match(url or "") and (job := workable_job(url, session)) is not None:
+        # the questions still come from the form itself: without them the plan was empty and the fill typed nothing
+        # (Serko, 2026-11-24)
+        try:
+            form = scan(job.apply_url or url)
+        except Exception:
+            form = None
+        if form is not None and form.robot_check:
+            raise NeedsUser(f"Workable showed a \"check you are not a robot\" page for {url}, and helper never gets past "
+                            "those (rule 6). Apply in your own browser (`helper assist <run_id>`).")
+        return job.model_copy(update={"questions": form.questions if form is not None else []})
     result = scan(url)
     if result.robot_check:
         raise NeedsUser(f"This posting's Apply link leads to {result.robot_check}, which shows a \"check you are not a "
@@ -676,13 +779,43 @@ def fetch_job(url: str, session: Optional[Any] = None, scan: Callable[[str], Sca
         raise HelperError(f"couldn't read a job description at {url} (the site blocked helper's browser, the posting "
                           "is closed, or the page was empty). Save the description to a file and use `--jd-file`.")
     ats = detect_ats(url)
-    return Job(url=url, ats=ats if ats != "unknown" else "generic", company=result.company or "Unknown",
+    company = employer_brand(result.company or "", url, result.description)
+    return Job(url=url, ats=ats if ats != "unknown" else "generic", company=company or "Unknown",
                role_title=result.title or "Unknown role", location=result.location,
                description_text=html_to_text(result.description) if "<" in result.description else result.description,
                questions=result.questions, source="page", fetched_at=now_iso(), apply_url=result.apply_url or url)
 
 
+_COOKIE_DECLINE_JS = r"""
+() => {
+  const boxes = [...document.querySelectorAll('[role=dialog], [role=alertdialog], [aria-modal=true], [id*=cookie i], ' +
+                 '[class*=cookie i], [data-ui*=cookie i], [id*=consent i], [class*=consent i]')]
+    .filter(b => /cookie/i.test((b.getAttribute('aria-label') || '') + ' ' + (b.innerText || '').slice(0, 600)));
+  for (const b of boxes) {
+    const btn = [...b.querySelectorAll('button, [role=button], a')].find(x =>
+      /^(decline|reject|refuse)( all)?( optional)?( cookies)?$|^(only )?(necessary|essential|required) cookies only$|^use necessary cookies only$/i
+        .test((x.innerText || x.getAttribute('aria-label') || '').trim()));
+    if (btn && btn.offsetParent !== null) { btn.click(); return true; }
+  }
+  return false;
+}
+"""
+
+
+def decline_cookies(page: Any) -> bool:
+    """Decline a cookie banner's optional cookies, so it no longer covers the form: Workable's notice laid a backdrop
+    over the Submit button (Serko, 2026-11-24). Only a Decline/Reject button inside a box about cookies is clicked."""
+    try:
+        clicked = bool(page.evaluate(_COOKIE_DECLINE_JS))
+        if clicked:
+            page.wait_for_timeout(500)
+        return clicked
+    except Exception:
+        return False
+
+
 def find_form(page: Any, timeout_ms: int = 15000) -> Optional[Any]:
+    decline_cookies(page)
     form = common.find_form(page, ANCHORS, timeout_ms=timeout_ms)
     if form is None and _click_apply(page) is not None:
         form = common.find_form(page, ANCHORS, timeout_ms=timeout_ms)
@@ -747,6 +880,45 @@ def fill_form(root: Any, answers: list[Any], resume_pdf: Path, *, country: Optio
 
 
 _GEO_ORDER = {"address_country": 0, "address_state": 1, "address_zip": 2, "address_city": 3, "address_county": 4}
+
+
+_FILLED_JS = r"""
+b => {
+  const els = b.matches('input, textarea, select') ? [b] : [...b.querySelectorAll('input:not([type=hidden]), textarea, select')];
+  const has = e => (e.type === 'radio' || e.type === 'checkbox') ? e.checked
+    : e.type === 'file' ? !!(e.files && e.files.length)
+    : e.tagName === 'SELECT' ? e.selectedIndex > 0 || (e.value || '').trim() !== ''
+    : (e.value || '').trim() !== '';
+  if (els.some(has)) return true;
+  if (b.querySelector('[aria-checked=true], [aria-selected=true][role=option]')) return true;
+  if (/\.(pdf|docx?|rtf|odt)\b/i.test(b.innerText || '')) return true;  // an upload shows its file's name
+  const combo = b.getAttribute('role') === 'combobox' ? b : b.querySelector('[role=combobox]');
+  const shown = combo && !combo.matches('input') ? (combo.innerText || '').trim() : '';
+  return !!shown && !/^(select|choose|--|search)/i.test(shown);
+}
+"""
+
+
+def empty_required(root: Any) -> list[str]:
+    """The labels of the form's own required fields that still show nothing. The plan alone can't say: Serko's
+    Workable form was read as having no questions, so helper filled nothing and found nothing missing (2026-11-24)."""
+    try:
+        fields = root.evaluate(DISCOVER_JS)
+    except Exception:
+        return []
+    empty = []
+    for f in fields:
+        if not f.get("required"):
+            continue
+        block = root.locator(f"[data-helper-key={json.dumps(f['key'])}]")
+        try:
+            if block.count() and not block.first.is_visible():
+                continue
+            if not block.count() or not block.first.evaluate(_FILLED_JS):
+                empty.append(f["label"])
+        except Exception:
+            continue
+    return list(dict.fromkeys(empty))
 
 
 def _shown_value(block: Any) -> str:
@@ -829,10 +1001,58 @@ def disabled_submit_buttons(form: Any) -> int:
     return count
 
 
+# A step button on a form that spans pages ("Page 1 of 3", Veeva, 2026-11-23): the whole label, so "Continue with
+# LinkedIn" (a sign-in) never counts, and never a final Submit
+_NEXT_TEXT = re.compile(r"(?i)^\s*(next( step| page)?|continue|save (and|&) (continue|next)|proceed)\s*[>›→]?\s*$")
+
+
+def next_button(form: Any) -> Optional[Any]:
+    """The form's one visible, enabled Next button, when it has no final Submit button yet."""
+    if submit_buttons(form):
+        return None
+    found = []
+    buttons = form.locator("button, input[type=submit], input[type=button], [role=button], a[role=button]")
+    for i in range(min(buttons.count(), 200)):
+        b = buttons.nth(i)
+        try:
+            if not (b.is_visible() and b.is_enabled()):
+                continue
+            text = (b.inner_text(timeout=500) or b.get_attribute("value") or "").strip()
+        except Exception:
+            continue
+        if _NEXT_TEXT.match(text):
+            found.append(b)
+    return found[0] if len(found) == 1 else None
+
+
+_SIGNATURE_JS = r"""
+() => location.href + '#' + [...document.querySelectorAll('input, select, textarea')]
+  .filter(e => e.type !== 'hidden' && (e.offsetParent !== null || e.type === 'file'))
+  .map(e => e.name || e.id || e.type).join('|')
+"""
+
+
+def form_signature(page: Any) -> str:
+    """What the page's form is now: its address and its fields. A different signature after Next is the next step."""
+    parts = []
+    for frame in _frames(page):
+        try:
+            parts.append(frame.evaluate(_SIGNATURE_JS))
+        except Exception:
+            continue
+    return "||".join(parts)
+
+
 def submit(form: Any) -> bool:
     """Auto-submit (Vatsal, 2026-11-16): click the final Submit once, only when exactly one such button is there."""
     found = submit_buttons(form)
     if len(found) != 1:
+        return False
+    try:
+        # trial first: a banner over the button (Workable's cookie notice, Serko, 2026-11-24) made the click time out
+        # and the fill stop; the trial click never presses the button, so nothing can have been sent
+        found[0].click(trial=True, timeout=10000)
+    except Exception:
         return False
     found[0].click()
     return True
