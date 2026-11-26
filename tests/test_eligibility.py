@@ -67,6 +67,9 @@ def levels(e: Eligibility) -> dict[str, str]:
     "Students currently on CPT, OPT, or STEM OPT usually require future sponsorship for long term employment and do "
     "not meet the Internal requirements for this program unless eligible for an alternative long-term status that "
     "does not require company sponsorship.",
+    # TQL's Summer 2027 internships, 2026-11-25: the "etc." ended the span before "will not be considered"
+    "Employment visa sponsorship is unavailable for this position. Applicants requiring employment visa sponsorship "
+    "now or in the future (e.g., F-1 STEM OPT, H-1B, TN, J1 etc.) will not be considered.",
 ])
 def test_named_visa_exclusions_block(text: str) -> None:
     e = check(text)
@@ -88,6 +91,9 @@ def test_no_sponsorship_with_cpt_opt_welcome_is_not_an_exclusion() -> None:  # t
     # the Cigna rule's near miss: OPT counted among those who don't need sponsorship
     cigna = check("Candidates who do not require sponsorship, including students on OPT, are welcome to apply.")
     assert "visa_excluded" not in levels(cigna)
+    # the TQL rule's near miss: the exclusion names only work visas, not F-1, CPT or OPT
+    tql = check("Applicants requiring sponsorship (e.g., H-1B or TN) will not be considered. OPT students are welcome.")
+    assert "visa_excluded" not in levels(tql)
 
 
 def test_cpt_opt_welcome_and_unclear_mentions() -> None:

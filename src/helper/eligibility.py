@@ -156,6 +156,11 @@ _EXCLUSION_RES = [
     re.compile(rf"(?i)\b(?:(?:do|does|will|would|shall)\s+not\b[^.\n]{{0,40}}?\b(?:require|need)\w*|without)\b"
                rf"[^.\n]{{0,40}}?\b(?:sponsorship|support|assistance)\b[^.\n]{{0,20}}?\b(?:including|such as|incl\.|e\.g\.)"
                rf"[^.\n]{{0,60}}?\b{_VISA}\b(?![^.\n]{{0,40}}?\b(?:welcome|are eligible|is eligible|encouraged)\b)"),
+    # "Applicants requiring employment visa sponsorship now or in the future (e.g., F-1 STEM OPT, H-1B, TN, J1 etc.)
+    # will not be considered" (TQL, 2026-11-25): the "etc." stopped the first pattern short of "will not be considered"
+    re.compile(rf"(?i)\b(?:requir|need)\w*\b[^.\n]{{0,60}}?\bsponsorship\b[^.\n]{{0,40}}?\b(?:including|such as|incl\.|"
+               rf"e\.g\.)[^\n]{{0,80}}?\b{_VISA}\b[^\n]{{0,60}}?\b(?:(?:will|would|shall)\s+not\s+be\s+considered|"
+               rf"won't be considered|cannot be considered|(?:are|is)\s+(?:not|in)eligible|not eligible)\b"),
 ]
 _VISA_POSITIVE_RE = re.compile(rf"(?i)\b{_VISA}\b[^.\n]{{0,60}}?\b(?:welcome|are eligible|is eligible|encouraged|supported)\b")
 _CPT_OPT_RE = re.compile(rf"\b{_CPT_OPT}\b|(?i:\b(?:curricular|optional) practical training\b)")

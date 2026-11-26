@@ -742,3 +742,21 @@ def test_a_company_site_with_nothing_planned_never_auto_submits(repo: Path, caps
     printed = capsys.readouterr().out
     assert "helper clicked Submit once" not in printed and "every condition holds" not in printed, printed
     assert "helper filled nothing on this form" in printed and "required fields still empty" in printed, printed
+
+
+def test_ashbys_success_banner_is_a_confirmation(browser: Any) -> None:  # Parallel Web Systems, 2026-11-25
+    """Ashby's green banner, "Success. Thank you for submitting your application! We will be in touch if there is a
+    fit.", was logged as submitted_unverified."""
+    from helper.adapters import ashby
+
+    page = browser.new_page()
+    page.set_content("<body><h1>Early Career Software Engineer</h1><div role='alert'><p>Success</p><p>Thank you for "
+                     "submitting your application! We will be in touch if there is a fit.</p></div></body>")
+    assert ashby.is_confirmation(page) is True
+    # CodeRabbit's own wording in the same banner (2026-11-25)
+    page.set_content("<body><div role='alert'><p>Success</p><p>Hi there, we have received your application. We'll "
+                     "review and will contact you if there are next steps.</p></div></body>")
+    assert ashby.is_confirmation(page) is True
+    page.set_content("<body><h1>Software Engineer</h1><button>Submit Application</button></body>")
+    assert ashby.is_confirmation(page) is False
+    page.close()

@@ -956,6 +956,16 @@ def test_program_lists_and_yes_no_start_dates() -> None:
                      "I have Already Graduated"]))
     assert (program.key, program.kind, program.value) == ("enrolled", "auto", "Bachelor/Masters")
     assert one(q("Are you currently enrolled in a degree program?", "select", ["Yes", "No"])).value == "Yes"
+    # CodeRabbit (2026-11-25): a question naming one school is No unless it's his own
+    upenn = one(q("Are you currently enrolled at, or about to graduate from, a UPenn Engineering Program?", "select",
+                  ["Yes", "No"]))
+    assert (upenn.key, upenn.value) == ("enrolled", "No")
+    other = one(q("Are you currently enrolled at the University of Pennsylvania?", "select", ["Yes", "No"]))
+    assert other.value == "No"
+    own = one(q("Are you currently enrolled at Example University?", "select", ["Yes", "No"]))
+    assert own.value == "Yes"
+    generic = one(q("Are you currently enrolled in an Accredited University?", "select", ["Yes", "No"]))
+    assert generic.value == "Yes"
     start = one(q("Are you able to start on the start date listed on the job posting?", "select", ["Yes", "No"]))
     assert (start.key, start.value) == ("start_date", "Yes")
     full_time = one(q("Are you able to start on the start date listed on the job posting?", "select", ["Yes", "No"]),

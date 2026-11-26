@@ -11,8 +11,12 @@ from urllib.parse import urlparse
 # Text that means the application went through (Greenhouse, Lever, Ashby).
 CONFIRMATION_RE = re.compile(
     r"(?i)thank you for (?:applying|your application)|thanks for applying"  # not "your interest": job posts end with it
+    # Ashby's green "Success" banner: "Thank you for submitting your application!" (Parallel, 2026-11-25)
+    r"|thank(?:s| you) for submitting (?:your |an )?application"
     r"|(?:your )?application (?:has been |was )?(?:successfully )?(?:submitted|received)"
-    r"|we(?:'|’)ve received your application|successfully submitted"
+    # CodeRabbit's Ashby banner: "Hi there, we have received your application." (2026-11-25)
+    r"|we(?:'|’)ve received your application|we have (?:successfully )?received your application"
+    r"|successfully submitted"
 )
 
 

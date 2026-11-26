@@ -209,6 +209,37 @@ def test_a_page_title_that_only_leaves_out_the_field_keeps_the_posting(repo: Pat
         conn.close()
 
 
+def test_a_page_location_that_only_leaves_out_the_state_keeps_the_posting(repo: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # TQL (2026-11-25): the list said "Cincinnati, OH", the Avature page "Cincinnati", and the search skipped its
+    # Software Development Intern as not a fit. A page that names a place abroad still skips the posting.
+    from helper import find
+
+    paths = Paths(repo)
+    cfg = load_config(paths)
+    tql = find.Found(url="https://tql.avature.net/en_US/TQLexternalcareers/JobDetail/19763", company="TQL",
+                     title="Software Development Intern (Summer 2027)", location="Cincinnati, OH", ats="avature",
+                     source="list", how="helper fills")
+    abroad = find.Found(url="https://acme.avature.net/en_US/careers/JobDetail/2", company="Acme",
+                        title="Software Engineering Intern", location="Remote", ats="avature", source="list",
+                        how="helper fills")
+    monkeypatch.setattr(find, "search", lambda *a, **k: ([tql, abroad], find.Sources()))
+
+    def check(paths, cfg, found, limit):  # type: ignore[no-untyped-def]
+        found[0].location = "Cincinnati"
+        found[1].location = "Toronto"
+        for f in found:
+            f.eligibility = {"recommendation": "build", "blockers": [], "warnings": []}
+    monkeypatch.setattr(find, "check_all", check)
+    out = hunt.find_command(paths, cfg, 24, 10)
+    assert "Ineligible (on the list as skipped): 1" in out
+    conn = open_db(paths, cfg)
+    try:
+        assert queue.find(conn, tql.url) is None
+        assert queue.find(conn, abroad.url)["status"] == "skipped"
+    finally:
+        conn.close()
+
+
 def test_a_network_hiccup_leaves_a_posting_unchecked_not_skipped(  # Nelnet's SSLError, 2026-11-17
         repo: Path, sample_profile_text: str, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from helper import apply as apply_mod

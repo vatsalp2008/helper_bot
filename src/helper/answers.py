@@ -639,6 +639,37 @@ def _start_date(ctx: AnswerContext) -> Value:
 
 
 _YES_NO_STATUS = {"work_authorization", "sponsorship", "permanent_work", "f1_student"}
+# One school named in a question: "University of Pennsylvania", "Purdue University", "UPenn", "Penn Engineering".
+# Case-sensitive, so "a college or university" names none; generic words before "University" don't count either
+_GENERIC_SCHOOL_WORDS = re.compile(r"(?i)^(an?|the|any|your|accredited|recognized|four|four-year|community|public|"
+                                   r"private|current|state)$")
+_NAMED_SCHOOL_RE = re.compile(r"\bUniversity of(?: the)? [A-Z][\w&.'-]*(?: [A-Z][\w&.'-]*)*"
+                              r"|\b[A-Z][\w&.'-]*(?: [A-Z][\w&.'-]*)* (?:University|College|Institute of Technology)\b"
+                              r"|\bUPenn\b|\bPenn Engineering\b|\b(?:MIT|CMU|UCLA|USC|NYU|Stanford|Harvard|Princeton|"
+                              r"Yale|Cornell|Columbia|Berkeley|Georgia Tech)\b")
+
+
+def _named_school(label: str) -> Optional[str]:
+    for m in _NAMED_SCHOOL_RE.finditer(label or ""):
+        words = m.group(0).split()
+        while words and _GENERIC_SCHOOL_WORDS.match(words[0]):
+            words = words[1:]
+        if len(words) >= 2 or (words and words[0] not in ("University", "College")):
+            name = " ".join(words)
+            if not re.fullmatch(r"(?:University|College|Institute of Technology)", name):
+                return name
+    return None
+
+
+def _is_own_school(named: str, education: list[Any]) -> bool:
+    """Whether a school a question names is one of his (either name contains the other's distinctive word)."""
+    generic = {"university", "college", "of", "the", "institute", "technology", "school", "at", "and"}
+    asked = {w for w in re.findall(r"[a-z]+", named.lower()) if w not in generic}
+    for e in education:
+        own = {w for w in re.findall(r"[a-z]+", (getattr(e, "school", "") or "").lower()) if w not in generic}
+        if asked and own and asked & own:
+            return True
+    return False
 _ASKS_DETAIL = re.compile(r"(?i)\bwhen (does|do|will|did)\b[^?]{0,60}\bexpir|\bexpir(y|ation) date\b|\bplease (provide|give|"
                           r"share|list|explain|describe|elaborate)\b|\b(additional|more|further) (detail|information|"
                           r"context)\b|\blist any\b")
@@ -756,6 +787,10 @@ def value_for(key: str, q: FormQuestion, ctx: AnswerContext) -> Value:
         back = (grad.year, grad.month) > end
         return Value("Yes" if back else "No", f"this run's graduation date ({ctx.grad_date}) and the internship term")
     if key == "enrolled":
+        if (named := _named_school(q.label)) and not _is_own_school(named, ctx.profile.education):
+            # "Are you currently enrolled at, or about to graduate from, a UPenn Engineering Program?" (CodeRabbit,
+            # 2026-11-25) asks about one school, not whether he's a student
+            return Value("No", f"profile education (the question names {named}, not his school)")
         program = [o for o in q.options if re.search(r"(?i)\bmaster", o)]
         if current and q.options and not any(re.fullmatch(r"(?i)\W*(yes|no)\b.*", o) for o in q.options):
             # "What academic program are you currently enrolled in?" lists programs, not Yes/No (Plains, 2026-11-24)
