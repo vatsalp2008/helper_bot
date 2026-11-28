@@ -436,6 +436,11 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
         page = context.pages[0] if context.pages else context.new_page()
         page.on("request", _submit_watcher(adapter, submit_seen, folder))
         form = _open_form(page, adapter, job.apply_url or job.url, wait, poll_seconds, seen)
+        gone = getattr(adapter, "posting_closed", None) if form is None else None
+        words = gone(page) if gone else None
+        if words:  # nothing to fill or send: the window closes now, not after a day
+            _say(f"This posting is closed: {words}. Nothing was sent.")
+            return _posting_closed(paths, cfg, state, words, [], quoted=False)
         if form is None:
             reason = getattr(adapter, "no_form_reason", None)
             _say(reason(page) if reason else "helper couldn't find the application form on this page, so it filled "
@@ -755,14 +760,16 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
                                                                                 ["stopped before the Review page"])))
 
 
-def _posting_closed(paths: Paths, cfg: Config, state: Any, words: str, results: list[Any]) -> FillOutcome:
+def _posting_closed(paths: Paths, cfg: Config, state: Any, words: str, results: list[Any], *,
+                    quoted: bool = True) -> FillOutcome:
     """The employer took the posting down (HPE, 2026-11-19): the application is marked skipped and leaves the job
-    hunt's list."""
+    hunt's list. `words` are the site's own, or (quoted=False) helper's description of what it saw."""
     from .hunt import on_fill_outcome
     from .tracker import repo
     from .tracker.commands import open_db
 
-    note = f"posting closed: the site says '{words}'; nothing was sent"
+    why = f"the site says '{words}'" if quoted else words
+    note = f"posting closed: {why}; nothing was sent"
     if state.application_id:
         conn = open_db(paths, cfg)
         try:
@@ -773,7 +780,7 @@ def _posting_closed(paths: Paths, cfg: Config, state: Any, words: str, results: 
     on_fill_outcome(paths, cfg, state.run_id, state.application_id, "posting_closed", note)
     set_step(state, "submit", "skipped", note)
     save_state(paths, state)
-    return FillOutcome("skipped", f"Nothing was sent: this posting is closed (the site says '{words}'). The "
+    return FillOutcome("skipped", f"Nothing was sent: this posting is closed ({why}). The "
                                   "application is marked skipped and is off the job hunt's list.", results)
 
 

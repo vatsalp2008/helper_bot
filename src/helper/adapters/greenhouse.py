@@ -267,6 +267,18 @@ def find_form(page: Any, timeout_ms: int = 20000) -> Optional[Any]:
     return common.find_form(page, _FORM_ANCHORS, hosts=("greenhouse.io",), timeout_ms=timeout_ms) or form
 
 
+def posting_closed(page: Any) -> Optional[str]:
+    """Why the posting is gone, else None. Asked only when the form didn't come up. A taken-down posting's link sends
+    the window to the company's job board with "?error=true" and no message: Appodeal's came down between the fill and
+    the reopen (2026-11-27), and helper told Vatsal to fill a form that wasn't there and waited a day."""
+    for url in (getattr(page, "url", "") or "", getattr(getattr(page, "main_frame", None), "url", "") or ""):
+        parsed = urlparse(url)
+        if (parsed.hostname or "").endswith("greenhouse.io") and "/jobs/" not in parsed.path \
+                and parse_qs(parsed.query).get("error") == ["true"]:
+            return "the posting link now opens the company's Greenhouse job board (error=true) instead of the job"
+    return None
+
+
 def choose_option(root: Any, dom: str, wanted: str, *, search: Optional[str] = None, timeout_ms: int = 6000,
                   score: Optional[Callable[[str], float]] = None, threshold: float = 0.8) -> tuple[bool, str]:
     """Open the dropdown for one field, optionally type to search, and click the best matching option. `score` rates

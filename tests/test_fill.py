@@ -158,6 +158,59 @@ def test_fill_run_waits_for_the_submit_and_logs_it(repo: Path, page_file: str) -
     assert saved["steps"]["submit"]["message"] == "applied"
 
 
+def test_greenhouse_sends_a_closed_postings_link_to_the_board() -> None:  # Appodeal, 2026-11-27
+    from helper.adapters import greenhouse
+
+    class Page:
+        def __init__(self, url: str) -> None:
+            self.url = url
+
+    assert "error=true" in (greenhouse.posting_closed(Page("https://job-boards.greenhouse.io/appodeal?error=true")) or "")
+    assert greenhouse.posting_closed(Page("https://job-boards.greenhouse.io/appodeal/jobs/4918549008")) is None
+    assert greenhouse.posting_closed(Page("https://job-boards.greenhouse.io/appodeal")) is None
+    assert greenhouse.posting_closed(Page("https://example.com/careers?error=true")) is None
+
+
+def test_a_closed_posting_ends_the_fill_at_once_and_is_skipped(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Appodeal (2026-11-27): the posting came down before a refill; helper said "fill it in the window yourself" and
+    # would have waited a day on the company's job board
+    from helper.adapters import greenhouse
+
+    (repo / "data" / "profile.yaml").write_text(SEATTLE, encoding="utf-8")
+    paths = Paths(repo)
+    cfg = load_config(paths)
+    run_id = "20261127-073501-acme-junior-swe"
+    folder = paths.runs / run_id
+    folder.mkdir(parents=True)
+    pdf = paths.resumes / run_id / "AlexExample_Resume.pdf"
+    pdf.parent.mkdir(parents=True)
+    pdf.write_bytes(b"%PDF-1.4 test")
+    job = Job(url="https://job-boards.greenhouse.io/acme/jobs/1", ats="greenhouse", company="Acme",
+              role_title="Junior Software Engineer", description_text="x", source="greenhouse_api", fetched_at="now",
+              questions=MINI_QUESTIONS, apply_url=f"file://{FIXTURES.resolve()}/greenhouse_company_page.html")
+    write_json(folder / "job.json", job.model_dump(mode="json"))
+    write_json(folder / "answers_plan.json", mini_plan().model_dump(mode="json"))
+    conn = open_db(paths, cfg)
+    app_id = tracker_repo.insert(conn, company="Acme", role_title="Junior Software Engineer", job_url=job.url,
+                                 run_id=run_id, resume_path=f"resumes/{run_id}/AlexExample_Resume.pdf")
+    conn.commit()
+    conn.close()
+    state = RunState(run_id=run_id, created_at="now", command="apply", url=job.url, application_id=app_id,
+                     options={"run": {"projects_per_resume": 5, "bullets_per_item": 2, "grad_date": "May 2027"},
+                              "result": {"pdf": f"resumes/{run_id}/AlexExample_Resume.pdf"}})
+    set_step(state, "answers", "done")
+    save_state(paths, state)
+    monkeypatch.setattr(greenhouse, "find_form", lambda page, timeout_ms=0: None)
+    monkeypatch.setattr(greenhouse, "posting_closed", lambda page: "the board opened instead (error=true)")
+
+    outcome = fill_run(paths, cfg, run_id, headless=True, wait_minutes=5, poll_seconds=0.3)
+    assert outcome.status == "skipped" and "posting is closed" in outcome.message, outcome.message
+    conn = open_db(paths, cfg)
+    row = tracker_repo.get(conn, app_id)
+    conn.close()
+    assert row["status"] == "skipped"
+
+
 def test_dry_run_opens_no_browser(repo: Path) -> None:
     paths = Paths(repo)
     run_id = "20261114-200001-acme"
