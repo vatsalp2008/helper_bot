@@ -50,6 +50,9 @@ class Config(StrictModel):
     # True: Claude's drafted answers count as unreviewed, so auto-submit waits for Vatsal (spec 10.5). False: they count
     # as approved, and auto-submit may send them (Vatsal, 2026-11-15).
     drafts_need_review: bool = True
+    # `helper inbox`: before_apply shows the status changes the emails call for and waits for Vatsal's OK
+    # (`helper continue <run> --approve-inbox`); auto applies them (Vatsal, 2026-11-27: review the first check)
+    inbox_review: Literal["before_apply", "auto"] = "before_apply"
     # sites with their own clean-run minimum for auto-submit (Vatsal, 2026-11-16: Workday starts now, 0)
     auto_submit_min_clean_runs_by_site: dict[str, int] = Field(default_factory=dict)
     auto_submit_min_clean_runs: int = Field(5, ge=1)
@@ -299,7 +302,7 @@ class StepState(StrictModel):
 class RunState(StrictModel):
     run_id: str
     created_at: str
-    command: Literal["apply", "resume"]
+    command: Literal["apply", "resume", "inbox"]
     url: Optional[str] = None
     options: dict[str, Any] = Field(default_factory=dict)
     steps: dict[str, StepState] = Field(default_factory=dict)

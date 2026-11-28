@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Statuses a run sets (spec 11).
 PIPELINE_STATUSES = ("drafted", "filled", "applied", "submitted_unverified", "skipped", "failed")
@@ -99,6 +99,22 @@ CREATE TABLE IF NOT EXISTS postings (
 );
 CREATE INDEX IF NOT EXISTS idx_postings_run ON postings (run_id);
 
+CREATE TABLE IF NOT EXISTS inbox_messages (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id     TEXT NOT NULL UNIQUE,
+    received_at    TEXT,
+    sender         TEXT,
+    subject        TEXT,
+    category       TEXT NOT NULL,
+    application_id INTEGER,
+    summary        TEXT,
+    action         TEXT,
+    deadline       TEXT,
+    run_id         TEXT NOT NULL,
+    processed_at   TEXT NOT NULL,
+    done           INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS status_history (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     application_id INTEGER NOT NULL REFERENCES applications (id) ON DELETE CASCADE,
@@ -141,6 +157,11 @@ _MIGRATIONS: dict[int, list[str]] = {
         "found_at TEXT NOT NULL, status TEXT NOT NULL, reason TEXT, run_id TEXT, application_id INTEGER, "
         "updated_at TEXT NOT NULL)",
         "CREATE INDEX IF NOT EXISTS idx_postings_run ON postings (run_id)",
+    ],
+    5: [  # application emails `helper inbox` checked (Vatsal, 2026-11-27); done = 0 marks a step still to take
+        "CREATE TABLE IF NOT EXISTS inbox_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT NOT NULL UNIQUE, "
+        "received_at TEXT, sender TEXT, subject TEXT, category TEXT NOT NULL, application_id INTEGER, summary TEXT, "
+        "action TEXT, deadline TEXT, run_id TEXT NOT NULL, processed_at TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 1)",
     ],
 }
 

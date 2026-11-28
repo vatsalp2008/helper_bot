@@ -27,6 +27,7 @@ from ..browser import captcha_visible
 from ..errors import HelperError
 from ..htmltext import html_to_text
 from ..models import Job
+from .. import mailcodes
 from . import common, generic
 from .icims import Credentials, FlowContext  # noqa: F401  (the same shapes, so apply.py drives every flow alike)
 from .workday import FlowResult
@@ -366,6 +367,38 @@ def _moved(page: Any, before: str, seconds: float = 12) -> str:
     return "same"
 
 
+_VERIFY_RE = re.compile(r"(?i)^\s*verify\s*$")
+
+
+def _emailed_code(page: Any, ctx: FlowContext, out: FlowResult) -> bool:
+    """Oracle's "Confirm your identity" code, read from Gmail and typed in (Vatsal, 2026-11-27). Once per run: a second
+    code page (a wrong or expired code) is his. True when Oracle took the code and moved on."""
+    if ctx.from_email is None or "emailed code" in out.done:
+        return False
+    out.done.add("emailed code")
+    ctx.say("Oracle emailed a one-time code; helper is reading it from Gmail (up to 4 minutes).")
+    code = ctx.from_email("oracle", time.time() - 180, urlparse(page.url).hostname or "")
+    if not code:
+        ctx.say("No verification code email came from this company's Oracle site.")
+        return False
+    if not mailcodes.enter_code(page.main_frame, code):
+        ctx.say("helper couldn't type the emailed code into Oracle's code boxes.")
+        return False
+    for _ in range(30):
+        if _stage(page) != "code":
+            break
+        button = _button(page, _VERIFY_RE)
+        if button is not None and _click(page, button):
+            page.wait_for_timeout(1500)
+        else:
+            page.wait_for_timeout(500)
+    if _stage(page) == "code":
+        ctx.say("Oracle still asks for the code after helper typed it in.")
+        return False
+    ctx.say("helper typed in the code Oracle emailed (read from Gmail, never shown), and Oracle took it.")
+    return True
+
+
 def _hand_over(page: Any, ctx: FlowContext, message: str) -> str:
     ctx.say(f"Paused for you: {message}")
     return _wait_for_change(page, signature(page), ctx)
@@ -416,6 +449,8 @@ def _one_page(page: Any, ctx: FlowContext, out: FlowResult, refilled: set[str], 
     if stage == "email":
         return not _email_step(page, ctx, out)
     if stage == "code":
+        if _emailed_code(page, ctx, out):
+            return False
         return _hand_over(page, ctx, "Oracle emailed you a verification code. Enter it in the window; helper carries "
                                      "on with the application when the page moves.") == "timeout"
     if stage == "outage":

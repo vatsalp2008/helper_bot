@@ -23,6 +23,7 @@ from .answers import NOTE_STYLE, AnswerContext, AnswerPlan, PlannedAnswer, forma
 from .autosubmit import (REVIEW_ONLY, SECTION_ENTRIES, Gate, blockers, clean_review_runs, record_fill_run,
                          run_problems, site_kind)
 from .browser import browser_session, captcha_visible, make_pause
+from . import mailcodes
 from .config import Paths, env_value, load_yaml
 from .errors import HelperError, NeedsUser, WaitingForClaude, problems, window_closed
 from .models import AnswersFile, Config, Job, Profile
@@ -490,7 +491,8 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
             if yours:
                 _say("Only you can answer these; fill them in the window:\n"
                      + "\n".join(f"  {a.label[:120]}" for a in yours))
-        outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, form, seen, errors_before)
+        outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, form, seen, errors_before,
+                                   from_email=mailcodes.fetcher(paths, job.company, _say))
         shot = None
         if outcome in ("confirmed", "unverified"):
             shot = folder / "confirmation.png"
@@ -712,6 +714,7 @@ def _fill_flow(paths: Paths, cfg: Config, state: Any, job: Job, pdf: Path, adapt
             websites=[profile.tier1.linkedin_url, profile.tier1.github_url, profile.tier1.portfolio_url],
             say=say, pause=make_pause(cfg), credentials=_credentials(paths, job.ats, job),
             has_account=job.ats == "workday" and _has_workday_account(paths, cfg, state, job), go_on=go_on,
+            from_email=mailcodes.fetcher(paths, job.company, say),
             on_account=lambda kind: _note_account(paths, job),
             wait_seconds=wait * 60,
             poll_seconds=poll_seconds,
@@ -1236,11 +1239,13 @@ def _note_submit_click(paths: Paths, state: Any) -> None:
 
 def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait: float, poll: float,
                      form: Optional[Any] = None, seen: Optional[dict[str, bool]] = None,
-                     errors_before: Optional[list[str]] = None) -> str:
-    """`errors_before`: the form's errors from before helper's own click on Submit (the click runs first)."""
+                     errors_before: Optional[list[str]] = None,
+                     from_email: Optional[mailcodes.Fetch] = None) -> str:
+    """`errors_before`: the form's errors from before helper's own click on Submit (the click runs first).
+    `from_email`: reads a code the site emailed from Gmail (Greenhouse's security code; Vatsal, 2026-11-27)."""
     deadline = time.monotonic() + wait * 60
     since_submit: Optional[float] = None
-    warned_captcha = warned_code = False
+    warned_captcha = warned_code = held = False
     clicked = getattr(adapter, "submit_clicked", None)
     before = errors_before if errors_before is not None else visible_errors(form) if form is not None else []
     while time.monotonic() < deadline:
@@ -1267,7 +1272,10 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
             before = visible_errors(form)
             if clicked is not None:
                 _clear_submit_clicked(page)
-        if since_submit is not None and captcha_visible(page):
+        # a submit held for an emailed code wasn't sent (Greenhouse says "resubmit" after the code), so it never turns
+        # into submitted_unverified while the code box shows (2026-11-27)
+        held = since_submit is not None and asks_for_emailed_code(page, form)
+        if since_submit is not None and (held or captcha_visible(page)):
             # the site holds the submit for a CAPTCHA that Vatsal solves: the minute starts once it's gone (Veeva,
             # 2026-11-23: its thank-you page came after the CAPTCHA, and helper had logged submitted_unverified)
             since_submit = time.monotonic()
@@ -1279,16 +1287,35 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
             if seen is not None:  # at Submit: Vatsal solves it; the fill itself still counts as clean (Vatsal,
                 seen["at_submit"] = True  # 2026-11-16). One that blocks the page before filling still counts.
         if not warned_code and asks_for_emailed_code(page, form):
-            _say("The site emailed you a verification code: enter it in the browser window and submit. helper never "
-                 "does that step, and it keeps watching for the confirmation.")
             warned_code = True
             if seen is not None:  # Greenhouse's emailed code at Submit: not a problem with the fill (Vatsal, 2026-11-16)
                 seen["at_submit"] = True
+            if _enter_emailed_code(page, form, adapter, from_email):
+                _say("helper typed in the security code the site emailed you (read from Gmail, never shown). Click "
+                     "Submit in the window to send the application; helper keeps watching for the confirmation.")
+            else:
+                _say("The site emailed you a verification code: enter it in the browser window and submit. helper "
+                     "keeps watching for the confirmation.")
         try:
             page.wait_for_timeout(poll * 1000)
         except Exception:
-            return "unverified" if submit_seen["value"] else "closed"
-    return "unverified" if submit_seen["value"] else "timeout"
+            return "unverified" if submit_seen["value"] and not held else "closed"
+    return "unverified" if submit_seen["value"] and not held else "timeout"
+
+
+def _enter_emailed_code(page: Any, form: Optional[Any], adapter: Any, from_email: Optional[mailcodes.Fetch]) -> bool:
+    """Greenhouse's security code at Submit, from Gmail: typed into the code box once. Other sites' code boxes are
+    still Vatsal's (helper knows only Greenhouse's code email among the one-page forms)."""
+    kind = getattr(adapter, "__name__", "").rsplit(".", 1)[-1]
+    if from_email is None or kind != "greenhouse":
+        return False
+    _say("The site emailed a security code; helper is reading it from Gmail (up to 4 minutes).")
+    code = from_email(kind, time.time() - 180, urlparse(page.url).hostname or "")
+    if not code:
+        _say("No security code email came from Greenhouse for this company.")
+        return False
+    frames = [form] if form is not None else []
+    return any(mailcodes.enter_code(f, code) for f in frames + [page.main_frame])
 
 
 def _record_status(paths: Paths, cfg: Config, state: Any, status: str, *, screenshot: Optional[Path] = None) -> None:

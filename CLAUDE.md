@@ -16,6 +16,7 @@ helper is Vatsal's local job-application tool. The full spec is `helper_claude_c
 | `tailor_input.json` | `tailor_output.json` | Schema in spec 7.6. Optional extras: `fit_paragraph`, per-project `reason`. Mark a bullet with no number with a flag `"qualitative: <item_id> bullet <n>: <why>"`. |
 | `cover_letter_input.json` | `cover_letter_output.json` | `{hook, stories, paragraphs, flags}`: four paragraphs, 400 to 450 words, bold key words (at most 4 per paragraph). Facts only from the resume's 7 items; helper checks each sentence against the item it names. `hook` must be the posting's own words. |
 | `questions_needed.json` | `answers_provided.json` | Use only master-list facts and the job description. Every draft stays `needs_review`; Vatsal sees it in the form (or approves it first with `answer_review: before_fill`). Free-text drafts go to `data/answers.yaml` only when he asks. |
+| `inbox_input.json` | `inbox_output.json` | `{emails: [{message_id, category, application_id, summary, action, deadline, done}]}`, one per email. Categories: rejection, oa, phone_screen, interview, offer, received, next_step, other. Say what each email is; helper decides status changes. See "Inbox". |
 
 The resume loop:
 1. `helper resume --jd-file F --company C --role R` writes `tailor_input.json`. It holds the rules, the posting's keywords, and each item's allowed tech, numbers and wording rules.
@@ -96,7 +97,7 @@ Enforce these in code, not only in instructions.
 Supported sites: Greenhouse, Lever, Ashby, Workday, iCIMS and Oracle, plus the generic adapter for any other site.
 - **The generic adapter:** finds a Greenhouse, Lever, Ashby or Workday posting behind a company's own page and hands it over. Otherwise it reads the page's form by its labels, fills it, and auto-submits when everything is filled (see Auto-submit). A sign-in wall or a blocked page is left to Vatsal.
 - **Stopped sites:** Taleo, SmartRecruiters and SuccessFactors are never filled (accounts, rule 8). `helper resume <link>` still builds their resume and cover letter from the posting, and `helper assist <run_id>` (Vatsal, 2026-11-16) opens the posting in his normal browser, shows the files in Finder and prints a paste sheet (also for any posting he'd rather fill himself); after he submits, `helper mark <id> applied`. A company page whose Apply button leads to one of them gets the same stop message; one that leads to iCIMS (Jibe pages do) becomes an iCIMS run.
-- **Oracle** (Vatsal, 2026-11-19): helper types the application email (profile) on Oracle's own apply page, never into its hidden honeypot box, and clicks Next. Oracle's emailed code is Vatsal's. helper then fills each section by its labels, uploads the resume through Oracle's upload button, types the e-signature, and stops at Submit (review-only while new). Each page's markup is saved as `runs/<run_id>/oracle_page_N.html` for tuning.
+- **Oracle** (Vatsal, 2026-11-19): helper types the application email (profile) on Oracle's own apply page, never into its hidden honeypot box, and clicks Next. helper reads Oracle's emailed code from Gmail and types it in (see "Emailed codes"). helper then fills each section by its labels, uploads the resume through Oracle's upload button, types the e-signature, and stops at Submit (review-only while new). Each page's markup is saved as `runs/<run_id>/oracle_page_N.html` for tuning.
 - **Lever, for now** (Vatsal, 2026-11-17): Lever's bot check rejected every submit from helper's window (TRI, Quest), so Lever postings are applied to by hand. `helper find` lists them as "you apply"; build them with `helper resume <link>`, and they go to the list's Apply manually group with their `helper assist` command. Never disguise helper's browser to get past it.
 - **Employment sections** on Greenhouse forms get the jobs on the tailored resume (company, title, months and years, current role), the same entries Workday's My Experience gets (Vatsal, 2026-11-15).
 - **Bot filters:** helper identifies itself honestly. Never disguise its browser or requests (user agent, stealth tricks) to get past a site that turns it away. A robot check, a blocked page or a sign-in wall goes to Vatsal, or use `--jd-file`.
@@ -109,10 +110,10 @@ Supported sites: Greenhouse, Lever, Ashby, Workday, iCIMS and Oracle, plus the g
 3. **Reviewing drafts in the form** (Vatsal, 2026-11-15; `answer_review: in_form` in config.yaml): `helper continue` puts Claude's drafts straight into the plan and lists them, with the questions only Vatsal can answer (left blank in the window). There is no approval pause; he checks everything in the window before Submit. With `drafts_need_review: false` (Vatsal, 2026-11-15) Claude's drafts count as approved, so auto-submit may send them; helper's own unsure matches (kind `confirm`) still block it. With `answer_review: before_fill` (spec 10.4), `helper continue` pauses (exit 4): show him every draft and run `--approve-answers` only after he approves.
 4. Then run `helper fill <run_id>` in the background (run_in_background). It opens a visible Chromium window on Vatsal's screen, fills the form, and never clicks Submit. It waits up to `fill_wait_timeout_minutes` for him to submit, then logs to SQLite, Notion and CSV. Report the result when the task exits.
 - **Workday and iCIMS runs** differ: `helper continue` ends right after the resume, because these sites show their questions page by page.
-  - **iCIMS** (Vatsal, 2026-11-15): helper enters `ICIMS_EMAIL`, then signs in or creates the account (`ICIMS_USERNAME` where a username is asked). It types the login only inside iCIMS's own frame (`in_iframe=1`), never on the company's page around it (City National's has an online-banking login). It fills each page by its labels and stops at any button that says Submit; Vatsal clicks it, and helper carries on if more pages follow. hCaptcha checks and emailed codes are Vatsal's: every iCIMS sign-in has hCaptcha. Some sites (City National) kept re-asking in helper's window; Cotiviti went through. The veteran and disability self-identification forms (IForms) open as a whole page at `.../form?form=...`; helper reads and fills those, but types the login only inside the in_iframe=1 frame.
+  - **iCIMS** (Vatsal, 2026-11-15): helper enters `ICIMS_EMAIL`, then signs in or creates the account (`ICIMS_USERNAME` where a username is asked). It types the login only inside iCIMS's own frame (`in_iframe=1`), never on the company's page around it (City National's has an online-banking login). It fills each page by its labels and stops at any button that says Submit; Vatsal clicks it, and helper carries on if more pages follow. hCaptcha checks are Vatsal's, and so are iCIMS's emailed codes (helper doesn't read those yet): every iCIMS sign-in has hCaptcha. Some sites (City National) kept re-asking in helper's window; Cotiviti went through. The veteran and disability self-identification forms (IForms) open as a whole page at `.../form?form=...`; helper reads and fills those, but types the login only inside the in_iframe=1 frame.
   1. Run `helper fill <run_id>` in the background, and watch its output for "waiting for Claude" (a background until-loop that greps the output file).
   2. When it asks, read `questions_needed.json` and write `answers_provided.json` (same format and rules as above). helper fills them and moves on by itself; there is no approval step.
-  3. If it says Workday sent a verification email, tell Vatsal. When he says he verified, create the empty file `runs/<run_id>/go_on` and helper signs in.
+  3. Workday's verification email: helper opens its link from Gmail itself and signs in (see "Emailed codes"). If it says no link came, tell Vatsal. When he says he verified, create the empty file `runs/<run_id>/go_on` and helper signs in.
   4. It stops on the Review page; Vatsal submits.
 - Never type Vatsal's data into a live form outside a run he started. Live checks use the fictional test profile and never submit.
 
@@ -143,28 +144,62 @@ Five times a day (2am, 7am, noon, 5pm and 10pm; Vatsal, 2026-11-18, replacing ev
   - Fewer than 10 good postings from the last 24 hours: apply to the good ones and say so with `helper queue note`. Never pad with stale or poor fits.
   - Ineligible postings (U.S. citizenship or U.S.-person required, PhD only, a graduation window he doesn't fit) are not built. They're listed as skipped with the reason; `helper find` and `helper apply` do this themselves.
   - A stuck window stays open (`--keep-open`, `stuck_window_hours`); he reviews it later.
-  - **Fixed errors get a fresh window** (Vatsal, 2026-11-17): when a fill stalls on a helper bug and the bug is fixed, stop that fill (TaskStop closes its window) and run `helper fill <run_id> --keep-open` again. Add `--replan` when the fix was in an answer rule: a single-page form otherwise reuses its first plan (Claude's answers are kept). Use `--rescan` instead when the fix was in how helper reads a company-site form: it reads the questions again, and new ones the rules can't answer come to Claude (exit 3; `helper continue`, then `helper fill` again). Never when a submit may have gone through (`submitted_unverified`, rule 10), and never in a window he's working in. Stalls only he can clear (CAPTCHA, emailed codes, answers only he knows) stay open.
+  - **Fixed errors get a fresh window** (Vatsal, 2026-11-17): when a fill stalls on a helper bug and the bug is fixed, stop that fill (TaskStop closes its window) and run `helper fill <run_id> --keep-open` again. Add `--replan` when the fix was in an answer rule: a single-page form otherwise reuses its first plan (Claude's answers are kept). Use `--rescan` instead when the fix was in how helper reads a company-site form: it reads the questions again, and new ones the rules can't answer come to Claude (exit 3; `helper continue`, then `helper fill` again). Never when a submit may have gone through (`submitted_unverified`, rule 10), and never in a window he's working in. Stalls only he can clear (CAPTCHA, a code or link helper couldn't get from Gmail, answers only he knows) stay open.
   - Windows are unlimited (`max_browser_windows: 0`), and a new session starts on schedule whatever is still open.
 - **Each session:**
   1. **Renew the schedule:** CronList, then CronDelete the hunt's job and CronCreate it again with the same cron and prompt. Start `caffeinate -is` in the background if it isn't running.
-  2. **Leftovers first:** finish what earlier sessions started before new tailoring.
+  2. **Inbox:** `helper inbox` (see "Inbox"), classify, `helper continue <run_id>`. Its to-dos go on the list.
+  3. **Leftovers first:** finish what earlier sessions started before new tailoring.
      - Agents that a Claude usage limit stopped get resumed with SendMessage ("the limit has reset, continue"); their work is saved, so never start them over.
      - Postings still queued, or runs still waiting on tailoring, come before new picks. Usage limits are the real ceiling on volume.
      - Windows stuck on a helper bug that's now fixed get filled again (see "Fixed errors get a fresh window").
-  3. **Find:** `helper find --hours 24`. It reads Greenhouse, Lever, Ashby, Workday and SmartRecruiters feeds and the SimplifyJobs lists, checks eligibility, and lists ineligible postings as skipped.
-  4. **Pick:** at least 10 of the eligible postings by fit to the master list (software, data, ML, AI; early career). Include "you apply" ones (SmartRecruiters, Taleo, SuccessFactors). Never research positions (research scientist, researcher, "... Research" roles; Vatsal, 2026-11-17); `helper find` leaves them out.
+  4. **Find:** `helper find --hours 24`. It reads Greenhouse, Lever, Ashby, Workday and SmartRecruiters feeds and the SimplifyJobs lists, checks eligibility, and lists ineligible postings as skipped.
+  5. **Pick:** at least 10 of the eligible postings by fit to the master list (software, data, ML, AI; early career). Include "you apply" ones (SmartRecruiters, Taleo, SuccessFactors). Never research positions (research scientist, researcher, "... Research" roles; Vatsal, 2026-11-17); `helper find` leaves them out.
      - **A wide range of roles** (Vatsal, 2026-11-17): besides engineering, AI-adjacent business roles (an enterprise AI associate, solutions, analyst roles) and supply chain roles are good picks; "not engineering" is never a reason to skip. Quant trader roles count as close to software (Akuna, Optiver and other trading firms hire software people as quant traders). Skip only roles built on another discipline's degree (mechanical, electrical or hardware engineering, law, clinical).
      - `helper queue add <url>...` for the picks.
      - `helper queue add <url> --skip "not a fit: <why>"` for the others, so they don't come back.
-  5. **Start the runs:** helper-fillable postings get `helper apply <url>`. "You apply" postings get `helper resume <url>`, and become ready_for_you once the cover letter passes.
-  6. **Tailor:** in parallel with general-purpose agents, 2 runs each. The brief is this file's rules plus the tailor and cover letter loop; agents stop at the fill step and never run `helper fill`.
-  7. **Fill:** `helper fill <run_id> --keep-open` in the background, a few seconds apart, with one watcher over all of them (`scripts/watch_fills.sh <task output folder> <task ids>` in the background; restart it after each event).
+  6. **Start the runs:** helper-fillable postings get `helper apply <url>`. "You apply" postings get `helper resume <url>`, and become ready_for_you once the cover letter passes.
+  7. **Tailor:** in parallel with general-purpose agents, 2 runs each. The brief is this file's rules plus the tailor and cover letter loop; agents stop at the fill step and never run `helper fill`.
+  8. **Fill:** `helper fill <run_id> --keep-open` in the background, a few seconds apart, with one watcher over all of them (`scripts/watch_fills.sh <task output folder> <task ids>` in the background; restart it after each event).
      - Answer `questions_needed.json` by his rules. Auto-submit sends what's complete.
-     - Leave CAPTCHAs, emailed codes and fields only he can answer in the open window. The list shows them as needs_you.
-  8. **Close the session:**
-     - `helper queue note "<found N, picked N, sent N, N need you, N ready for you>"`, including a shortfall if fewer than 10 good postings existed.
+     - Leave CAPTCHAs, codes helper couldn't get from Gmail, and fields only he can answer in the open window. The list shows them as needs_you.
+  9. **Close the session:**
+     - `helper queue note "<found N, picked N, sent N, N need you, N ready for you, N email updates>"`, including a shortfall if fewer than 10 good postings existed.
      - `helper queue --page-file exports/queue_page.json`, then ArtifactData `get` hunt/list (for its version) and `set` hunt/list from that file with `if_version`. On the first write there's no version yet.
-  9. **Don't wait for open windows.** Answers to later questions come when their watcher fires, even during a later session.
+  10. **Don't wait for open windows.** Answers to later questions come when their watcher fires, even during a later session.
+
+## Inbox (Vatsal, 2026-11-27)
+`helper inbox [--since YYYY-MM-DD]` reads the application emails, so rejections, assessments, interviews and offers reach the tracker, Notion and the list.
+- **Access:** Gmail over IMAP with an app password (`GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` in `.env`; never print, log or commit them). It opens All Mail read-only and never marks, moves or deletes mail.
+- **What reaches Claude:** only mail from a job site or assessment site, from a company's recruiting side, or with an application subject. Job alerts and surveys are counted, not shown.
+- **Codes stay out:** sign-in, identity and verification-code emails are left out of Claude's file. Only helper's own code reader uses them (see "Emailed codes").
+- **The handoff:** `inbox_input.json` -> `inbox_output.json`, then `helper continue <run_id>`.
+  - Each email has its candidate applications. Pick the one whose role the email names, or null.
+  - `done: true` marks a step already taken, such as a submitted assessment.
+  - Many emails can be classified in parallel by agents writing parts, then merged.
+- **helper's rules for status changes:**
+  - A status Vatsal set by hand (in helper or Notion) is never changed.
+  - "applied", or a status an earlier email set, only moves forward: oa, phone_screen, interview, offer, rejected.
+  - A confirmation email turns drafted, filled or submitted_unverified into applied, and the posting leaves the list.
+- **Review:** `inbox_review: before_apply` (config.yaml) pauses with exit 4 and lists every change. Show Vatsal, and run `helper continue <run_id> --approve-inbox` only after he approves. `auto` applies them at once; switch to it only when he says.
+- **To-dos:** assessments, interviews and other steps go on the list's "From your inbox" section (no links; the emails have them). `helper inbox done <id>` takes one off.
+- **History:** the first check covered Nov 20 onward (Vatsal, 2026-11-27). Going back to September 2025 is his call.
+
+## Emailed codes (Vatsal, 2026-11-27)
+helper reads a site's emailed code or account link from Gmail itself (`src/helper/mailcodes.py`), using the same app password as the inbox.
+- **What it handles:**
+  - Oracle's "Confirm your identity" code: typed into the code boxes, then Verify.
+  - Greenhouse's security code after Submit: typed into the code box.
+  - Workday's "Verify your candidate account" link: opened in a second tab, then helper signs in.
+  - Not iCIMS's codes, yet.
+- **Matching:** only an email that arrived after the page asked, from that site, for this company.
+  - Oracle: the sender's tenant matches the careers host (egup.fa.sender ↔ egup.fa...oraclecloud.com), or the email names the company.
+  - Greenhouse: the company is named in the subject.
+  - Workday: the link's host is the window's own host.
+- **Once, quietly:** each code is used once, only on the page that asked. It's never printed, logged, saved or shown to Claude.
+- **Fallback:** if no email comes within 4 minutes, or a second code page appears, the window waits for Vatsal as before.
+- **Greenhouse after the code:** Greenhouse says "resubmit" after the code. helper doesn't click Submit a second time (rule 10) unless Vatsal decides otherwise. A submit held for a code was never sent, so it's never logged as submitted_unverified.
+- **CAPTCHAs** stay his (rule 6).
 
 ## Tracker and Notion
 - `helper.db` (SQLite) is the system of record, and it holds Vatsal's imported Notion history.

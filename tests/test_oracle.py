@@ -407,6 +407,22 @@ def test_oracle_s_emailed_code_is_left_to_vatsal(page: Any, tmp_path: Path) -> N
     assert page.evaluate("() => window.recorded.first") is None  # nothing past the code step
 
 
+def test_oracle_s_emailed_code_is_read_from_gmail_and_typed_in_once(page: Any, tmp_path: Path) -> None:
+    # Vatsal, 2026-11-27: helper reads the code from Gmail; asked by this tenant's host, typed only into the code box
+    pdf = tmp_path / "AlexExample_Resume.pdf"
+    pdf.write_bytes(b"%PDF-1.4 test")
+    said: list[str] = []
+    asked: list[tuple[str, str]] = []
+    ctx = flow(said, pdf)
+    ctx.from_email = lambda kind, since, host: asked.append((kind, host)) or "482913"
+    page.goto(POSTING + "/apply/email#code")
+    oracle.run_flow(page, ctx)
+    assert asked == [("oracle", "mockco.fa.us2.oraclecloud.com")]
+    assert any("Oracle took it" in s for s in said), said
+    assert not any("482913" in s for s in said)  # the code is never shown
+    assert page.evaluate("() => window.recorded.first") is not None  # the application went on past the code step
+
+
 def test_the_email_is_typed_only_on_oracle_s_own_page(tmp_path: Path) -> None:
     playwright_api = pytest.importorskip("playwright.sync_api")
     with playwright_api.sync_playwright() as pw:

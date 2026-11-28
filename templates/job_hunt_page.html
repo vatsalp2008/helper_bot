@@ -71,6 +71,8 @@ li.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding:
 .s-queued { --stripe: var(--queued); --pill-fg: var(--queued); --pill-bg: var(--queued-bg); }
 .s-skipped { --stripe: var(--line); --pill-fg: var(--skipped); --pill-bg: var(--skipped-bg); }
 .s-skipped .co, .s-skipped .title { color: var(--muted); }
+.s-todo { --stripe: var(--needs); --pill-fg: var(--needs); --pill-bg: var(--needs-bg); }
+.row .due { font-weight: 500; color: var(--needs); }
 .empty { border: 1px dashed var(--line); border-radius: 10px; padding: 22px; color: var(--muted); max-width: 65ch; }
 .empty strong { color: var(--ink); }
 @media (max-width: 520px) { li.row { grid-template-columns: 1fr; } .row .side { justify-items: start; grid-auto-flow: column; justify-content: start; } }
@@ -80,7 +82,7 @@ li.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding:
 <div class="wrap">
   <header>
     <h1>Job Hunt Queue</h1>
-    <p class="session" id="session">The scheduled job hunt runs at 2am, 5am, 8am, 11am, 2pm, 5pm, 8pm and 11pm. Each run finds new postings, applies to the ones helper can fill, and leaves the rest here.</p>
+    <p class="session" id="session">The scheduled job hunt runs at 2am, 7am, noon, 5pm and 10pm. Each run finds new postings, applies to the ones helper can fill, and leaves the rest here.</p>
     <p class="notice" id="notice" hidden></p>
   </header>
   <div class="filters" id="filters" role="toolbar" aria-label="Filter by status"></div>
@@ -102,7 +104,9 @@ li.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding:
     skipped: { label: "Skipped", hint: "Not applied to, with the reason." }
   };
   var ORDER = ["needs_you", "apply_manually", "ready_for_you", "applying", "queued", "skipped"];
+  var TODO = { oa: "Assessment", phone_screen: "Phone screen", interview: "Interview", offer: "Offer", next_step: "Next step" };
   var rows = [];
+  var todos = [];
   var meta = null;
   var loaded = false;
   var filter = "all";
@@ -206,6 +210,48 @@ li.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding:
     return li;
   }
 
+  function day(value) {
+    var t = Date.parse(String(value || "") + "T12:00:00");
+    if (isNaN(t)) return String(value || "");
+    return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  // steps the application emails asked for (helper inbox); no links, the email itself has them
+  function todoSection() {
+    var sec = el("section", "group");
+    var h = el("h2", null, "From your inbox");
+    h.appendChild(el("span", "n", String(todos.length)));
+    sec.appendChild(h);
+    sec.appendChild(el("p", "hint", "Steps your application emails asked for. The links are in the emails. When one is done, run its command."));
+    var ul = el("ul", "rows");
+    todos.forEach(function (t) {
+      var li = el("li", "row s-todo");
+      var main = el("div", "main");
+      var head = el("div");
+      head.appendChild(el("span", "co", t.company || t.subject || "?"));
+      if (t.role) { head.appendChild(document.createTextNode(" · ")); head.appendChild(el("span", "title", t.role)); }
+      main.appendChild(head);
+      if (t.action) main.appendChild(el("div", "reason", t.action));
+      var m = el("div", "meta");
+      if (t.deadline) m.appendChild(el("span", "due", "by " + day(t.deadline)));
+      if (t.received) m.appendChild(el("span", null, "email " + day(t.received)));
+      if (t.company && t.subject) m.appendChild(el("span", null, "“" + t.subject + "”"));
+      main.appendChild(m);
+      var cmd = el("div", "cmd");
+      var code = el("code", null, "helper inbox done " + t.id);
+      cmd.appendChild(code);
+      cmd.appendChild(copyButton(code.textContent));
+      main.appendChild(cmd);
+      var side = el("div", "side");
+      side.appendChild(el("span", "pill", TODO[t.category] || t.category));
+      li.appendChild(main);
+      li.appendChild(side);
+      ul.appendChild(li);
+    });
+    sec.appendChild(ul);
+    return sec;
+  }
+
   function render() {
     renderFilters();
     if (meta && meta.note) {
@@ -217,6 +263,7 @@ li.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding:
     if (!loaded) return;  // keep the loading note until the first snapshot
     var list = $("list");
     list.textContent = "";
+    if (todos.length) list.appendChild(todoSection());
     if (!rows.length) {
       var empty = el("div", "empty");
       empty.appendChild(el("strong", null, "Nothing on the list right now. "));
@@ -258,10 +305,11 @@ li.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding:
       return;
     }
     var timer = setTimeout(function () { notice("The list can't be reached yet; it will appear when the connection returns."); }, 10000);
-    // the whole list is one record, written by each job hunt session: {rows, note, updated_at}
+    // the whole list is one record, written by each job hunt session: {rows, inbox, note, updated_at}
     db.doc("hunt/list").onSnapshot(function (snap) {
       var body = snap.exists ? snap.data() : null;
       rows = body && Array.isArray(body.rows) ? body.rows.slice() : [];
+      todos = body && Array.isArray(body.inbox) ? body.inbox.slice() : [];
       meta = body ? { note: body.note, updated_at: body.updated_at } : null;
       loaded = true;
       if (!snap.metadata.fromCache) { clearTimeout(timer); notice(""); }

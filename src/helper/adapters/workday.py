@@ -242,6 +242,8 @@ class FlowContext:
     has_account: bool = False  # an earlier application or account at this company's Workday
     on_account: Callable[[str], None] = lambda kind: None  # records an account helper created or signed in to
     go_on: Callable[[], bool] = lambda: False  # Vatsal says go on (after verifying the account email)
+    # the code or link a site emailed, read from Gmail by helper (Vatsal, 2026-11-27): (kind, since, host) -> it
+    from_email: Optional[Callable[[str, float, str], Optional[str]]] = None
     wait_seconds: float = 1800
     poll_seconds: float = 2.0
 
@@ -786,6 +788,45 @@ def _create_account(page: Any, creds: Credentials) -> None:
     _submit_account_form(page, "createAccountSubmitButton")
 
 
+def _verify_from_email(page: Any, ctx: FlowContext, creds: Credentials) -> bool:
+    """Workday's "Verify your candidate account" link, read from Gmail (Vatsal, 2026-11-27): opened in a second tab of
+    helper's window only when it leads to this window's own Workday site, signed in there if it asks, then signed in
+    here. False leaves the step to Vatsal as before."""
+    host = (urlparse(page.url).hostname or "").lower()
+    if ctx.from_email is None or not host:
+        return False
+    ctx.say("Workday emailed an account link; helper is reading it from Gmail (up to 4 minutes).")
+    link = ctx.from_email("workday", time.time() - 180, host)
+    if not link:
+        ctx.say("No verification email with a link to this Workday site came.")
+        return False
+    tab = page.context.new_page()
+    try:
+        tab.goto(link, wait_until="domcontentloaded")
+        tab.wait_for_timeout(4000)
+        _show(tab, "sign_in")
+        if account_screen(tab) == "sign_in":
+            _sign_in(tab, creds)
+            tab.wait_for_timeout(5000)
+    except Exception:
+        pass
+    finally:
+        try:
+            tab.close()
+        except Exception:
+            pass
+    page.bring_to_front()
+    _show(page, "sign_in")
+    if account_screen(page) == "sign_in":
+        _sign_in(page, creds)
+    if not account_screen(page) or _account_outcome(page, ctx)[0] == "done":
+        ctx.on_account("signed in")
+        ctx.say("helper opened the account link Workday emailed (read from Gmail) and signed in.")
+        return True
+    ctx.say("helper opened Workday's verification link, but signing in afterwards didn't work.")
+    return False
+
+
 def _sign_in(page: Any, creds: Credentials) -> None:
     password = creds.long_password if creds.uses_long and creds.long_password else creds.password
     _type_secret(page, "[data-automation-id=email]:visible", creds.email)
@@ -819,6 +860,9 @@ def handle_account(page: Any, ctx: FlowContext, out: FlowResult) -> bool:
         if (action, outcome) in (("create", "exists"), ("sign_in", "bad_login")):
             continue
         break
+    if outcome == "verify" and _verify_from_email(page, ctx, creds):
+        out.account = "verified and signed in"
+        return True
     if outcome == "verify":
         # never the address itself (CLAUDE.md: the login isn't printed or logged; Advance Auto, 2026-11-21)
         ctx.say("Workday sent a verification email to your application email (WORKDAY_EMAIL). Open it and click the "

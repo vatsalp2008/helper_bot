@@ -125,6 +125,8 @@ class FlowContext:  # the same shape as Workday's, so apply.py drives both
     credentials: Optional[Credentials] = None
     has_account: bool = False
     go_on: Callable[[], bool] = lambda: False
+    # the code or link a site emailed, read from Gmail by helper (Vatsal, 2026-11-27): (kind, since, host) -> it
+    from_email: Optional[Callable[[str, float, str], Optional[str]]] = None
     wait_seconds: float = 1800
     poll_seconds: float = 2.0
     # apply.py passes it to both adapters (Workday's sign-in-first memory); iCIMS has no use for it yet. Missing here,

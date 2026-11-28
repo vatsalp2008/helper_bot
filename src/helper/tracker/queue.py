@@ -161,8 +161,32 @@ _PAGE_FIELDS = ("company", "title", "location", "url", "ats", "status", "reason"
 
 def page_doc(conn: sqlite3.Connection) -> dict[str, Any]:
     """The list's web page record (`hunt/list`): postings and statuses only, never contact details."""
+    from ..inbox import open_todos
+
     shown = [{k: r[k] for k in _PAGE_FIELDS} for r in rows(conn, skipped_hours=SKIPPED_SHOWN_HOURS)]
-    return {"rows": shown, "note": note(conn), "updated_at": now_iso()}
+    # steps Vatsal's application emails asked for (helper inbox): company, role, what to do and by when; no links
+    todos = [{k: t[k] for k in ("id", "company", "role", "category", "action", "deadline", "received", "subject")}
+             for t in open_todos(conn)]
+    return {"rows": shown, "inbox": todos, "note": note(conn), "updated_at": now_iso()}
+
+
+_TODO_LABELS = {"oa": "Assessment", "phone_screen": "Phone screen", "interview": "Interview", "offer": "Offer",
+                "next_step": "Next step"}
+
+
+def _todo_lines(conn: sqlite3.Connection) -> list[str]:
+    from ..inbox import open_todos
+
+    todos = open_todos(conn)
+    if not todos:
+        return []
+    lines = [f"## From your inbox ({len(todos)})", ""]
+    for t in todos:
+        who = f"**{t['company']}**: {t['role']}" if t["company"] else f"\"{t['subject']}\""
+        due = f", by {t['deadline']}" if t["deadline"] else ""
+        lines.append(f"- {_TODO_LABELS.get(t['category'], t['category'])}: {who}. {t['action']}{due}")
+        lines.append(f"  - email {t['received']}; `helper inbox done {t['id']}` when it's done")
+    return lines + [""]
 
 
 def render_markdown(conn: sqlite3.Connection) -> str:
@@ -170,6 +194,7 @@ def render_markdown(conn: sqlite3.Connection) -> str:
     lines = ["# Postings list", ""]
     if note(conn):
         lines += [f"Last session: {note(conn)}", ""]
+    lines += _todo_lines(conn)
     if not listed:
         return "\n".join(lines + ["Nothing on the list: every posting found so far was applied to."]) + "\n"
     for status in sorted(_HEADINGS, key=lambda s: _ORDER[s]):

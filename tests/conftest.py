@@ -33,6 +33,8 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.delenv("NOTION_DATABASE_ID", raising=False)
     monkeypatch.delenv("WORKDAY_EMAIL", raising=False)
     monkeypatch.delenv("WORKDAY_PASSWORD", raising=False)
+    monkeypatch.delenv("GMAIL_ADDRESS", raising=False)  # tests never read the real inbox
+    monkeypatch.delenv("GMAIL_APP_PASSWORD", raising=False)
     return root
 
 

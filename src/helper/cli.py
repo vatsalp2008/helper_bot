@@ -421,6 +421,55 @@ def queue_note(text: Annotated[str, typer.Argument(help="What this session found
         conn.close()
 
 
+inbox_app = typer.Typer(help="What your application emails say: rejections, assessments, interviews, offers.",
+                        no_args_is_help=False, invoke_without_command=True)
+app.add_typer(inbox_app, name="inbox")
+
+
+@inbox_app.callback()
+@guarded
+def inbox_main(
+    ctx: typer.Context,
+    since: Annotated[Optional[str], typer.Option("--since", help="Read mail from this day (YYYY-MM-DD). Default: a day "
+                                                 "before the last check, or a week back the first time.")] = None,
+) -> None:
+    """Read Gmail (read-only) for application emails and hand them to Claude (exit 3); `helper continue` applies what
+    they say."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from datetime import date as _date
+
+    from .config import load_config
+    from .inbox import start
+
+    try:
+        day = _date.fromisoformat(since) if since else None
+    except ValueError:
+        raise HelperError(f"--since must look like 2026-11-20, not {since!r}") from None
+    paths = _paths()
+    typer.echo(start(paths, load_config(paths), since=day))
+
+
+@inbox_app.command("done")
+@guarded
+def inbox_done(todo_id: Annotated[int, typer.Argument(help="The to-do's number, from the list's inbox section.")]) -> None:
+    """Take a step an email asked for (an assessment, an interview to book) off the list."""
+    from .config import load_config
+    from .hunt import refresh
+    from .inbox import mark_done
+    from .tracker.commands import open_db
+
+    paths = _paths()
+    conn = open_db(paths, load_config(paths))
+    try:
+        row = mark_done(conn, todo_id)
+        conn.commit()
+        refresh(paths, conn)
+    finally:
+        conn.close()
+    typer.echo(f"Done: {row['action'] or row['subject']}")
+
+
 @app.command("continue")
 @guarded
 def continue_(
@@ -431,23 +480,30 @@ def continue_(
     approve_answers: Annotated[
         bool, typer.Option("--approve-answers", help="Vatsal approved the drafted form answers (apply runs).")
     ] = False,
+    approve_inbox: Annotated[
+        bool, typer.Option("--approve-inbox", help="Vatsal approved the status changes from his emails (inbox runs).")
+    ] = False,
 ) -> None:
     """Resume a run: after an eligibility pause, or after Claude wrote its output file (validate, render, check)."""
     from .config import load_config
     from .pipeline import continue_run, format_finished
 
     from .cover_letter import cover_letter_step
+    from .runs import load_state
 
     paths = _paths()
     cfg = load_config(paths)
+    if load_state(paths, run_id).command == "inbox":
+        from .inbox import continue_inbox
+
+        typer.echo(continue_inbox(paths, cfg, run_id, approve=approve_inbox))
+        return
     done = continue_run(paths, cfg, run_id, build_anyway=build_anyway)
     if done is not None:
         typer.echo(format_finished(paths, done))
     letter = cover_letter_step(paths, cfg, run_id)  # every resume gets a cover letter (Vatsal, 2026-11-14)
     if letter:
         typer.echo(letter)
-    from .runs import load_state
-
     if load_state(paths, run_id).command == "apply":
         from .apply import answers_step
 
@@ -583,6 +639,9 @@ def mark(
             row = repo.set_status(conn, application_id, status, note=note, applied_on=on)
         except ValueError:
             raise HelperError(f"--date must look like 2026-11-14, not {on!r}") from None
+        from .inbox import close_for
+
+        close_for(conn, application_id, row["status"])  # a no ends the steps its emails asked for
         conn.commit()
         typer.echo(f"#{row['id']} {row['company']}, {row['role_title']}: {before} -> {row['status']}"
                    + (f" (applied {row['date_applied']})" if row["date_applied"] else ""))
