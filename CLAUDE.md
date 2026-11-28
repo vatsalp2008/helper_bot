@@ -48,7 +48,7 @@ Enforce these in code, not only in instructions.
 7. **Never automate LinkedIn Easy Apply or Handshake.** Tell me to find the company's own careers page, and offer to extract the job description only.
 8. **Never create accounts** on employer portals (Taleo, SmartRecruiters, etc.). Stop and tell me. The exceptions are Workday (Vatsal, 2026-11-14) and iCIMS (Vatsal, 2026-11-15): helper signs in or creates the account with the application login in `.env` (`WORKDAY_*`, `ICIMS_*`; iCIMS sites that ask for a username get `ICIMS_USERNAME`).
 9. **Stop when unsure.** A required field helper cannot fill with high confidence pauses the run.
-10. **Never retry a submit.** An ambiguous result is logged as `submitted_unverified`.
+10. **Never retry a submit.** An ambiguous result is logged as `submitted_unverified`. The one exception is Greenhouse's emailed security code: Greenhouse holds the first click and says to resubmit, so after typing the code helper clicks Submit once more (Vatsal, 2026-11-27, only for Greenhouse's code).
 11. **Eligibility is checked before building** (section 8).
 12. **Do not re-ask for a job description I already gave you.** If I paste one in the session or pass `--jd-file`, use it.
 
@@ -148,7 +148,7 @@ Five times a day (2am, 7am, noon, 5pm and 10pm; Vatsal, 2026-11-18, replacing ev
   - Windows are unlimited (`max_browser_windows: 0`), and a new session starts on schedule whatever is still open.
 - **Each session:**
   1. **Renew the schedule:** CronList, then CronDelete the hunt's job and CronCreate it again with the same cron and prompt. Start `caffeinate -is` in the background if it isn't running.
-  2. **Inbox:** `helper inbox` (see "Inbox"), classify, `helper continue <run_id>`. Its to-dos go on the list.
+  2. **Inbox, once a day:** only in the 10pm session (Vatsal, 2026-11-27); the other sessions skip it. Run `helper inbox` (see "Inbox"), classify, then `helper continue <run_id>`, which applies the changes at once (`inbox_review: auto`). Its to-dos go on the list. Mention the changes in the session note.
   3. **Leftovers first:** finish what earlier sessions started before new tailoring.
      - Agents that a Claude usage limit stopped get resumed with SendMessage ("the limit has reset, continue"); their work is saved, so never start them over.
      - Postings still queued, or runs still waiting on tailoring, come before new picks. Usage limits are the real ceiling on volume.
@@ -181,7 +181,8 @@ Five times a day (2am, 7am, noon, 5pm and 10pm; Vatsal, 2026-11-18, replacing ev
   - A status Vatsal set by hand (in helper or Notion) is never changed.
   - "applied", or a status an earlier email set, only moves forward: oa, phone_screen, interview, offer, rejected.
   - A confirmation email turns drafted, filled or submitted_unverified into applied, and the posting leaves the list.
-- **Review:** `inbox_review: before_apply` (config.yaml) pauses with exit 4 and lists every change. Show Vatsal, and run `helper continue <run_id> --approve-inbox` only after he approves. `auto` applies them at once; switch to it only when he says.
+- **Review:** `inbox_review: auto` (Vatsal, 2026-11-27): `helper continue` applies the changes at once, and Vatsal sees them in Notion and on the page. A wrong one gets `helper mark <id> <status>`. With `before_apply`, it pauses with exit 4 and lists every change; then run `helper continue <run_id> --approve-inbox` only after he approves.
+- **When:** once a day, in the 10pm job hunt session (Vatsal, 2026-11-27).
 - **To-dos:** assessments, interviews and other steps go on the list's "From your inbox" section (no links; the emails have them). `helper inbox done <id>` takes one off.
 - **History:** the first check covered Nov 20 onward (Vatsal, 2026-11-27). Going back to September 2025 is his call.
 
@@ -198,7 +199,10 @@ helper reads a site's emailed code or account link from Gmail itself (`src/helpe
   - Workday: the link's host is the window's own host.
 - **Once, quietly:** each code is used once, only on the page that asked. It's never printed, logged, saved or shown to Claude.
 - **Fallback:** if no email comes within 4 minutes, or a second code page appears, the window waits for Vatsal as before.
-- **Greenhouse after the code:** Greenhouse says "resubmit" after the code. helper doesn't click Submit a second time (rule 10) unless Vatsal decides otherwise. A submit held for a code was never sent, so it's never logged as submitted_unverified.
+- **Greenhouse after the code:** Greenhouse says "resubmit" after the code, so helper clicks Submit once more (Vatsal, 2026-11-27; the one exception to rule 10, only for Greenhouse's code).
+  - It clicks once per run, recorded in the run's state as `helper_resubmitted_after_code`.
+  - It clicks only after the code is typed; if no code came, nothing is clicked.
+  - A submit held for a code was never sent, so it's never logged as submitted_unverified.
 - **CAPTCHAs** stay his (rule 6).
 
 ## Tracker and Notion

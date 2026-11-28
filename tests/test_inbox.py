@@ -127,6 +127,7 @@ def _answers(paths: Paths, run_id: str, ids: dict[str, int], **extra: Any) -> No
 
 def test_changes_wait_for_vatsal_then_reach_the_tracker_and_the_list(repo: Path) -> None:
     paths, cfg, ids = _setup(repo)
+    cfg = cfg.model_copy(update={"inbox_review": "before_apply"})  # config.yaml says auto (Vatsal, 2026-11-27)
     run_id = _start(paths, cfg, FakeSource(MAILS))
     _answers(paths, run_id, ids)
 

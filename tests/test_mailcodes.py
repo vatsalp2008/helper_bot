@@ -124,3 +124,60 @@ def test_greenhouse_s_code_at_submit_is_typed_in_and_the_held_submit_is_not_logg
     # submitted_unverified (rule 10's unclear submit)
     outcome = ap._wait_for_submit(page, greenhouse, {"value": True}, 0.05, 0.3, None, from_email=None)
     assert outcome == "timeout"
+
+
+HELD_FORM = """<form id="application-form"><input id="first_name" value="Alex">
+<div id="code-box"></div><button type="submit" id="submit">Submit application</button></form>
+<script>
+  window.clicks = 0;
+  document.getElementById('application-form').addEventListener('submit', e => {
+    e.preventDefault();
+    window.clicks += 1;
+    const box = document.getElementById('security-input');
+    if (!box) {  // Greenhouse holds the first submit for the code it emails
+      document.getElementById('code-box').innerHTML =
+        '<p>Enter the security code we sent to your email, then resubmit.</p><input id="security-input">';
+    } else if (box.value === 'Ab3dE9fG') {
+      document.body.innerHTML = '<h1>Thank you for applying.</h1><p>Your application has been submitted.</p>';
+    }
+  });
+</script>"""
+
+
+class _State:
+    def __init__(self) -> None:
+        self.options: dict[str, Any] = {}
+
+
+def test_greenhouse_gets_one_more_submit_after_its_code_and_only_once(page: Any, monkeypatch: Any) -> None:
+    from helper import apply as ap
+    from helper.adapters import generic, greenhouse
+
+    saved: list[dict[str, Any]] = []
+    monkeypatch.setattr(ap, "save_state", lambda paths, state: saved.append(dict(state.options)))
+    page.set_content(HELD_FORM)
+    form = page.main_frame
+    page.click("#submit")  # the first click (helper's in auto mode, or Vatsal's)
+    state = _State()
+    resubmit = ap._resubmitter(None, state, greenhouse, form)  # type: ignore[arg-type]
+    assert ap._resubmitter(None, state, generic, form) is None  # only Greenhouse's code (Vatsal, 2026-11-27)
+    outcome = ap._wait_for_submit(page, greenhouse, {"value": True}, 0.2, 0.3, form,
+                                  from_email=lambda kind, since, host: "Ab3dE9fG", resubmit=resubmit)
+    assert outcome == "confirmed"
+    assert "Thank you for applying" in page.inner_text("body")  # the second click, with the code, went through
+    assert "helper_resubmitted_after_code" in state.options and saved
+    assert resubmit is not None and resubmit() is False  # never a third click
+
+
+def test_no_code_email_means_no_second_submit(page: Any, monkeypatch: Any) -> None:
+    from helper import apply as ap
+    from helper.adapters import greenhouse
+
+    monkeypatch.setattr(ap, "save_state", lambda paths, state: None)
+    page.set_content(HELD_FORM)
+    page.click("#submit")
+    state = _State()
+    outcome = ap._wait_for_submit(page, greenhouse, {"value": True}, 0.05, 0.3, page.main_frame,
+                                  from_email=lambda kind, since, host: None,
+                                  resubmit=ap._resubmitter(None, state, greenhouse, page.main_frame))  # type: ignore[arg-type]
+    assert outcome == "timeout" and page.evaluate("() => window.clicks") == 1 and not state.options

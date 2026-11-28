@@ -492,7 +492,8 @@ def fill_run(paths: Paths, cfg: Config, run_id: str, *, dry_run: bool = False, w
                 _say("Only you can answer these; fill them in the window:\n"
                      + "\n".join(f"  {a.label[:120]}" for a in yours))
         outcome = _wait_for_submit(page, adapter, submit_seen, wait, poll_seconds, form, seen, errors_before,
-                                   from_email=mailcodes.fetcher(paths, job.company, _say))
+                                   from_email=mailcodes.fetcher(paths, job.company, _say),
+                                   resubmit=_resubmitter(paths, state, adapter, form))
         shot = None
         if outcome in ("confirmed", "unverified"):
             shot = folder / "confirmation.png"
@@ -1240,7 +1241,8 @@ def _note_submit_click(paths: Paths, state: Any) -> None:
 def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait: float, poll: float,
                      form: Optional[Any] = None, seen: Optional[dict[str, bool]] = None,
                      errors_before: Optional[list[str]] = None,
-                     from_email: Optional[mailcodes.Fetch] = None) -> str:
+                     from_email: Optional[mailcodes.Fetch] = None,
+                     resubmit: Optional[Callable[[], bool]] = None) -> str:
     """`errors_before`: the form's errors from before helper's own click on Submit (the click runs first).
     `from_email`: reads a code the site emailed from Gmail (Greenhouse's security code; Vatsal, 2026-11-27)."""
     deadline = time.monotonic() + wait * 60
@@ -1291,8 +1293,14 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
             if seen is not None:  # Greenhouse's emailed code at Submit: not a problem with the fill (Vatsal, 2026-11-16)
                 seen["at_submit"] = True
             if _enter_emailed_code(page, form, adapter, from_email):
-                _say("helper typed in the security code the site emailed you (read from Gmail, never shown). Click "
-                     "Submit in the window to send the application; helper keeps watching for the confirmation.")
+                if submit_seen["value"] and resubmit is not None and resubmit():
+                    since_submit = time.monotonic()
+                    _say("helper typed in the security code the site emailed you (read from Gmail, never shown) and "
+                         "clicked Submit once more, as Greenhouse asks after its code.")
+                else:
+                    _say("helper typed in the security code the site emailed you (read from Gmail, never shown). "
+                         "Click Submit in the window to send the application; helper keeps watching for the "
+                         "confirmation.")
             else:
                 _say("The site emailed you a verification code: enter it in the browser window and submit. helper "
                      "keeps watching for the confirmation.")
@@ -1301,6 +1309,25 @@ def _wait_for_submit(page: Any, adapter: Any, submit_seen: dict[str, bool], wait
         except Exception:
             return "unverified" if submit_seen["value"] and not held else "closed"
     return "unverified" if submit_seen["value"] and not held else "timeout"
+
+
+def _resubmitter(paths: Paths, state: Any, adapter: Any, form: Optional[Any]) -> Optional[Callable[[], bool]]:
+    """Greenhouse holds a submit for its emailed security code and says to resubmit after entering it. That first
+    click sent nothing, so helper clicks Submit once more after typing the code (Vatsal, 2026-11-27: only for
+    Greenhouse's code). Once per run, kept in its state like the first click (rule 10)."""
+    if form is None or getattr(adapter, "__name__", "").rsplit(".", 1)[-1] != "greenhouse":
+        return None
+
+    def resubmit() -> bool:
+        from .tracker.db import now_iso
+
+        if state.options.get("helper_resubmitted_after_code"):
+            return False
+        state.options["helper_resubmitted_after_code"] = now_iso()
+        save_state(paths, state)
+        return bool(adapter.submit(form))
+
+    return resubmit
 
 
 def _enter_emailed_code(page: Any, form: Optional[Any], adapter: Any, from_email: Optional[mailcodes.Fetch]) -> bool:

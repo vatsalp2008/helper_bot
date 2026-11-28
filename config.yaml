@@ -5,7 +5,7 @@ projects_per_resume: 5
 bullets_per_item: 2             # per project and per experience entry
 submit_mode: auto               # review | auto (Vatsal, 2026-11-16: auto-submit where every condition holds)
 answer_review: in_form          # before_fill | in_form: drafted answers go straight into the form; you review them there (Vatsal, 2026-11-15)
-inbox_review: before_apply      # before_apply | auto: `helper inbox` shows its status changes and waits for your OK (Vatsal, 2026-11-27)
+inbox_review: auto              # before_apply | auto: auto applies the emails' status changes at once (Vatsal, 2026-11-27; the check runs once a day, in the 10pm job hunt session)
 drafts_need_review: false       # Claude's drafted answers count as approved, so auto-submit may send them (Vatsal, 2026-11-15)
 auto_submit_min_clean_runs_by_site: {workday: 0, generic: 0}   # these auto-submit from now on (Vatsal, 2026-11-16)
 auto_submit_min_clean_runs: 5
